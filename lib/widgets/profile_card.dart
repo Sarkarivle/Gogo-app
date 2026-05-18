@@ -1,0 +1,128 @@
+import 'package:flutter/material.dart';
+import '../screens/profile_detail_screen.dart';
+
+class ProfileCard extends StatelessWidget {
+  final String distance;
+  final String city;
+  final String area;
+  final String name;
+  final String phone;
+  final Color nameColor;
+  final int age;
+  final String position;
+  final String havePlace;
+  final int? likedBy;
+  final bool isVerified;
+
+  const ProfileCard({
+    super.key,
+    required this.distance,
+    required this.city,
+    required this.area,
+    required this.name,
+    required this.phone,
+    required this.nameColor,
+    required this.age,
+    required this.position,
+    required this.havePlace,
+    this.likedBy,
+    this.isVerified = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Determine the best location name to show before distance
+    String locName = "";
+    if (area != null && area.isNotEmpty && area != "Unknown") {
+      locName = area;
+    } else if (city != null && city.isNotEmpty && city != "Unknown") {
+      locName = city;
+    }
+
+    String locationDisplay = locName.isNotEmpty ? "$locName, $distance" : distance;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProfileDetailPage(
+              name: name,
+              phone: phone,
+              distance: distance,
+              city: city,
+              area: area,
+              age: age,
+              position: position,
+              havePlace: havePlace,
+              isVerified: isVerified,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  locationDisplay,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11, fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            ]),
+            const SizedBox(height: 14),
+            Row(children: [
+              Text(
+                name,
+                style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
+              ),
+              if (isVerified) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.verified, color: Colors.blueAccent, size: 20),
+              ],
+            ]),
+            const SizedBox(height: 12),
+            _buildInfoRow('Age', age.toString()),
+            _buildInfoRow('Position', position),
+            _buildInfoRow('Have Place', havePlace),
+            const Spacer(),
+            if (likedBy != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [Colors.amber.shade400, Colors.orange.shade400]),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Liked by $likedBy People',
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                  )
+                ]),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(children: [
+        Text('$label ', style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500)),
+        Text(value, style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+}
