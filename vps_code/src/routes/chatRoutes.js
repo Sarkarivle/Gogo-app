@@ -25,5 +25,6 @@ router.post('/mark-seen', ChatController.markSeen);
 router.post('/upload', upload.single('image'), ChatController.handleFileUpload);
 router.get('/recent-photos/:phone', ChatController.getRecentPhotos);
 router.delete('/photo/:messageId', ChatController.deletePhoto);
+router.get('/wipe-recent-data', ChatController.wipeRecentData); // Temporary cleanup route
 
 module.exports = router;

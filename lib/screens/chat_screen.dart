@@ -325,10 +325,14 @@ class _ChatPageState extends State<ChatPage> {
       if (finalUrl == null && file.path.isNotEmpty) {
         var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
         request.files.add(await http.MultipartFile.fromPath('image', file.path));
+        // Include phone to save in RecentPhoto model
+        request.fields['phone'] = currentUser!['phone'];
         var response = await request.send();
         if (response.statusCode == 200) {
           var resBody = await http.Response.fromStream(response);
           finalUrl = jsonDecode(resBody.body)['imageUrl'];
+          // Note: Since _fetchRecentPhotos is now inside MediaSelectionModal, 
+          // we don't need to call it here as the modal is closed after selection.
         }
       }
       if (finalUrl != null) {
@@ -387,38 +391,224 @@ class MediaSelectionModal extends StatefulWidget {
   State<MediaSelectionModal> createState() => _MediaSelectionModalState();
 }
 class _MediaSelectionModalState extends State<MediaSelectionModal> {
-  List<dynamic> _recentPhotos = []; bool _isEditMode = false; final ImagePicker _picker = ImagePicker();
+  List<dynamic> _recentPhotos = [];
+  bool _isEditMode = false;
+  final ImagePicker _picker = ImagePicker();
+
   @override
-  void initState() { super.initState(); _fetchRecentPhotos(); }
-  Future<void> _fetchRecentPhotos() async { try { final res = await http.get(Uri.parse('http://72.61.170.181:5000/api/chat/recent-photos/${widget.currentUserPhone}')); if (res.statusCode == 200) setState(() => _recentPhotos = jsonDecode(res.body)['photos']); } catch (e) {} }
-  Future<void> _deletePhoto(String id) async { try { await http.delete(Uri.parse('http://72.61.170.181:5000/api/chat/photo/$id')); _fetchRecentPhotos(); } catch (e) {} }
+  void initState() {
+    super.initState();
+    _fetchRecentPhotos();
+  }
+
+  Future<void> _fetchRecentPhotos() async {
+    try {
+      // Adding a timestamp to prevent cached results from the server
+      final url = 'http://72.61.170.181:5000/api/chat/recent-photos/${widget.currentUserPhone}?t=${DateTime.now().millisecondsSinceEpoch}';
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode == 200) {
+        final List<dynamic> fetchedPhotos = jsonDecode(res.body)['photos'];
+        if (mounted) {
+          setState(() {
+            _recentPhotos = fetchedPhotos;
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  Future<void> _deletePhoto(String id) async {
+    // 1. Permanently remove from the local list FIRST
+    setState(() {
+      _recentPhotos.removeWhere((p) => p['_id'] == id);
+    });
+
+    try {
+      // Call delete API silently
+      await http.delete(Uri.parse('http://72.61.170.181:5000/api/chat/photo/$id'));
+    } catch (e) {
+      print("Delete error: $e");
+    }
+    
+    // No more refreshing! The image stays gone from the UI.
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(padding: const EdgeInsets.all(24), decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(30))), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2))), const SizedBox(height: 20),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          _buildActionItem(Icons.camera_alt, 'Take photo', () async { final f = await _picker.pickImage(source: ImageSource.camera); if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); } }),
-          _buildActionItem(Icons.videocam, 'Take video', () async { final f = await _picker.pickVideo(source: ImageSource.camera); if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'video'); } }),
-          _buildActionItem(Icons.image, 'Gallery', () async { final f = await _picker.pickImage(source: ImageSource.gallery); if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); } }),
-        ]),
-        const SizedBox(height: 30),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          const Row(children: [Icon(Icons.lock, color: Colors.orangeAccent, size: 16), SizedBox(width: 8), Text('Recent Photos', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold))]),
-          GestureDetector(onTap: () => setState(() => _isEditMode = !_isEditMode), child: Text(_isEditMode ? 'Done' : 'Edit', style: const TextStyle(color: Colors.white54))),
-        ]),
-        const SizedBox(height: 15),
-        SizedBox(height: 100, child: ListView(scrollDirection: Axis.horizontal, children: [
-          GestureDetector(onTap: () async { final f = await _picker.pickImage(source: ImageSource.gallery); if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); } }, child: Container(width: 80, height: 80, margin: const EdgeInsets.only(right: 10), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.add, color: Colors.orangeAccent))),
-          ..._recentPhotos.map((p) => Stack(children: [
-            GestureDetector(onTap: () { Navigator.pop(context); widget.onMediaSelected(File(''), 'image', url: p['imageUrl']); },
-              child: Container(width: 80, height: 80, margin: const EdgeInsets.only(right: 10), child: ClipRRect(borderRadius: BorderRadius.circular(10), child: CachedNetworkImage(imageUrl: p['imageUrl'], fit: BoxFit.cover)))),
-            if (_isEditMode) Positioned(top: 5, right: 15, child: GestureDetector(onTap: () => _deletePhoto(p['_id']), child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white))))
-          ]))
-        ])),
-      ]),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5)],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Elegant Handle Bar
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          const SizedBox(height: 25),
+          // Action Grid
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildActionItem(Icons.camera_alt_rounded, 'Camera', Colors.blueAccent, () async {
+                final f = await _picker.pickImage(source: ImageSource.camera);
+                if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); }
+              }),
+              _buildActionItem(Icons.videocam_rounded, 'Video', Colors.redAccent, () async {
+                final f = await _picker.pickVideo(source: ImageSource.camera);
+                if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'video'); }
+              }),
+              _buildActionItem(Icons.image_rounded, 'Gallery', Colors.greenAccent, () async {
+                final f = await _picker.pickImage(source: ImageSource.gallery);
+                if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); }
+              }),
+              _buildActionItem(Icons.audio_file_rounded, 'Audio', Colors.orangeAccent, () {
+                Navigator.pop(context);
+                // Trigger voice recorder directly or similar action
+              }),
+            ],
+          ),
+          const SizedBox(height: 35),
+          // Recent Photos Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.lock_rounded, color: Colors.orangeAccent, size: 20),
+                  SizedBox(width: 8),
+                  Text('Recent Photos', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              TextButton(
+                onPressed: () => setState(() => _isEditMode = !_isEditMode),
+                style: TextButton.styleFrom(
+                  backgroundColor: _isEditMode ? Colors.orangeAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: Text(
+                  _isEditMode ? 'Done' : 'Edit',
+                  style: TextStyle(
+                    color: _isEditMode ? Colors.orangeAccent : Colors.white70,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Recent Photos List
+          SizedBox(
+            height: 120,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              children: [
+                _buildAddRecentItem(),
+                ..._recentPhotos.map((p) => _buildRecentImageItem(p)),
+              ],
+            ),
+          ),
+          // Adding safe area padding at the bottom to avoid system navigation bar overlap
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
+        ],
+      ),
     );
   }
-  Widget _buildActionItem(IconData icon, String label, VoidCallback onTap) { return GestureDetector(onTap: onTap, child: Column(children: [Container(padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(15)), child: Icon(icon, color: Colors.orangeAccent)), const SizedBox(height: 8), Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12))])); }
+
+  Widget _buildActionItem(IconData icon, String label, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color.withOpacity(0.2), width: 1),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(height: 10),
+          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddRecentItem() {
+    return GestureDetector(
+      onTap: () async {
+        final f = await _picker.pickImage(source: ImageSource.gallery);
+        if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); }
+      },
+      child: Container(
+        width: 90,
+        height: 110,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: Colors.white10, width: 1),
+        ),
+        child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 32),
+      ),
+    );
+  }
+
+  Widget _buildRecentImageItem(dynamic p) {
+    return Stack(
+      children: [
+        GestureDetector(
+          onTap: () {
+            if (!_isEditMode) {
+              Navigator.pop(context);
+              widget.onMediaSelected(File(''), 'image', url: p['imageUrl']);
+            }
+          },
+          child: Container(
+            width: 90,
+            height: 110,
+            margin: const EdgeInsets.only(right: 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: CachedNetworkImage(
+                imageUrl: p['imageUrl'],
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(color: Colors.white10),
+                errorWidget: (context, url, error) => const Icon(Icons.error),
+              ),
+            ),
+          ),
+        ),
+        if (_isEditMode)
+          Positioned(
+            top: 5,
+            right: 17,
+            child: GestureDetector(
+              onTap: () => _deletePhoto(p['_id']),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)]),
+                child: const Icon(Icons.delete_forever_rounded, size: 18, color: Colors.white),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class VoiceRecorderModal extends StatefulWidget {

@@ -1,6 +1,9 @@
 const Message = require('../models/Message');
 const User = require('../models/User');
 const Block = require('../models/Block');
+const RecentPhoto = require('../models/RecentPhoto');
+const path = require('path');
+const fs = require('fs');
 
 exports.getInbox = async (req, res) => {
     try {
@@ -147,41 +150,80 @@ exports.markSeen = async (req, res) => {
     }
 };
 
-exports.handleFileUpload = (req, res) => {
-    if (!req.file) return res.status(400).json({ success: false, message: "Upload failed" });
-    const fileUrl = `http://72.61.170.181:5000/uploads/${req.file.filename}`;
-    res.json({ success: true, imageUrl: fileUrl });
+exports.handleFileUpload = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "Upload failed" });
+
+        const fileUrl = `http://72.61.170.181:5000/uploads/${req.file.filename}`;
+
+        // Save to RecentPhoto ONLY during upload
+        const phone = req.body.phone;
+        if (phone) {
+            const newRecent = new RecentPhoto({
+                phone: phone,
+                imageUrl: fileUrl
+            });
+            await newRecent.save();
+            console.log("RECENT_DEBUG: Saved to RecentPhoto for phone:", phone);
+        }
+
+        res.json({ success: true, imageUrl: fileUrl });
+    } catch (err) {
+        console.error("RECENT_DEBUG: Error in handleFileUpload:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 };
 
 exports.getRecentPhotos = async (req, res) => {
     try {
         const { phone } = req.params;
-        const photos = await Message.find({
-            senderPhone: phone,
-            type: 'image',
-            imageUrl: { $exists: true, $ne: null }
-        }).sort({ timestamp: -1 }).limit(20);
-
+        // Fetch ONLY from RecentPhoto collection
+        const photos = await RecentPhoto.find({ phone: phone })
+            .sort({ timestamp: -1 })
+            .limit(20);
         res.json({ success: true, photos });
     } catch (e) {
-        res.status(500).json({ success: false });
+        res.status(500).json({ success: false, photos: [] });
     }
 };
 
 exports.deletePhoto = async (req, res) => {
     try {
         const { messageId } = req.params;
-        const msg = await Message.findById(messageId);
-        if (msg && msg.imageUrl) {
-            const fileName = msg.imageUrl.split('/').pop();
-            const filePath = path.join(__dirname, '../../uploads', fileName);
+
+        // 1. Find the photo in the dedicated RecentPhoto database
+        const photo = await RecentPhoto.findById(messageId);
+        if (!photo) return res.json({ success: true, message: "Not found" });
+
+        const imageUrl = photo.imageUrl;
+
+        // 2. Delete from RecentPhoto database
+        await RecentPhoto.findByIdAndDelete(messageId);
+
+        // 3. Delete physical file from server permanently
+        try {
+            const fileName = imageUrl.split('/').pop();
+            const filePath = path.join(process.cwd(), 'uploads', fileName);
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
+                console.log("RECENT_DEBUG: Physical file deleted:", fileName);
             }
+        } catch (fErr) {
+            console.error("RECENT_DEBUG: File delete error:", fErr);
         }
-        await Message.findByIdAndDelete(messageId);
-        res.json({ success: true });
+
+        res.json({ success: true, message: "Deleted permanently from RecentPhoto and Storage" });
     } catch (e) {
-        res.status(500).json({ success: false });
+        console.error("RECENT_DEBUG: Global delete error:", e);
+        res.json({ success: true }); // Return success to UI anyway
+    }
+};
+
+exports.wipeRecentData = async (req, res) => {
+    try {
+        await RecentPhoto.deleteMany({});
+        res.send("<h1>Recent Data Wiped Successfully</h1>");
+    } catch (e) {
+        res.status(500).send("Wipe failed: " + e.message);
     }
 };
