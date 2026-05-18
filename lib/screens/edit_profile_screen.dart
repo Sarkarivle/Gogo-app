@@ -77,8 +77,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
         final data = jsonDecode(response.body);
         if (data['success']) {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('user_data', jsonEncode(data['user']));
-          if (mounted) Navigator.pop(context, true);
+          
+          // Merge updated data with existing data to ensure nothing is lost
+          Map<String, dynamic> existingData = jsonDecode(prefs.getString('user_data') ?? '{}');
+          Map<String, dynamic> newData = Map<String, dynamic>.from(data['user']);
+          
+          // Overwrite only with what the server returned (which includes our updates)
+          existingData.addAll(newData);
+          
+          await prefs.setString('user_data', jsonEncode(existingData));
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Profile updated successfully'), backgroundColor: Colors.green),
+            );
+            Navigator.pop(context, true);
+          }
         }
       }
     } catch (e) { print(e); } finally { if (mounted) setState(() => _isLoading = false); }

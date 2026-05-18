@@ -83,10 +83,30 @@ exports.updateLocation = async (req, res) => {
 exports.updateProfile = async (req, res) => {
     try {
         const { phone, ...updateData } = req.body;
+
+        // Calculate age if dobYear is provided
+        if (updateData.dobYear) {
+            const currentYear = new Date().getFullYear();
+            const year = parseInt(updateData.dobYear);
+            if (!isNaN(year)) {
+                updateData.age = currentYear - year;
+            }
+        }
+
         updateData.lastSeen = new Date();
-        const updatedUser = await User.findOneAndUpdate({ phone }, updateData, { new: true });
+        const updatedUser = await User.findOneAndUpdate(
+            { phone },
+            { $set: updateData }, // Using $set to ensure only provided fields are updated
+            { new: true, upsert: false } // upsert: false ensures we only update existing users
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
         res.json({ success: true, user: updatedUser });
     } catch (e) {
+        console.error("UPDATE_PROFILE_ERROR:", e);
         res.status(500).json({ success: false, message: e.message });
     }
 };
