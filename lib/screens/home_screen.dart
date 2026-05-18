@@ -24,7 +24,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late TabController _tabController;
   List<dynamic> _profiles = [];
   bool _isLoadingProfiles = false;
-  bool _isInitialLoading = true;
   int _totalUnreadCount = 0;
   late IO.Socket socket;
   Map<String, dynamic>? currentUser;
@@ -44,21 +43,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _initHomeScreen() async {
-    setState(() => _isInitialLoading = true);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userData = prefs.getString('user_data');
-      if (userData != null) currentUser = jsonDecode(userData);
-      _initGlobalSocket();
-      await _updateMyLocation();
-      await _fetchProfiles();
-      _fetchUnreadCount();
-      _unreadTimer = Timer.periodic(const Duration(seconds: 10), (t) => _fetchUnreadCount());
-    } catch (e) {
-      print(e);
-    } finally {
-      if (mounted) setState(() => _isInitialLoading = false);
-    }
+    final prefs = await SharedPreferences.getInstance();
+    final userData = prefs.getString('user_data');
+    if (userData != null) currentUser = jsonDecode(userData);
+    _initGlobalSocket();
+    await _updateMyLocation();
+    _fetchProfiles();
+    _fetchUnreadCount();
+    _unreadTimer = Timer.periodic(const Duration(seconds: 10), (t) => _fetchUnreadCount());
   }
 
   void _initGlobalSocket() {
@@ -219,21 +211,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    if (_isInitialLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F0F0F),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: Colors.orangeAccent),
-              SizedBox(height: 20),
-              Text('Connecting to server...', style: TextStyle(color: Colors.white54, fontSize: 14)),
-            ],
-          ),
-        ),
-      );
-    }
     return Scaffold(
       body: Stack(
         children: [

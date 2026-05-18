@@ -37,7 +37,7 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -57,8 +57,26 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initSocket();
     _loadUserAndHistory();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _messageController.dispose();
+    _scrollController.dispose();
+    _typingTimer?.cancel();
+    socket.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // This is called when the keyboard opens/closes
+    _scrollToBottom();
   }
 
   Future<void> _loadUserAndHistory() async {
@@ -179,7 +197,12 @@ class _ChatPageState extends State<ChatPage> {
     socket.on('message_deleted', (data) { if (mounted) setState(() => _messages.removeWhere((m) => m.id == data['messageId'])); });
     socket.on('message_edited', (data) { if (mounted) { setState(() { final index = _messages.indexWhere((m) => m.id == data['messageId']); if (index != -1) { _messages[index].text = data['newText']; _messages[index].isEdited = true; } }); } });
     socket.on('chat_status_update', (data) { if (mounted) { _checkBlockStatus(); _fetchChatHistory(); } });
-    socket.on('display_typing', (data) { if (mounted && data['phone'] == widget.receiverPhone) setState(() => _isOtherTyping = true); });
+    socket.on('display_typing', (data) { 
+      if (mounted && data['phone'] == widget.receiverPhone) {
+        setState(() => _isOtherTyping = true);
+        _scrollToBottom();
+      }
+    });
     socket.on('hide_typing', (data) { if (mounted && data['phone'] == widget.receiverPhone) setState(() => _isOtherTyping = false); });
     socket.on('user_status_change', (data) { if (mounted && data['phone'] == widget.receiverPhone) setState(() => _isOnline = data['isOnline'] ?? false); });
   }
@@ -281,7 +304,11 @@ class _ChatPageState extends State<ChatPage> {
       }
       if (_isOtherTyping) children.add(_buildTypingIndicator());
     }
-    return ListView(controller: _scrollController, children: children);
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(bottom: 20),
+      children: children,
+    );
   }
 
   Widget _buildTypingIndicator() {
@@ -304,9 +331,23 @@ class _ChatPageState extends State<ChatPage> {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       if (_isBlocked) Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20), color: Colors.red.withOpacity(0.1), child: Center(child: Text(isBlockedByMe ? 'You blocked this user.' : 'This chat is currently blocked', style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)))),
       if (_replyingToMessage != null) Container(padding: const EdgeInsets.all(12), color: Colors.white.withOpacity(0.05), child: Row(children: [Container(width: 4, height: 40, color: Colors.orangeAccent), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_replyingToMessage!.isMe ? 'You' : widget.name, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)), Text(_replyingToMessage!.text ?? 'Image', style: const TextStyle(color: Colors.white70, fontSize: 12), maxLines: 1)]))])),
-      Container(padding: const EdgeInsets.fromLTRB(16, 8, 16, 50), color: const Color(0xFF1A1A1A), child: Row(children: [
+      Container(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 10),
+        color: const Color(0xFF1A1A1A),
+        child: Row(children: [
         GestureDetector(onTap: () { if (_isBlocked) return; _showMediaPopup(); }, child: const Icon(Icons.add_box_rounded, color: Colors.orangeAccent, size: 28)), const SizedBox(width: 12),
-        Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16), height: 45, decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)), child: TextField(controller: _messageController, onSubmitted: (val) => _sendMessage(), onChanged: (val) { if (_isBlocked) return; socket.emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); _typingTimer?.cancel(); _typingTimer = Timer(const Duration(seconds: 2), () => socket.emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone})); setState(() {}); }, decoration: const InputDecoration(hintText: 'Enter message', border: InputBorder.none)))),
+        Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16), height: 45, decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)), child: TextField(
+          controller: _messageController, 
+          onSubmitted: (val) => _sendMessage(),
+          onTap: () => _scrollToBottom(), // Scroll when clicking on text field
+          onChanged: (val) { 
+            if (_isBlocked) return; 
+            socket.emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); 
+            _typingTimer?.cancel(); 
+            _typingTimer = Timer(const Duration(seconds: 2), () => socket.emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone})); 
+            setState(() {}); 
+          }, 
+          decoration: const InputDecoration(hintText: 'Enter message', border: InputBorder.none)))),
         const SizedBox(width: 12),
         _messageController.text.trim().isEmpty ? GestureDetector(onTap: () { if (_isBlocked) return; _showVoiceRecorderModal(); }, child: const Icon(Icons.mic_rounded, color: Colors.orangeAccent, size: 28)) : GestureDetector(onTap: _sendMessage, child: const Icon(Icons.send_rounded, color: Colors.orangeAccent, size: 28))
       ]))
