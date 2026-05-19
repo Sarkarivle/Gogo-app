@@ -98,6 +98,7 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('message_deleted', (data) => _eventController.add({'event': 'message_deleted', 'data': data}));
     _socket!.on('message_edited', (data) => _eventController.add({'event': 'message_edited', 'data': data}));
     _socket!.on('message_deleted_for_everyone', (data) => _eventController.add({'event': 'message_deleted_for_everyone', 'data': data}));
+    _socket!.on('moderation_state_updated', (data) => _eventController.add({'event': 'moderation_state_updated', 'data': data}));
     _socket!.on('chat_status_update', (data) => _eventController.add({'event': 'chat_status_update', 'data': data}));
   }
 

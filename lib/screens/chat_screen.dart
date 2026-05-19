@@ -58,6 +58,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _messageController.addListener(() { if (mounted) setState(() {}); }); // Instant Mic/Send swap
     _loadUserAndHistory();
     _listenToSocket();
   }
@@ -109,6 +110,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
       setState(() {
         switch (event['event']) {
+          case 'moderation_state_updated':
+            if (data['roomId'] == _getRoomId()) {
+              _isBlocked = data['isBlocked'] ?? false;
+              _blockerPhone = data['blockerPhone'];
+              if (_isBlocked) {
+                SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+              }
+            }
+            break;
           case 'message_delivered':
             final idx = _messages.indexWhere((m) => m.id == data['messageId']);
             if (idx != -1) _messages[idx].status = MessageStatus.delivered;
@@ -121,10 +131,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               setState(() {
                 _messages[idx].status = MessageStatus.seen;
                 _messages[idx].isOpened = true;
-                if (isViewOnce) {
-                   // For view once, we might want to clear image/media reference locally
-                   // although backend nullifies it, UI state should be updated.
-                }
               });
             }
             break;
@@ -165,7 +171,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final newMessage = ChatMessage.fromJson(data, currentUser?['phone'] ?? '');
     
     setState(() {
-      // 1. Remove any optimistic message with same localId OR same content (as fallback)
       if (newMessage.isMe) {
         _messages.removeWhere((m) => 
           (m.localId != null && m.localId == data['localId']) || 
@@ -173,11 +178,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         );
       }
       
-      // 2. Add server message if not already present
       if (!_messages.any((m) => m.id == newMessage.id)) {
         _messages.add(newMessage);
-        
-        // 3. Mark as opened if I am receiving it
         if (!newMessage.isMe) {
           SocketService().emit('mark_opened', {
             'messageId': newMessage.id,
@@ -258,7 +260,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       text: text,
       isMe: true,
       timestamp: DateTime.now(),
-      status: MessageStatus.sending,
+      status: _isBlocked ? MessageStatus.error : MessageStatus.sending,
       replyToId: _replyingToMessage?.id,
       replyText: _replyingToMessage?.text,
       replyType: _replyingToMessage?.type,
@@ -271,7 +273,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
     _scrollToBottom();
 
-    // EMIT WITH ACK - If callback doesn't run, socket might be down
+    if (_isBlocked) return; // Don't actually emit if blocked
+
     SocketService().emit('send_message', {
       'localId': localId,
       'senderPhone': currentUser!['phone'],
@@ -286,15 +289,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (mounted && ack != null) {
         if (ack['success'] == false) {
           setState(() => optimisticMsg.status = MessageStatus.error);
-        } else {
-          // Message confirmed by server, will be replaced when receive_message fires
-          debugPrint('🚀 Message ACK received for $localId');
         }
       }
     });
   }
 
   Future<void> _uploadMedia(File file, String type, {bool isViewOnce = false}) async {
+    if (_isBlocked) {
+      final localId = DateTime.now().millisecondsSinceEpoch.toString();
+      setState(() {
+        _messages.add(ChatMessage(
+          localId: localId,
+          text: type == 'image' ? '📷 Image' : '🎵 Voice Message',
+          isMe: true,
+          timestamp: DateTime.now(),
+          status: MessageStatus.error,
+          type: type,
+        ));
+      });
+      _scrollToBottom();
+      return;
+    }
+
     setState(() => _isLoadingHistory = true);
     try {
       var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
@@ -351,14 +367,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         children: [
           Expanded(child: _buildMessageList()),
           if (_isLoadingHistory) const LinearProgressIndicator(color: Colors.orangeAccent, minHeight: 1),
-          ValueListenableBuilder<Map<String, bool>>(
-            valueListenable: SocketService().typingUsers,
-            builder: (context, typingMap, _) {
-              final bool isTyping = typingMap[widget.receiverPhone] ?? false;
-              if (!isTyping) return const SizedBox.shrink();
-              return _buildTypingIndicator();
-            },
-          ),
           _buildInputArea(),
         ],
       ),
@@ -660,44 +668,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2A2A2A),
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('typing', style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
-              SizedBox(width: 8),
-              SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.orangeAccent),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInputArea() {
-    if (_isBlocked) {
-      bool isBlockedByMe = _blockerPhone == currentUser?['phone'];
-      return Container(
-        padding: const EdgeInsets.all(20),
-        color: const Color(0xFF1A1A1A),
-        child: Center(child: Text(isBlockedByMe ? 'You blocked this user.' : 'This chat is blocked', style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold))),
-      );
-    }
-
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 10),
       color: const Color(0xFF1A1A1A),
@@ -714,6 +685,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
+                  height: 50,
+                  alignment: Alignment.centerLeft,
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)),
                   child: TextField(
                     controller: _messageController,
@@ -765,12 +738,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _handleTypingStatus() {
+    if (_isBlocked) return; // Don't send socket event if blocked
+    
     SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 2), () {
       SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
     });
-    setState(() {});
   }
 
   // --- POPUPS & MODALS ---
@@ -783,6 +757,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       builder: (_) => MediaSelectionModal(
         currentUserPhone: currentUser!['phone'],
         onMediaSelected: (file, type, {String? url}) async {
+          if (_isBlocked) {
+             final localId = DateTime.now().millisecondsSinceEpoch.toString();
+             setState(() {
+                _messages.add(ChatMessage(
+                  localId: localId,
+                  text: type == 'image' ? '📷 Image' : '🎵 Voice Message',
+                  imageUrl: url,
+                  isMe: true,
+                  timestamp: DateTime.now(),
+                  status: MessageStatus.error,
+                  type: type,
+                ));
+             });
+             _scrollToBottom();
+             return;
+          }
+
           if (url != null) {
             SocketService().emit('send_message', {
               'senderPhone': currentUser!['phone'],

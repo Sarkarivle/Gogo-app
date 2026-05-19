@@ -169,11 +169,11 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
       final prefs = await SharedPreferences.getInstance();
       final myPhone = jsonDecode(prefs.getString('user_data') ?? '{}')['phone'];
 
-      await ApiService.post('/api/chat/block', {
+      // Realtime Block via Socket
+      SocketService().emit('block_user', {
         'blockerPhone': myPhone,
         'blockedPhone': widget.phone,
         'reason': reason,
-        'isReported': withReport
       });
 
       if (withReport) {
@@ -185,12 +185,6 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
           'description': details,
         });
       }
-
-      // Notify server via socket for real-time sync
-      SocketService().emit('notify_block', {
-        'blockerPhone': myPhone,
-        'blockedPhone': widget.phone,
-      });
 
       if (mounted) {
         setState(() => _isBlockedByMe = true);
@@ -252,13 +246,8 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
               Navigator.pop(context);
               setState(() => _isActionInProgress = true);
               try {
-                await ApiService.post('/api/chat/unblock', {
-                  'blockerPhone': myPhone,
-                  'blockedPhone': widget.phone,
-                });
-                
-                // Notify server via socket
-                SocketService().emit('notify_unblock', {
+                // Realtime Unblock via Socket
+                SocketService().emit('unblock_user', {
                   'blockerPhone': myPhone,
                   'blockedPhone': widget.phone,
                 });

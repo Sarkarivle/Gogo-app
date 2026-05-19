@@ -185,6 +185,83 @@ io.on('connection', (socket) => {
         } catch (e) {}
     });
 
+    socket.on('block_user', async (data) => {
+        try {
+            const { blockerPhone, blockedPhone, reason } = data;
+            await Block.findOneAndUpdate(
+                { blockerPhone, blockedPhone },
+                { reason, timestamp: new Date() },
+                { upsert: true, new: true }
+            );
+            const roomId = [blockerPhone, blockedPhone].sort().join('_');
+            const systemMsg = new Message({
+                roomId,
+                senderPhone: blockerPhone,
+                receiverPhone: blockedPhone,
+                message: `Blocked`,
+                type: 'block_event'
+            });
+            await systemMsg.save();
+
+            // Centralized Realtime Sync: Broadcast moderation status
+            const syncData = {
+                isBlocked: true,
+                blockerPhone: blockerPhone,
+                blockedPhone: blockedPhone,
+                roomId: roomId
+            };
+
+            io.to(roomId).emit('moderation_state_updated', syncData);
+
+            // Also send to all individual sockets of the blocked user (in case they aren't in the room)
+            const blockedUserSockets = phoneToSockets.get(blockedPhone);
+            if (blockedUserSockets) {
+                blockedUserSockets.forEach(sId => io.to(sId).emit('moderation_state_updated', syncData));
+            }
+
+            io.to(roomId).emit('receive_message', systemMsg);
+        } catch (e) {
+            console.error("Socket Block Error:", e);
+        }
+    });
+
+    socket.on('unblock_user', async (data) => {
+        try {
+            const { blockerPhone, blockedPhone } = data;
+            await Block.findOneAndDelete({ blockerPhone, blockedPhone });
+            const roomId = [blockerPhone, blockedPhone].sort().join('_');
+
+            const systemMsg = new Message({
+                roomId,
+                senderPhone: blockerPhone,
+                receiverPhone: blockedPhone,
+                message: `Unblocked`,
+                type: 'unblock_event'
+            });
+            await systemMsg.save();
+
+            // Centralized Realtime Sync: Broadcast moderation status
+            const syncData = {
+                isBlocked: false,
+                blockerPhone: null,
+                blockedPhone: blockedPhone,
+                roomId: roomId
+            };
+
+            io.to(roomId).emit('moderation_state_updated', syncData);
+
+            // Also send to all individual sockets of the blocked user
+            const blockedUserSockets = phoneToSockets.get(blockedPhone);
+            if (blockedUserSockets) {
+                blockedUserSockets.forEach(sId => io.to(sId).emit('moderation_state_updated', syncData));
+            }
+
+            io.to(roomId).emit('receive_message', systemMsg);
+        } catch (e) {
+            console.error("Socket Unblock Error:", e);
+        }
+    });
+
     socket.on('disconnect', () => {
         const phone = connectedUsers.get(socket.id);
         if (phone) {
