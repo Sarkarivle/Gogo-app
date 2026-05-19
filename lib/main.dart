@@ -7,11 +7,15 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding/location_permission_screen.dart';
 import 'services/notification_service.dart';
+import 'services/socket_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await NotificationService.initialize();
+  
+  // Initialize Global Socket Service
+  SocketService().init();
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Color(0xFF2A0D17),

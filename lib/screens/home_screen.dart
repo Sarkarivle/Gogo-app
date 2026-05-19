@@ -7,7 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../services/socket_service.dart';
 import '../widgets/profile_card.dart';
 import '../widgets/blinking_dot.dart';
 import 'inbox_screen.dart';
@@ -25,9 +25,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<dynamic> _profiles = [];
   bool _isLoadingProfiles = false;
   int _totalUnreadCount = 0;
-  late IO.Socket socket;
   Map<String, dynamic>? currentUser;
   Timer? _unreadTimer;
+  StreamSubscription? _socketEventSub;
 
   String _selectedDistance = '9km';
   String _selectedAge = 'Any';
@@ -45,23 +45,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _initHomeScreen() async {
     final prefs = await SharedPreferences.getInstance();
     final userData = prefs.getString('user_data');
-    if (userData != null) currentUser = jsonDecode(userData);
-    _initGlobalSocket();
+    if (userData != null) {
+      currentUser = jsonDecode(userData);
+      SocketService().updateCurrentUser(currentUser!['phone']);
+    }
+    _listenToSocketEvents();
     await _updateMyLocation();
     _fetchProfiles();
     _fetchUnreadCount();
     _unreadTimer = Timer.periodic(const Duration(seconds: 10), (t) => _fetchUnreadCount());
   }
 
-  void _initGlobalSocket() {
-    socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{'transports': ['websocket'], 'autoConnect': true});
-    socket.onConnect((_) {
-      if (currentUser != null) {
-        socket.emit('set_online', currentUser!['phone']);
+  void _listenToSocketEvents() {
+    _socketEventSub = SocketService().eventStream.listen((event) {
+      if (event['event'] == 'unread_update') {
+        final data = event['data'];
+        if (currentUser != null && data['phone'] == currentUser!['phone']) {
+          _fetchUnreadCount();
+        }
       }
-    });
-    socket.on('unread_update', (data) {
-      if (currentUser != null && data['phone'] == currentUser!['phone']) _fetchUnreadCount();
     });
   }
 
@@ -212,7 +214,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
-  void dispose() { _tabController.dispose(); _unreadTimer?.cancel(); socket.dispose(); super.dispose(); }
+  void dispose() { 
+    _tabController.dispose(); 
+    _unreadTimer?.cancel(); 
+    _socketEventSub?.cancel();
+    super.dispose(); 
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -299,18 +306,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   itemCount: _profiles.length,
                     itemBuilder: (context, i) {
                       final p = _profiles[i];
-                      return ProfileCard(
-                        distance: p['calculated_dist'] ?? 'Unknown', 
-                        city: p['city'] ?? '',
-                        area: p['area'] ?? '',
-                        name: p['name'] ?? 'Unknown', 
-                        phone: p['phone'] ?? '', 
-                        nameColor: const Color(0xFFC69C55), 
-                        age: p['age'] ?? 20, 
-                        position: p['position'] ?? 'Top', 
-                        havePlace: p['havePlace'] ?? 'NO', 
-                        isVerified: p['isVerified'] ?? false,
-                        likedBy: (i + 1) * 12
+                      return ValueListenableBuilder<Map<String, bool>>(
+                        valueListenable: SocketService().onlineUsers,
+                        builder: (context, onlineMap, _) {
+                          final bool isOnline = onlineMap[p['phone']] ?? p['isOnline'] ?? false;
+                          return ProfileCard(
+                            distance: p['calculated_dist'] ?? 'Unknown', 
+                            city: p['city'] ?? '',
+                            area: p['area'] ?? '',
+                            name: p['name'] ?? 'Unknown', 
+                            phone: p['phone'] ?? '', 
+                            nameColor: const Color(0xFFC69C55), 
+                            age: p['age'] ?? 20, 
+                            position: p['position'] ?? 'Top', 
+                            havePlace: p['havePlace'] ?? 'NO', 
+                            isVerified: p['isVerified'] ?? false,
+                            isOnline: isOnline,
+                            likedBy: (i + 1) * 12
+                          );
+                        }
                       );
                     },
                 ),

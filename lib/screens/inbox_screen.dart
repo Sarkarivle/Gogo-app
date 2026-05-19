@@ -1,10 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../services/socket_service.dart';
 import 'chat_screen.dart';
 
 class InboxScreen extends StatefulWidget {
@@ -16,9 +17,8 @@ class InboxScreen extends StatefulWidget {
 class _InboxScreenState extends State<InboxScreen> {
   List<dynamic> chatData = [];
   bool _isLoading = false;
-  late IO.Socket socket;
   Map<String, dynamic>? currentUser;
-  final Map<String, bool> _typingUsers = {};
+  StreamSubscription? _socketEventSub;
 
   @override
   void initState() {
@@ -31,55 +31,25 @@ class _InboxScreenState extends State<InboxScreen> {
     final userData = prefs.getString('user_data');
     if (userData != null) {
       currentUser = jsonDecode(userData);
-      _initSocket();
+      _listenToSocketEvents();
     }
     _fetchInbox();
   }
 
-  void _initSocket() {
-    socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{'transports': ['websocket'], 'autoConnect': true});
-    socket.onConnect((_) {
-      if (currentUser != null) {
-        socket.emit('set_online', currentUser!['phone']);
+  void _listenToSocketEvents() {
+    _socketEventSub = SocketService().eventStream.listen((event) {
+      if (event['event'] == 'unread_update') {
+        final data = event['data'];
+        if (currentUser != null && data['phone'] == currentUser!['phone']) {
+          _fetchInbox();
+        }
       }
-    });
-    
-    socket.on('user_status_change', (data) {
-      if (mounted) {
-        setState(() {
-          for (var chat in chatData) {
-            if (chat['phone'] == data['phone']) {
-              chat['isOnline'] = data['isOnline'];
-            }
-          }
-        });
-      }
-    });
-
-    socket.on('display_typing', (data) {
-      if (mounted) {
-        setState(() {
-          _typingUsers[data['phone']] = true;
-        });
-      }
-    });
-
-    socket.on('hide_typing', (data) {
-      if (mounted) {
-        setState(() {
-          _typingUsers[data['phone']] = false;
-        });
-      }
-    });
-    
-    socket.on('unread_update', (data) {
-       if (currentUser != null && data['phone'] == currentUser!['phone']) _fetchInbox();
     });
   }
 
   @override
   void dispose() {
-    socket.dispose();
+    _socketEventSub?.cancel();
     super.dispose();
   }
 
@@ -187,57 +157,67 @@ class _InboxScreenState extends State<InboxScreen> {
                     separatorBuilder: (c, i) => const Divider(color: Colors.white10, height: 1),
                     itemBuilder: (context, i) {
                       final chat = chatData[i];
-                      final bool isTyping = _typingUsers[chat['phone']] ?? false;
-                      final bool isOnline = chat['isOnline'] ?? false;
-                      
-                      return ListTile(
-                        onTap: () async {
-                          await Navigator.push(context, MaterialPageRoute(builder: (c) => ChatPage(name: chat['name'] ?? chat['phone'], receiverPhone: chat['phone'], distance: chat['dist'] ?? '', position: chat['pos'] ?? '')));
-                          _fetchInbox();
-                        },
-                        onLongPress: () => _showLongPressMenu(i),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: Stack(
-                          children: [
-                            const CircleAvatar(radius: 28, backgroundColor: Colors.white10, child: Icon(Icons.person, color: Colors.white54, size: 30)),
-                            if (isOnline) Positioned(right: 2, bottom: 2, child: Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0F0F0F), width: 2)))),
-                          ],
-                        ),
-                        title: Row(children: [
-                          Expanded(child: Text("${chat['name']}, ${chat['pos'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          Text(chat['time'] ?? '', style: const TextStyle(color: Colors.white54, fontSize: 12))
-                        ]),
-                        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const SizedBox(height: 4), 
-                          Row(
-                            children: [
-                              Text((chat['area'] != null && chat['area'] != "Unknown" && chat['area'] != "") ? "${chat['area']}, ${chat['dist'] ?? ''}" : (chat['city'] ?? chat['dist'] ?? ''), style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                              if (isOnline) ...[
-                                const SizedBox(width: 6),
-                                const Icon(Icons.circle, color: Colors.greenAccent, size: 8),
-                                const SizedBox(width: 4),
-                                const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold))
-                              ]
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Row(children: [
-                      Expanded(
-                        child: Text(
-                          isTyping ? "typing..." : (chat['msg'] ?? ''), 
-                          style: TextStyle(
-                            color: isTyping ? Colors.greenAccent : Colors.white70, 
-                            fontSize: 14, 
-                            fontWeight: isTyping ? FontWeight.bold : FontWeight.normal,
-                            fontStyle: isTyping ? FontStyle.italic : FontStyle.normal
-                          ), 
-                          maxLines: 1, 
-                          overflow: TextOverflow.ellipsis
-                        )
-                      ),
-                            if ((chat['unread'] ?? 0) > 0) Container(padding: const EdgeInsets.all(6), decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: Text(chat['unread'].toString(), style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)))
-                          ]),
-                        ]),
+                      return ValueListenableBuilder(
+                        valueListenable: SocketService().onlineUsers,
+                        builder: (context, onlineMap, _) {
+                          return ValueListenableBuilder(
+                            valueListenable: SocketService().typingUsers,
+                            builder: (context, typingMap, _) {
+                              final bool isTyping = typingMap[chat['phone']] ?? false;
+                              final bool isOnline = onlineMap[chat['phone']] ?? chat['isOnline'] ?? false;
+                              
+                              return ListTile(
+                                onTap: () async {
+                                  await Navigator.push(context, MaterialPageRoute(builder: (c) => ChatPage(name: chat['name'] ?? chat['phone'], receiverPhone: chat['phone'], distance: chat['dist'] ?? '', position: chat['pos'] ?? '')));
+                                  _fetchInbox();
+                                },
+                                onLongPress: () => _showLongPressMenu(i),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                leading: Stack(
+                                  children: [
+                                    const CircleAvatar(radius: 28, backgroundColor: Colors.white10, child: Icon(Icons.person, color: Colors.white54, size: 30)),
+                                    if (isOnline) Positioned(right: 2, bottom: 2, child: Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0F0F0F), width: 2)))),
+                                  ],
+                                ),
+                                title: Row(children: [
+                                  Expanded(child: Text("${chat['name']}, ${chat['pos'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                                  Text(chat['time'] ?? '', style: const TextStyle(color: Colors.white54, fontSize: 12))
+                                ]),
+                                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  const SizedBox(height: 4), 
+                                  Row(
+                                    children: [
+                                      Text((chat['area'] != null && chat['area'] != "Unknown" && chat['area'] != "") ? "${chat['area']}, ${chat['dist'] ?? ''}" : (chat['city'] ?? chat['dist'] ?? ''), style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                      if (isOnline) ...[
+                                        const SizedBox(width: 6),
+                                        const Icon(Icons.circle, color: Colors.greenAccent, size: 8),
+                                        const SizedBox(width: 4),
+                                        const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold))
+                                      ]
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(children: [
+                              Expanded(
+                                child: Text(
+                                  isTyping ? "typing..." : (chat['msg'] ?? ''), 
+                                  style: TextStyle(
+                                    color: isTyping ? Colors.greenAccent : Colors.white70, 
+                                    fontSize: 14, 
+                                    fontWeight: isTyping ? FontWeight.bold : FontWeight.normal,
+                                    fontStyle: isTyping ? FontStyle.italic : FontStyle.normal
+                                  ), 
+                                  maxLines: 1, 
+                                  overflow: TextOverflow.ellipsis
+                                )
+                              ),
+                                    if ((chat['unread'] ?? 0) > 0) Container(padding: const EdgeInsets.all(6), decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: Text(chat['unread'].toString(), style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)))
+                                  ]),
+                                ]),
+                              );
+                            }
+                          );
+                        }
                       );
                     },
                   ),

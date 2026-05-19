@@ -12,10 +12,10 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:intl/intl.dart';
 import '../models/chat_message.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
 
@@ -45,11 +45,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _isLoading = false;
   bool _isBlocked = false;
   String? _blockerPhone;
-  late IO.Socket socket;
   Map<String, dynamic>? currentUser;
-  bool _isOtherTyping = false;
-  bool _isOnline = false;
   Timer? _typingTimer;
+  StreamSubscription? _socketMsgSub;
+  StreamSubscription? _socketEventSub;
 
   String? _editingMessageId;
   ChatMessage? _replyingToMessage;
@@ -58,7 +57,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initSocket();
+    _listenToSocket();
     _loadUserAndHistory();
   }
 
@@ -68,15 +67,103 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
-    socket.dispose();
+    _socketMsgSub?.cancel();
+    _socketEventSub?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
-    // This is called when the keyboard opens/closes
     _scrollToBottom();
+  }
+
+  void _listenToSocket() {
+    _socketMsgSub = SocketService().messageStream.listen((data) {
+      _handleNewMessage(data);
+    });
+
+    _socketEventSub = SocketService().eventStream.listen((event) {
+      final data = event['data'];
+      switch (event['event']) {
+        case 'message_delivered':
+          if (mounted) setState(() {
+            final index = _messages.indexWhere((m) => m.id == data['messageId']);
+            if (index != -1) _messages[index].isDelivered = true;
+          });
+          break;
+        case 'message_opened':
+          if (mounted) setState(() {
+            final index = _messages.indexWhere((m) => m.id == data['messageId']);
+            if (index != -1) {
+              _messages[index].isOpened = true;
+              _messages[index].isSeen = true;
+            }
+          });
+          break;
+        case 'chat_seen_update':
+          if (mounted) setState(() {
+            for (var msg in _messages) {
+              if (msg.isMe) {
+                msg.isSeen = true;
+                msg.isDelivered = true;
+              }
+            }
+          });
+          break;
+        case 'message_deleted':
+          if (mounted) setState(() => _messages.removeWhere((m) => m.id == data['messageId']));
+          break;
+        case 'message_edited':
+          if (mounted) setState(() {
+            final index = _messages.indexWhere((m) => m.id == data['messageId']);
+            if (index != -1) {
+              _messages[index].text = data['newText'];
+              _messages[index].isEdited = true;
+            }
+          });
+          break;
+        case 'chat_status_update':
+          if (mounted) { _checkBlockStatus(); _fetchChatHistory(); }
+          break;
+      }
+    });
+  }
+
+  void _handleNewMessage(dynamic data) {
+    if (mounted) {
+      setState(() {
+        if (data['senderPhone'] == currentUser?['phone']) {
+          _messages.removeWhere((m) => m.id != null && m.id!.startsWith('temp_') && m.text == data['message']);
+        }
+        if (_messages.any((m) => m.id == data['_id'])) return;
+
+        bool isMe = data['senderPhone'] == currentUser?['phone'];
+
+        _messages.add(ChatMessage(
+          id: data['_id'],
+          text: data['message'],
+          imageUrl: data['imageUrl'],
+          audioUrl: data['audioUrl'],
+          type: data['type'] ?? 'text',
+          isViewOnce: data['isViewOnce'] ?? false,
+          isOpened: data['isOpened'] ?? false,
+          isMe: isMe,
+          timestamp: DateTime.parse(data['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
+          isDelivered: data['isDelivered'] ?? true,
+          isSeen: data['isOpened'] ?? false,
+        ));
+
+        if (!isMe && data['roomId'] == _getRoomId()) {
+          SocketService().emit('mark_opened', {
+            'messageId': data['_id'],
+            'myPhone': currentUser!['phone'],
+            'otherPhone': widget.receiverPhone
+          });
+        }
+      });
+      _scrollToBottom();
+    }
   }
 
   Future<void> _loadUserAndHistory() async {
@@ -91,24 +178,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _checkBlockStatus();
     _fetchChatHistory();
     _markMessagesAsSeen();
-    _fetchReceiverStatus();
   }
 
   void _joinRoom() {
     if (currentUser != null) {
-      socket.emit('set_online', currentUser!['phone']); // Tell server I'm online
-      socket.emit('join_room', _getRoomId());
+      SocketService().emit('join_room', _getRoomId());
     }
   }
 
   Future<void> _fetchReceiverStatus() async {
-    try {
-      final response = await ApiService.get('/api/admin/user/${widget.receiverPhone}/full');
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) setState(() => _isOnline = data['user']['isOnline'] ?? false);
-      }
-    } catch (e) {}
+    // Online status is now handled by SocketService ValueNotifier
   }
 
   Future<void> _checkBlockStatus() async {
@@ -147,7 +226,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 isOpened: msg['isOpened'] ?? false,
                 isMe: msg['senderPhone'] == currentUser!['phone'],
                 timestamp: DateTime.parse(msg['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
-                isDelivered: msg['isDelivered'] ?? true, // Default to true for history
+                isDelivered: msg['isDelivered'] ?? true, 
                 isSeen: msg['isOpened'] ?? false,
               ));
             }
@@ -164,98 +243,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return ids.join('_');
   }
 
-  void _initSocket() {
-    socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{'transports': ['websocket'], 'autoConnect': true});
-    socket.onConnect((_) { 
-      if (currentUser != null) {
-        socket.emit('set_online', currentUser!['phone']);
-      }
-      _joinRoom(); 
-    });
-    socket.on('receive_message', (data) {
-      if (mounted) {
-        setState(() {
-          if (data['senderPhone'] == currentUser?['phone']) {
-            _messages.removeWhere((m) => m.id != null && m.id!.startsWith('temp_') && m.text == data['message']);
-          }
-          if (_messages.any((m) => m.id == data['_id'])) return;
-          
-          bool isMe = data['senderPhone'] == currentUser?['phone'];
-          
-          _messages.add(ChatMessage(
-            id: data['_id'],
-            text: data['message'],
-            imageUrl: data['imageUrl'],
-            audioUrl: data['audioUrl'],
-            type: data['type'] ?? 'text',
-            isViewOnce: data['isViewOnce'] ?? false,
-            isOpened: data['isOpened'] ?? false,
-            isMe: isMe,
-            timestamp: DateTime.parse(data['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
-            isDelivered: data['isDelivered'] ?? true,
-            isSeen: data['isOpened'] ?? false,
-          ));
-
-          // If I am the receiver and I'm currently in this chat, mark it as seen immediately
-          if (!isMe) {
-            socket.emit('mark_opened', {
-              'messageId': data['_id'], 
-              'myPhone': currentUser!['phone'], 
-              'otherPhone': widget.receiverPhone
-            });
-          }
-        });
-        _scrollToBottom();
-      }
-    });
-    socket.on('message_delivered', (data) {
-      if (mounted) {
-        setState(() {
-          final index = _messages.indexWhere((m) => m.id == data['messageId']);
-          if (index != -1) _messages[index].isDelivered = true;
-        });
-      }
-    });
-    socket.on('message_opened', (data) {
-      if (mounted) {
-        setState(() {
-          final index = _messages.indexWhere((m) => m.id == data['messageId']);
-          if (index != -1) {
-            _messages[index].isOpened = true;
-            _messages[index].isSeen = true;
-          }
-        });
-      }
-    });
-    socket.on('chat_seen_update', (data) {
-      if (mounted) {
-        setState(() {
-          for (var msg in _messages) {
-            if (msg.isMe) {
-              msg.isSeen = true;
-              msg.isDelivered = true;
-            }
-          }
-        });
-      }
-    });
-    socket.on('message_deleted', (data) { if (mounted) setState(() => _messages.removeWhere((m) => m.id == data['messageId'])); });
-    socket.on('message_edited', (data) { if (mounted) { setState(() { final index = _messages.indexWhere((m) => m.id == data['messageId']); if (index != -1) { _messages[index].text = data['newText']; _messages[index].isEdited = true; } }); } });
-    socket.on('chat_status_update', (data) { if (mounted) { _checkBlockStatus(); _fetchChatHistory(); } });
-    socket.on('display_typing', (data) { 
-      if (mounted && data['phone'] == widget.receiverPhone) {
-        setState(() => _isOtherTyping = true);
-        _scrollToBottom();
-      }
-    });
-    socket.on('hide_typing', (data) { if (mounted && data['phone'] == widget.receiverPhone) setState(() => _isOtherTyping = false); });
-    socket.on('user_status_change', (data) { if (mounted && data['phone'] == widget.receiverPhone) setState(() => _isOnline = data['isOnline'] ?? false); });
-  }
-
   Future<void> _markMessagesAsSeen() async {
     if (currentUser == null) return;
-    // Mark all messages from this specific user as seen
-    socket.emit('mark_chat_seen', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    SocketService().emit('mark_chat_seen', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
   }
 
   Future<void> _uploadAudio(String path) async {
@@ -267,7 +257,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (response.statusCode == 200) {
         var resBody = await http.Response.fromStream(response);
         var data = jsonDecode(resBody.body);
-        socket.emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': '', 'audioUrl': data['imageUrl'], 'type': 'audio'});
+        SocketService().emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': '', 'audioUrl': data['imageUrl'], 'type': 'audio'});
       }
     } catch (e) {}
     setState(() => _isLoading = false);
@@ -278,12 +268,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     String msgText = _messageController.text.trim();
     if (_editingMessageId != null) {
       if (_isBlocked) return;
-      socket.emit('edit_message', {'messageId': _editingMessageId, 'newText': msgText, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+      SocketService().emit('edit_message', {'messageId': _editingMessageId, 'newText': msgText, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
       setState(() { _editingMessageId = null; _messageController.clear(); });
     } else {
       final tempMsg = ChatMessage(id: 'temp_${DateTime.now().millisecondsSinceEpoch}', text: msgText, isMe: true, type: 'text', timestamp: DateTime.now());
       setState(() => _messages.add(tempMsg));
-      if (!_isBlocked) socket.emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': msgText, 'type': 'text'});
+      if (!_isBlocked) SocketService().emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': msgText, 'type': 'text'});
       setState(() { _messageController.clear(); _replyingToMessage = null; });
     }
     _scrollToBottom();
@@ -310,7 +300,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _confirmDelete(ChatMessage msg) {
     showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text('Delete?'), actions: [
       TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
-      ElevatedButton(onPressed: () { socket.emit('delete_message', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); Navigator.pop(context); }, child: const Text('DELETE')),
+      ElevatedButton(onPressed: () { SocketService().emit('delete_message', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); Navigator.pop(context); }, child: const Text('DELETE')),
     ]));
   }
 
@@ -325,48 +315,58 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             const CircleAvatar(backgroundColor: Colors.white10, child: Icon(Icons.person, color: Colors.white54)), const SizedBox(width: 12),
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${widget.name.split(' ').first}, ${widget.position}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-              Row(children: [Text(widget.distance, style: const TextStyle(fontSize: 12, color: Colors.white54)), if (_isOnline) ...[const SizedBox(width: 4), const Text('●Online', style: TextStyle(fontSize: 12, color: Colors.greenAccent, fontWeight: FontWeight.bold))]])
+              ValueListenableBuilder<Map<String, bool>>(
+                valueListenable: SocketService().onlineUsers,
+                builder: (context, onlineMap, _) {
+                  final bool isOnline = onlineMap[widget.receiverPhone] ?? false;
+                  return Row(children: [
+                    Text(widget.distance, style: const TextStyle(fontSize: 12, color: Colors.white54)), 
+                    if (isOnline) ...[const SizedBox(width: 4), const Text('●Online', style: TextStyle(fontSize: 12, color: Colors.greenAccent, fontWeight: FontWeight.bold))]
+                  ]);
+                }
+              )
             ])
           ]),
         ),
-        actions: [IconButton(icon: const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent), onPressed: () async { final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone, socket: socket))); if (result == true) _loadUserAndHistory(); })],
+        actions: [IconButton(icon: const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent), onPressed: () async { final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone))); if (result == true) _loadUserAndHistory(); })],
       ),
       body: Column(children: [Expanded(child: _buildMessageList()), if (_isLoading) const LinearProgressIndicator(color: Colors.orangeAccent), _buildInputArea()]),
     );
   }
 
   Widget _buildMessageList() {
-    List<Widget> children = [];
-    
-    // If no messages, show safety banner at top
-    if (_messages.isEmpty) {
-      children.add(const SizedBox(height: 20));
-      children.add(_buildSafetyBanner());
-    }
+    return ValueListenableBuilder<Map<String, bool>>(
+      valueListenable: SocketService().typingUsers,
+      builder: (context, typingMap, _) {
+        final bool isOtherTyping = typingMap[widget.receiverPhone] ?? false;
+        
+        List<Widget> children = [];
+        if (_messages.isEmpty) {
+          children.add(const SizedBox(height: 20));
+          children.add(_buildSafetyBanner());
+        }
 
-    if (_messages.isNotEmpty) {
-      DateTime? lastDate;
-      for (int i = 0; i < _messages.length; i++) {
-        final msg = _messages[i];
-        if (lastDate == null || DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day) != lastDate) {
-          children.add(Center(child: Container(margin: const EdgeInsets.symmetric(vertical: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(15)), child: Text(DateFormat('EEE, MMM d').format(msg.timestamp), style: const TextStyle(color: Colors.white60, fontSize: 11)))));
-          lastDate = DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
-          
-          // Show safety banner after first date header
-          if (i == 0) {
-            children.add(_buildSafetyBanner());
+        if (_messages.isNotEmpty) {
+          DateTime? lastDate;
+          for (int i = 0; i < _messages.length; i++) {
+            final msg = _messages[i];
+            if (lastDate == null || DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day) != lastDate) {
+              children.add(Center(child: Container(margin: const EdgeInsets.symmetric(vertical: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(15)), child: Text(DateFormat('EEE, MMM d').format(msg.timestamp), style: const TextStyle(color: Colors.white60, fontSize: 11)))));
+              lastDate = DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
+              if (i == 0) children.add(_buildSafetyBanner());
+            }
+            children.add(Padding(padding: const EdgeInsets.only(bottom: 15, left: 20, right: 20), child: GestureDetector(onLongPress: () => _showContextMenu(msg), child: _buildMessageItem(msg))));
           }
         }
-        children.add(Padding(padding: const EdgeInsets.only(bottom: 15, left: 20, right: 20), child: GestureDetector(onLongPress: () => _showContextMenu(msg), child: _buildMessageItem(msg))));
+        
+        if (isOtherTyping) children.add(_buildTypingIndicator());
+        
+        return ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 20),
+          children: children,
+        );
       }
-    }
-    
-    if (_isOtherTyping) children.add(_buildTypingIndicator());
-    
-    return ListView(
-      controller: _scrollController,
-      padding: const EdgeInsets.only(bottom: 20),
-      children: children,
     );
   }
 
@@ -443,9 +443,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           onTap: () => _scrollToBottom(), // Scroll when clicking on text field
           onChanged: (val) { 
             if (_isBlocked) return; 
-            socket.emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); 
+            SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); 
             _typingTimer?.cancel(); 
-            _typingTimer = Timer(const Duration(seconds: 2), () => socket.emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone})); 
+            _typingTimer = Timer(const Duration(seconds: 2), () => SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone})); 
             setState(() {}); 
           }, 
           decoration: const InputDecoration(hintText: 'Enter message', border: InputBorder.none)))),
@@ -478,7 +478,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         }
       }
       if (finalUrl != null) {
-        socket.emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': '', 'imageUrl': finalUrl, 'type': type == 'video' ? 'video' : 'image', 'isViewOnce': result['isViewOnce']});
+        SocketService().emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': '', 'imageUrl': finalUrl, 'type': type == 'video' ? 'video' : 'image', 'isViewOnce': result['isViewOnce']});
       }
       setState(() => _isLoading = false);
     }
@@ -498,7 +498,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (canView) {
               await Navigator.push(context, MaterialPageRoute(builder: (context) => FullScreenImageViewer(imageUrl: msg.imageUrl!)));
               if (msg.isViewOnce && !msg.isOpened) {
-                socket.emit('mark_opened', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+                SocketService().emit('mark_opened', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
                 setState(() {
                   msg.isOpened = true;
                   msg.isSeen = true;

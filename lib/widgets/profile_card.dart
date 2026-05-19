@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/profile_detail_screen.dart';
+import 'blinking_dot.dart';
 
 class ProfileCard extends StatelessWidget {
   final String distance;
@@ -13,6 +14,7 @@ class ProfileCard extends StatelessWidget {
   final String havePlace;
   final int? likedBy;
   final bool isVerified;
+  final bool isOnline;
 
   const ProfileCard({
     super.key,
@@ -27,6 +29,7 @@ class ProfileCard extends StatelessWidget {
     required this.havePlace,
     this.likedBy,
     this.isVerified = false,
+    this.isOnline = false,
   });
 
   @override
@@ -56,6 +59,7 @@ class ProfileCard extends StatelessWidget {
               position: position,
               havePlace: havePlace,
               isVerified: isVerified,
+              isOnline: isOnline,
             ),
           ),
         );
@@ -66,6 +70,24 @@ class ProfileCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (isOnline) ...[
+              const Row(
+                children: [
+                  BlinkingDot(),
+                  SizedBox(width: 6),
+                  Text(
+                    'Online Now',
+                    style: TextStyle(
+                      color: Color(0xFF00C853),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
             Row(children: [
               const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
               const SizedBox(width: 6),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 import 'chat_screen.dart';
 
 class ProfileDetailPage extends StatefulWidget {
@@ -15,6 +16,7 @@ class ProfileDetailPage extends StatefulWidget {
   final String havePlace;
   final bool showMessageButton;
   final bool isVerified;
+  final bool isOnline;
 
   const ProfileDetailPage({
     super.key,
@@ -28,6 +30,7 @@ class ProfileDetailPage extends StatefulWidget {
     required this.havePlace,
     this.showMessageButton = true,
     this.isVerified = false,
+    this.isOnline = false,
   });
 
   @override
@@ -236,10 +239,17 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                               Text(locationDisplay, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16)),
                             ]),
                           ]),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green.withOpacity(0.3))),
-                            child: const Row(children: [CircleAvatar(backgroundColor: Colors.greenAccent, radius: 4), SizedBox(width: 8), Text('Online', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold))]),
+                          ValueListenableBuilder<Map<String, bool>>(
+                            valueListenable: SocketService().onlineUsers,
+                            builder: (context, onlineMap, _) {
+                              final bool isOnline = onlineMap[widget.phone] ?? widget.isOnline;
+                              if (!isOnline) return const SizedBox.shrink();
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green.withOpacity(0.3))),
+                                child: const Row(children: [CircleAvatar(backgroundColor: Colors.greenAccent, radius: 4), SizedBox(width: 8), Text('Online', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold))]),
+                              );
+                            }
                           ),
                         ],
                       ),

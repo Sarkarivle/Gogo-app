@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 
 class ChatSettingsPage extends StatefulWidget {
   final String name;
   final String phone;
-  final IO.Socket? socket; // Pass existing socket for real-time sync
 
-  const ChatSettingsPage({super.key, required this.name, required this.phone, this.socket});
+  const ChatSettingsPage({super.key, required this.name, required this.phone});
 
   @override
   State<ChatSettingsPage> createState() => _ChatSettingsPageState();
@@ -188,7 +187,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
       }
 
       // Notify server via socket for real-time sync
-      widget.socket?.emit('notify_block', {
+      SocketService().emit('notify_block', {
         'blockerPhone': myPhone,
         'blockedPhone': widget.phone,
       });
@@ -259,7 +258,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                 });
                 
                 // Notify server via socket
-                widget.socket?.emit('notify_unblock', {
+                SocketService().emit('notify_unblock', {
                   'blockerPhone': myPhone,
                   'blockedPhone': widget.phone,
                 });
