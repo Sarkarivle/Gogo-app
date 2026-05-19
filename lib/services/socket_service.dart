@@ -12,13 +12,12 @@ class SocketService with WidgetsBindingObserver {
 
   IO.Socket? _socket;
   String? _currentUserPhone;
+  String? _activeRoomId;
   
-  // Realtime Presence State
   final ValueNotifier<Map<String, bool>> onlineUsers = ValueNotifier({});
   final ValueNotifier<Map<String, bool>> typingUsers = ValueNotifier({});
   final ValueNotifier<bool> connectionStatus = ValueNotifier(false);
 
-  // Stream Controllers for Events
   final _messageController = StreamController<dynamic>.broadcast();
   Stream<dynamic> get messageStream => _messageController.stream;
 
@@ -49,18 +48,22 @@ class SocketService with WidgetsBindingObserver {
       'transports': ['websocket'],
       'autoConnect': true,
       'reconnection': true,
-      'reconnectionAttempts': 10,
-      'reconnectionDelay': 2000,
+      'reconnectionAttempts': 20,
+      'reconnectionDelay': 1000,
     });
 
     _socket!.onConnect((_) {
-      debugPrint('Socket Connected: ${_socket!.id}');
+      debugPrint('⚡ Socket Connected: ${_socket!.id}');
       connectionStatus.value = true;
       _setOnline();
+      if (_activeRoomId != null) {
+        _socket!.emit('join_room', _activeRoomId);
+        debugPrint('🏠 Re-joined active room: $_activeRoomId');
+      }
     });
 
     _socket!.onDisconnect((_) {
-      debugPrint('Socket Disconnected');
+      debugPrint('❌ Socket Disconnected');
       connectionStatus.value = false;
     });
 
@@ -73,29 +76,29 @@ class SocketService with WidgetsBindingObserver {
     });
 
     _socket!.on('display_typing', (data) {
-      final phone = data['phone'];
       final updated = Map<String, bool>.from(typingUsers.value);
-      updated[phone] = true;
+      updated[data['phone']] = true;
       typingUsers.value = updated;
     });
 
     _socket!.on('hide_typing', (data) {
-      final phone = data['phone'];
       final updated = Map<String, bool>.from(typingUsers.value);
-      updated[phone] = false;
+      updated[data['phone']] = false;
       typingUsers.value = updated;
     });
 
-    _socket!.on('receive_message', (data) => _messageController.add(data));
+    _socket!.on('receive_message', (data) {
+      debugPrint('📩 New message received via socket');
+      _messageController.add(data);
+    });
     
-    // Generic event listeners
     _socket!.on('message_delivered', (data) => _eventController.add({'event': 'message_delivered', 'data': data}));
     _socket!.on('message_opened', (data) => _eventController.add({'event': 'message_opened', 'data': data}));
     _socket!.on('chat_seen_update', (data) => _eventController.add({'event': 'chat_seen_update', 'data': data}));
     _socket!.on('message_deleted', (data) => _eventController.add({'event': 'message_deleted', 'data': data}));
     _socket!.on('message_edited', (data) => _eventController.add({'event': 'message_edited', 'data': data}));
+    _socket!.on('message_deleted_for_everyone', (data) => _eventController.add({'event': 'message_deleted_for_everyone', 'data': data}));
     _socket!.on('chat_status_update', (data) => _eventController.add({'event': 'chat_status_update', 'data': data}));
-    _socket!.on('unread_update', (data) => _eventController.add({'event': 'unread_update', 'data': data}));
   }
 
   void _setOnline() {
@@ -104,8 +107,33 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
-  void emit(String event, dynamic data) {
-    _socket?.emit(event, data);
+  void emit(String event, dynamic data, [Function? ack]) {
+    if (_socket != null && _socket!.connected) {
+      if (ack != null) {
+        _socket!.emitWithAck(event, data, ack: ack);
+      } else {
+        _socket!.emit(event, data);
+      }
+    } else {
+      debugPrint('⚠️ Cannot emit $event: Socket disconnected');
+      // If we emit a message while disconnected, we should try to reconnect
+      _socket?.connect();
+    }
+  }
+
+  void joinRoom(String roomId) {
+    _activeRoomId = roomId;
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('join_room', roomId);
+    }
+  }
+
+  void markChatSeen(String myPhone, String otherPhone) {
+    emit('mark_chat_seen', {'myPhone': myPhone, 'otherPhone': otherPhone});
+  }
+
+  void leaveRoom() {
+    _activeRoomId = null;
   }
 
   IO.Socket? get socket => _socket;
@@ -113,14 +141,7 @@ class SocketService with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (_socket != null && !_socket!.connected) {
-        _socket!.connect();
-      } else {
-        _setOnline();
-      }
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // In a real production app, we might want to emit a 'set_away' event
-      // but for now, the socket disconnect will handle it automatically after timeout.
+      _socket?.connect();
     }
   }
 

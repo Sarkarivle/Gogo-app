@@ -40,13 +40,14 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final ImagePicker _picker = ImagePicker();
   final List<ChatMessage> _messages = [];
-  bool _isLoading = false;
+  
+  bool _isLoadingHistory = false;
   bool _isBlocked = false;
   String? _blockerPhone;
   Map<String, dynamic>? currentUser;
   Timer? _typingTimer;
+  
   StreamSubscription? _socketMsgSub;
   StreamSubscription? _socketEventSub;
 
@@ -57,12 +58,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _listenToSocket();
     _loadUserAndHistory();
+    _listenToSocket();
   }
 
   @override
   void dispose() {
+    SocketService().leaveRoom();
     WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     _scrollController.dispose();
@@ -75,119 +77,139 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
-    _scrollToBottom();
+    _scrollToBottom(immediate: true);
   }
 
-  void _listenToSocket() {
-    _socketMsgSub = SocketService().messageStream.listen((data) {
-      _handleNewMessage(data);
-    });
-
-    _socketEventSub = SocketService().eventStream.listen((event) {
-      final data = event['data'];
-      switch (event['event']) {
-        case 'message_delivered':
-          if (mounted) setState(() {
-            final index = _messages.indexWhere((m) => m.id == data['messageId']);
-            if (index != -1) _messages[index].isDelivered = true;
-          });
-          break;
-        case 'message_opened':
-          if (mounted) setState(() {
-            final index = _messages.indexWhere((m) => m.id == data['messageId']);
-            if (index != -1) {
-              _messages[index].isOpened = true;
-              _messages[index].isSeen = true;
-            }
-          });
-          break;
-        case 'chat_seen_update':
-          if (mounted) setState(() {
-            for (var msg in _messages) {
-              if (msg.isMe) {
-                msg.isSeen = true;
-                msg.isDelivered = true;
-              }
-            }
-          });
-          break;
-        case 'message_deleted':
-          if (mounted) setState(() => _messages.removeWhere((m) => m.id == data['messageId']));
-          break;
-        case 'message_edited':
-          if (mounted) setState(() {
-            final index = _messages.indexWhere((m) => m.id == data['messageId']);
-            if (index != -1) {
-              _messages[index].text = data['newText'];
-              _messages[index].isEdited = true;
-            }
-          });
-          break;
-        case 'chat_status_update':
-          if (mounted) { _checkBlockStatus(); _fetchChatHistory(); }
-          break;
-      }
-    });
-  }
-
-  void _handleNewMessage(dynamic data) {
-    if (mounted) {
-      setState(() {
-        if (data['senderPhone'] == currentUser?['phone']) {
-          _messages.removeWhere((m) => m.id != null && m.id!.startsWith('temp_') && m.text == data['message']);
-        }
-        if (_messages.any((m) => m.id == data['_id'])) return;
-
-        bool isMe = data['senderPhone'] == currentUser?['phone'];
-
-        _messages.add(ChatMessage(
-          id: data['_id'],
-          text: data['message'],
-          imageUrl: data['imageUrl'],
-          audioUrl: data['audioUrl'],
-          type: data['type'] ?? 'text',
-          isViewOnce: data['isViewOnce'] ?? false,
-          isOpened: data['isOpened'] ?? false,
-          isMe: isMe,
-          timestamp: DateTime.parse(data['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
-          isDelivered: data['isDelivered'] ?? true,
-          isSeen: data['isOpened'] ?? false,
-        ));
-
-        if (!isMe && data['roomId'] == _getRoomId()) {
-          SocketService().emit('mark_opened', {
-            'messageId': data['_id'],
-            'myPhone': currentUser!['phone'],
-            'otherPhone': widget.receiverPhone
-          });
-        }
-      });
-      _scrollToBottom();
-    }
-  }
+  // --- LOGIC ---
 
   Future<void> _loadUserAndHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final userData = prefs.getString('user_data');
     if (userData != null) {
-      setState(() {
-        currentUser = jsonDecode(userData);
-      });
-      _joinRoom();
+      currentUser = jsonDecode(userData);
+      final roomId = _getRoomId();
+      SocketService().joinRoom(roomId);
+      SocketService().markChatSeen(currentUser!['phone'], widget.receiverPhone);
+      debugPrint('✅ Chat Room Active: $roomId');
     }
     _checkBlockStatus();
     _fetchChatHistory();
-    _markMessagesAsSeen();
   }
 
-  void _joinRoom() {
-    if (currentUser != null) {
-      SocketService().emit('join_room', _getRoomId());
+  void _listenToSocket() {
+    _socketMsgSub = SocketService().messageStream.listen((data) {
+      if (data['roomId'] == _getRoomId()) {
+        _handleIncomingMessage(data);
+      }
+    });
+
+    _socketEventSub = SocketService().eventStream.listen((event) {
+      final data = event['data'];
+      if (!mounted) return;
+
+      setState(() {
+        switch (event['event']) {
+          case 'message_delivered':
+            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
+            if (idx != -1) _messages[idx].status = MessageStatus.delivered;
+            break;
+          case 'message_opened':
+            final msgId = data['messageId'];
+            final isViewOnce = data['isViewOnce'] ?? false;
+            final idx = _messages.indexWhere((m) => m.id == msgId);
+            if (idx != -1) {
+              setState(() {
+                _messages[idx].status = MessageStatus.seen;
+                _messages[idx].isOpened = true;
+                if (isViewOnce) {
+                   // For view once, we might want to clear image/media reference locally
+                   // although backend nullifies it, UI state should be updated.
+                }
+              });
+            }
+            break;
+          case 'chat_seen_update':
+            for (var m in _messages) if (m.isMe) m.status = MessageStatus.seen;
+            break;
+          case 'message_deleted_for_everyone':
+            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
+            if (idx != -1) {
+              setState(() {
+                _messages[idx].isDeletedForEveryone = true;
+                _messages[idx].imageUrl = null;
+                _messages[idx].audioUrl = null;
+              });
+            }
+            break;
+          case 'message_deleted':
+            _messages.removeWhere((m) => m.id == data['messageId']);
+            break;
+          case 'message_edited':
+            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
+            if (idx != -1) {
+              _messages[idx].text = data['newText'];
+              _messages[idx].isEdited = true;
+            }
+            break;
+          case 'chat_status_update':
+            _checkBlockStatus();
+            break;
+        }
+      });
+    });
+  }
+
+  void _handleIncomingMessage(dynamic data) {
+    if (!mounted) return;
+    
+    final newMessage = ChatMessage.fromJson(data, currentUser?['phone'] ?? '');
+    
+    setState(() {
+      // 1. Remove any optimistic message with same localId OR same content (as fallback)
+      if (newMessage.isMe) {
+        _messages.removeWhere((m) => 
+          (m.localId != null && m.localId == data['localId']) || 
+          (m.status == MessageStatus.sending && m.text == newMessage.text)
+        );
+      }
+      
+      // 2. Add server message if not already present
+      if (!_messages.any((m) => m.id == newMessage.id)) {
+        _messages.add(newMessage);
+        
+        // 3. Mark as opened if I am receiving it
+        if (!newMessage.isMe) {
+          SocketService().emit('mark_opened', {
+            'messageId': newMessage.id,
+            'myPhone': currentUser!['phone'],
+            'otherPhone': widget.receiverPhone
+          });
+        }
+      }
+    });
+    _scrollToBottom();
+  }
+
+  Future<void> _fetchChatHistory() async {
+    if (currentUser == null) return;
+    setState(() => _isLoadingHistory = true);
+    try {
+      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/admin/chat-history/${currentUser!['phone']}/${widget.receiverPhone}'));
+      if (response.statusCode == 200) {
+        final List<dynamic> history = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(history.map((m) => ChatMessage.fromJson(m, currentUser!['phone'])));
+          });
+          _scrollToBottom(immediate: true);
+        }
+      }
+    } catch (e) {
+      debugPrint("History error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingHistory = false);
     }
-  }
-
-  Future<void> _fetchReceiverStatus() async {
-    // Online status is now handled by SocketService ValueNotifier
   }
 
   Future<void> _checkBlockStatus() async {
@@ -206,204 +228,404 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     } catch (e) {}
   }
 
-  Future<void> _fetchChatHistory() async {
-    if (currentUser == null) return;
-    try {
-      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/admin/chat-history/${currentUser!['phone']}/${widget.receiverPhone}'));
-      if (response.statusCode == 200) {
-        final List<dynamic> history = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            _messages.clear();
-            for (var msg in history) {
-              _messages.add(ChatMessage(
-                id: msg['_id'],
-                text: msg['message'],
-                imageUrl: msg['imageUrl'],
-                audioUrl: msg['audioUrl'],
-                type: msg['type'] ?? 'text',
-                isViewOnce: msg['isViewOnce'] ?? false,
-                isOpened: msg['isOpened'] ?? false,
-                isMe: msg['senderPhone'] == currentUser!['phone'],
-                timestamp: DateTime.parse(msg['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
-                isDelivered: msg['isDelivered'] ?? true, 
-                isSeen: msg['isOpened'] ?? false,
-              ));
-            }
-          });
-          _scrollToBottom();
-        }
-      }
-    } catch (e) {}
-  }
-
   String _getRoomId() {
     List<String> ids = [currentUser?['phone'] ?? 'Me', widget.receiverPhone];
     ids.sort();
     return ids.join('_');
   }
 
-  Future<void> _markMessagesAsSeen() async {
-    if (currentUser == null) return;
-    SocketService().emit('mark_chat_seen', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
-  }
-
-  Future<void> _uploadAudio(String path) async {
-    setState(() => _isLoading = true);
-    try {
-      var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
-      request.files.add(await http.MultipartFile.fromPath('image', path));
-      var response = await request.send();
-      if (response.statusCode == 200) {
-        var resBody = await http.Response.fromStream(response);
-        var data = jsonDecode(resBody.body);
-        SocketService().emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': '', 'audioUrl': data['imageUrl'], 'type': 'audio'});
-      }
-    } catch (e) {}
-    setState(() => _isLoading = false);
-  }
+  // --- ACTIONS ---
 
   void _sendMessage() {
-    if (_messageController.text.trim().isEmpty || currentUser == null) return;
-    String msgText = _messageController.text.trim();
+    final text = _messageController.text.trim();
+    if (text.isEmpty || currentUser == null) return;
+
     if (_editingMessageId != null) {
-      if (_isBlocked) return;
-      SocketService().emit('edit_message', {'messageId': _editingMessageId, 'newText': msgText, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
-      setState(() { _editingMessageId = null; _messageController.clear(); });
-    } else {
-      final tempMsg = ChatMessage(id: 'temp_${DateTime.now().millisecondsSinceEpoch}', text: msgText, isMe: true, type: 'text', timestamp: DateTime.now());
-      setState(() => _messages.add(tempMsg));
-      if (!_isBlocked) SocketService().emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': msgText, 'type': 'text'});
-      setState(() { _messageController.clear(); _replyingToMessage = null; });
+      SocketService().emit('edit_message', {
+        'messageId': _editingMessageId,
+        'newText': text,
+        'myPhone': currentUser!['phone'],
+        'otherPhone': widget.receiverPhone
+      });
+      setState(() => _editingMessageId = null);
+      _messageController.clear();
+      return;
     }
+
+    final localId = DateTime.now().millisecondsSinceEpoch.toString();
+    final optimisticMsg = ChatMessage(
+      localId: localId,
+      text: text,
+      isMe: true,
+      timestamp: DateTime.now(),
+      status: MessageStatus.sending,
+      replyToId: _replyingToMessage?.id,
+      replyText: _replyingToMessage?.text,
+      replyType: _replyingToMessage?.type,
+    );
+
+    setState(() {
+      _messages.add(optimisticMsg);
+      _replyingToMessage = null;
+      _messageController.clear();
+    });
     _scrollToBottom();
+
+    // EMIT WITH ACK - If callback doesn't run, socket might be down
+    SocketService().emit('send_message', {
+      'localId': localId,
+      'senderPhone': currentUser!['phone'],
+      'receiverPhone': widget.receiverPhone,
+      'senderName': currentUser!['name'] ?? 'User',
+      'message': text,
+      'type': 'text',
+      'replyToId': optimisticMsg.replyToId,
+      'replyText': optimisticMsg.replyText,
+      'replyType': optimisticMsg.replyType,
+    }, (ack) {
+      if (mounted && ack != null) {
+        if (ack['success'] == false) {
+          setState(() => optimisticMsg.status = MessageStatus.error);
+        } else {
+          // Message confirmed by server, will be replaced when receive_message fires
+          debugPrint('🚀 Message ACK received for $localId');
+        }
+      }
+    });
   }
 
-  void _scrollToBottom() { Future.delayed(const Duration(milliseconds: 100), () { if (_scrollController.hasClients) _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut); }); }
-
-  void _showContextMenu(ChatMessage msg) {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => Container(
-      decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-      child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 12), Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2))),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15), child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: ['😆', '😂', '😡', '😮', '😥', '➕'].map((e) => GestureDetector(onTap: () => Navigator.pop(context), child: Text(e, style: const TextStyle(fontSize: 28)))).toList())),
-        const Divider(color: Colors.white10),
-        ListTile(leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent), title: const Text('Reply', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); setState(() => _replyingToMessage = msg); }),
-        ListTile(leading: const Icon(Icons.copy_all_rounded, color: Colors.orangeAccent), title: const Text('Copy Message', style: TextStyle(color: Colors.white)), onTap: () { Clipboard.setData(ClipboardData(text: msg.text ?? '')); Navigator.pop(context); }),
-        if (msg.isMe && msg.type == 'text') ListTile(leading: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent), title: const Text('Edit', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); setState(() { _editingMessageId = msg.id; _messageController.text = msg.text ?? ''; }); }),
-        if (msg.isMe) ListTile(leading: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent), title: const Text('Delete for everyone', style: TextStyle(color: Colors.redAccent)), onTap: () { Navigator.pop(context); _confirmDelete(msg); }),
-        const SizedBox(height: 15),
-      ])),
-    ));
+  Future<void> _uploadMedia(File file, String type, {bool isViewOnce = false}) async {
+    setState(() => _isLoadingHistory = true);
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
+      request.files.add(await http.MultipartFile.fromPath('image', file.path));
+      request.fields['phone'] = currentUser!['phone'];
+      
+      var streamedRes = await request.send();
+      if (streamedRes.statusCode == 200) {
+        var res = await http.Response.fromStream(streamedRes);
+        var url = jsonDecode(res.body)['imageUrl'];
+        
+        SocketService().emit('send_message', {
+          'senderPhone': currentUser!['phone'],
+          'receiverPhone': widget.receiverPhone,
+          'senderName': currentUser!['name'] ?? 'User',
+          'message': '',
+          'imageUrl': type != 'audio' ? url : null,
+          'audioUrl': type == 'audio' ? url : null,
+          'type': type,
+          'isViewOnce': isViewOnce
+        });
+      }
+    } catch (e) {
+      debugPrint("Upload error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingHistory = false);
+    }
   }
 
-  void _confirmDelete(ChatMessage msg) {
-    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1A1A1A), title: const Text('Delete?'), actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
-      ElevatedButton(onPressed: () { SocketService().emit('delete_message', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); Navigator.pop(context); }, child: const Text('DELETE')),
-    ]));
+  void _scrollToBottom({bool immediate = false}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        if (immediate) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        } else {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.decelerate,
+          );
+        }
+      }
+    });
   }
+
+  // --- UI BUILDERS ---
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F), resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2A0D17), elevation: 1, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.orangeAccent), onPressed: () => Navigator.pop(context)),
-        titleSpacing: 0, title: GestureDetector(onTap: () { Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileDetailPage(name: widget.name, phone: widget.receiverPhone, distance: widget.distance, city: 'Unknown', area: 'Unknown', age: 18, position: widget.position, havePlace: 'Unknown', showMessageButton: false))); },
-          child: Row(children: [
-            const CircleAvatar(backgroundColor: Colors.white10, child: Icon(Icons.person, color: Colors.white54)), const SizedBox(width: 12),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${widget.name.split(' ').first}, ${widget.position}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-              ValueListenableBuilder<Map<String, bool>>(
-                valueListenable: SocketService().onlineUsers,
-                builder: (context, onlineMap, _) {
-                  final bool isOnline = onlineMap[widget.receiverPhone] ?? false;
-                  return Row(children: [
-                    Text(widget.distance, style: const TextStyle(fontSize: 12, color: Colors.white54)), 
-                    if (isOnline) ...[const SizedBox(width: 4), const Text('●Online', style: TextStyle(fontSize: 12, color: Colors.greenAccent, fontWeight: FontWeight.bold))]
-                  ]);
-                }
-              )
-            ])
-          ]),
-        ),
-        actions: [IconButton(icon: const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent), onPressed: () async { final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone))); if (result == true) _loadUserAndHistory(); })],
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: _buildHeader(),
+      body: Column(
+        children: [
+          Expanded(child: _buildMessageList()),
+          if (_isLoadingHistory) const LinearProgressIndicator(color: Colors.orangeAccent, minHeight: 1),
+          ValueListenableBuilder<Map<String, bool>>(
+            valueListenable: SocketService().typingUsers,
+            builder: (context, typingMap, _) {
+              final bool isTyping = typingMap[widget.receiverPhone] ?? false;
+              if (!isTyping) return const SizedBox.shrink();
+              return _buildTypingIndicator();
+            },
+          ),
+          _buildInputArea(),
+        ],
       ),
-      body: Column(children: [Expanded(child: _buildMessageList()), if (_isLoading) const LinearProgressIndicator(color: Colors.orangeAccent), _buildInputArea()]),
+    );
+  }
+
+  PreferredSizeWidget _buildHeader() {
+    return AppBar(
+      backgroundColor: const Color(0xFF2A0D17),
+      elevation: 1,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.orangeAccent),
+        onPressed: () => Navigator.pop(context),
+      ),
+      titleSpacing: 0,
+      title: GestureDetector(
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileDetailPage(
+          name: widget.name, phone: widget.receiverPhone, distance: widget.distance, city: 'Unknown', area: 'Unknown', age: 18, position: widget.position, havePlace: 'Unknown', showMessageButton: false
+        ))),
+        child: Row(
+          children: [
+            const CircleAvatar(radius: 18, backgroundColor: Colors.white10, child: Icon(Icons.person, color: Colors.white54, size: 20)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                  ValueListenableBuilder<Map<String, bool>>(
+                    valueListenable: SocketService().onlineUsers,
+                    builder: (context, onlineMap, _) {
+                      final bool isOnline = onlineMap[widget.receiverPhone] ?? false;
+                      return Row(
+                        children: [
+                          Text(widget.distance, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                          if (isOnline) ...[
+                            const SizedBox(width: 6),
+                            const Text('● Online', style: TextStyle(fontSize: 11, color: Colors.greenAccent, fontWeight: FontWeight.w800)),
+                          ]
+                        ],
+                      );
+                    }
+                  )
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent),
+          onPressed: () async {
+            final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone)));
+            if (result == true) _loadUserAndHistory();
+          }
+        )
+      ],
     );
   }
 
   Widget _buildMessageList() {
-    return ValueListenableBuilder<Map<String, bool>>(
-      valueListenable: SocketService().typingUsers,
-      builder: (context, typingMap, _) {
-        final bool isOtherTyping = typingMap[widget.receiverPhone] ?? false;
-        
-        List<Widget> children = [];
-        if (_messages.isEmpty) {
-          children.add(const SizedBox(height: 20));
-          children.add(_buildSafetyBanner());
-        }
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      itemCount: _messages.length,
+      itemBuilder: (context, index) {
+        final msg = _messages[index];
+        final showDateHeader = index == 0 || !_isSameDay(_messages[index - 1].timestamp, msg.timestamp);
 
-        if (_messages.isNotEmpty) {
-          DateTime? lastDate;
-          for (int i = 0; i < _messages.length; i++) {
-            final msg = _messages[i];
-            if (lastDate == null || DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day) != lastDate) {
-              children.add(Center(child: Container(margin: const EdgeInsets.symmetric(vertical: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(15)), child: Text(DateFormat('EEE, MMM d').format(msg.timestamp), style: const TextStyle(color: Colors.white60, fontSize: 11)))));
-              lastDate = DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
-              if (i == 0) children.add(_buildSafetyBanner());
-            }
-            children.add(Padding(padding: const EdgeInsets.only(bottom: 15, left: 20, right: 20), child: GestureDetector(onLongPress: () => _showContextMenu(msg), child: _buildMessageItem(msg))));
-          }
-        }
-        
-        if (isOtherTyping) children.add(_buildTypingIndicator());
-        
-        return ListView(
-          controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 20),
-          children: children,
+        return Column(
+          children: [
+            if (showDateHeader) _buildDateHeader(msg.timestamp),
+            _buildMessageBubble(msg),
+          ],
         );
-      }
+      },
     );
   }
 
-  Widget _buildSafetyBanner() {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF9C4).withOpacity(0.9), // Light Yellow
-          borderRadius: BorderRadius.circular(12),
+  Widget _buildDateHeader(DateTime date) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+      child: Text(
+        _getFormattedDate(date),
+        style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(ChatMessage msg) {
+    if (msg.isDeletedForEveryone) return const SizedBox.shrink();
+
+    if (msg.type == 'block_event' || msg.type == 'unblock_event') {
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          decoration: BoxDecoration(color: msg.type == 'block_event' ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+          child: Text(
+            msg.type == 'block_event' ? (msg.isMe ? 'You blocked ${widget.name}' : 'You were blocked') : 'Chat Unblocked',
+            style: TextStyle(color: msg.type == 'block_event' ? Colors.redAccent : Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
         ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.check_box_rounded, color: Colors.green, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  'अपनी कम्युनिटी को सेफ रखें',
-                  style: TextStyle(
-                    color: Colors.black.withOpacity(0.8),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onLongPress: () => _showContextMenu(msg),
+        child: Align(
+          alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: Column(
+            crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              if (msg.replyToId != null) _buildReplyPreview(msg),
+              Container(
+                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
+                    bottomLeft: Radius.circular(msg.isMe ? 18 : 0),
+                    bottomRight: Radius.circular(msg.isMe ? 0 : 18),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'अगर कोई यूजर पैसे मांगta है, तो तुरंत रिपोर्ट करें - हम तुरंत एक्शन लेंगे।',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.black.withOpacity(0.7),
-                fontSize: 10,
-                height: 1.3,
+                child: _buildBubbleContent(msg),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                  if (msg.isMe) ...[
+                    const SizedBox(width: 4),
+                    _buildStatusIcon(msg.status),
+                  ]
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBubbleContent(ChatMessage msg) {
+    if (msg.type == 'image' || msg.imageUrl != null) {
+      return _buildImageContent(msg);
+    } else if (msg.type == 'audio') {
+      return AudioPlayerWidget(url: msg.audioUrl!, isMe: msg.isMe);
+    }
+    return Text(msg.text ?? '', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontSize: 15, height: 1.3));
+  }
+
+  Widget _buildImageContent(ChatMessage msg) {
+    if (msg.isViewOnce) {
+      return _buildViewOnceImage(msg);
+    }
+
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(imageUrl: msg.imageUrl!))),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: CachedNetworkImage(
+          imageUrl: msg.imageUrl!,
+          width: 200,
+          height: 200,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(color: Colors.white10, width: 200, height: 200),
+          errorWidget: (_, __, ___) => const Icon(Icons.error, color: Colors.white24),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewOnceImage(ChatMessage msg) {
+    bool isOpened = msg.isOpened;
+
+    if (msg.isMe) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(isOpened ? Icons.done_all : Icons.looks_one, color: Colors.black87, size: 18),
+            const SizedBox(width: 8),
+            Text(isOpened ? 'Opened' : 'One-time Photo', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    // Receiver Side
+    return GestureDetector(
+      onTap: () async {
+        if (isOpened) return;
+        
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(
+          imageUrl: msg.imageUrl!,
+          isViewOnce: true,
+        )));
+        
+        SocketService().emit('mark_opened', {
+          'messageId': msg.id,
+          'myPhone': currentUser!['phone'],
+          'otherPhone': widget.receiverPhone
+        });
+        setState(() {
+          msg.isOpened = true;
+          msg.imageUrl = null;
+        });
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (!isOpened && msg.imageUrl != null)
+              ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: CachedNetworkImage(
+                  imageUrl: msg.imageUrl!,
+                  width: 150,
+                  height: 150,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Container(
+                width: 150,
+                height: 150,
+                color: Colors.white.withOpacity(0.05),
+              ),
+            Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                color: isOpened ? Colors.transparent : Colors.black26,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isOpened ? Icons.drafts_outlined : Icons.looks_one,
+                    color: isOpened ? Colors.white24 : Colors.white,
+                    size: 30,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isOpened ? 'Opened' : 'View Photo',
+                    style: TextStyle(
+                      color: isOpened ? Colors.white24 : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -412,140 +634,251 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildTypingIndicator() {
-    return Padding(padding: const EdgeInsets.only(left: 20, bottom: 15), child: Align(alignment: Alignment.centerLeft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(widget.name.split(' ').first, style: const TextStyle(color: Colors.white54, fontSize: 10)), const SizedBox(height: 4),
-      Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: const BoxDecoration(color: Color(0xFF2A2A2A), borderRadius: BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16), bottomRight: Radius.circular(16))),
-        child: const Row(mainAxisSize: MainAxisSize.min, children: [CircleAvatar(radius: 3, backgroundColor: Colors.white38), SizedBox(width: 4), CircleAvatar(radius: 3, backgroundColor: Colors.white38), SizedBox(width: 4), CircleAvatar(radius: 3, backgroundColor: Colors.white38)]),
-      )
-    ])));
+  Widget _buildReplyPreview(ChatMessage msg) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 3, height: 20, color: Colors.orangeAccent),
+          const SizedBox(width: 8),
+          Flexible(child: Text(msg.replyText ?? '', style: const TextStyle(color: Colors.white54, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
   }
 
-  Widget _buildMessageItem(ChatMessage msg) {
-    if (msg.type == 'block_event') return Center(child: Container(margin: const EdgeInsets.symmetric(vertical: 10), padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12), decoration: BoxDecoration(color: Colors.red.withOpacity(0.8), borderRadius: BorderRadius.circular(25)), child: Text(msg.isMe ? 'You blocked ${widget.name}' : '${widget.name} blocked you', style: const TextStyle(color: Colors.white, fontSize: 12))));
-    if (msg.type == 'unblock_event') return Center(child: Container(margin: const EdgeInsets.symmetric(vertical: 10), padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12), decoration: BoxDecoration(color: Colors.green.withOpacity(0.8), borderRadius: BorderRadius.circular(25)), child: const Text('Unblocked', style: TextStyle(color: Colors.white, fontSize: 12))));
-    return Align(alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft, child: _buildChatBubble(msg));
+  Widget _buildStatusIcon(MessageStatus status) {
+    switch (status) {
+      case MessageStatus.sending: return const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.orangeAccent));
+      case MessageStatus.sent: return const Icon(Icons.done, color: Colors.white38, size: 14);
+      case MessageStatus.delivered: return const Icon(Icons.done_all, color: Colors.white38, size: 14);
+      case MessageStatus.seen: return const Icon(Icons.done_all, color: Colors.greenAccent, size: 14);
+      case MessageStatus.error: return const Icon(Icons.error_outline, color: Colors.redAccent, size: 14);
+    }
+  }
+
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('typing', style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+              SizedBox(width: 8),
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.orangeAccent),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildInputArea() {
-    bool isBlockedByMe = _isBlocked && _blockerPhone == currentUser?['phone'];
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      if (_isBlocked) Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20), color: Colors.red.withOpacity(0.1), child: Center(child: Text(isBlockedByMe ? 'You blocked this user.' : 'This chat is currently blocked', style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)))),
-      if (_replyingToMessage != null) Container(padding: const EdgeInsets.all(12), color: Colors.white.withOpacity(0.05), child: Row(children: [Container(width: 4, height: 40, color: Colors.orangeAccent), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_replyingToMessage!.isMe ? 'You' : widget.name, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)), Text(_replyingToMessage!.text ?? 'Image', style: const TextStyle(color: Colors.white70, fontSize: 12), maxLines: 1)]))])),
-      Container(
-        padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 10),
+    if (_isBlocked) {
+      bool isBlockedByMe = _blockerPhone == currentUser?['phone'];
+      return Container(
+        padding: const EdgeInsets.all(20),
         color: const Color(0xFF1A1A1A),
-        child: Row(children: [
-        GestureDetector(onTap: () { if (_isBlocked) return; _showMediaPopup(); }, child: const Icon(Icons.add_box_rounded, color: Colors.orangeAccent, size: 28)), const SizedBox(width: 12),
-        Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16), height: 45, decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)), child: TextField(
-          controller: _messageController, 
-          onSubmitted: (val) => _sendMessage(),
-          onTap: () => _scrollToBottom(), // Scroll when clicking on text field
-          onChanged: (val) { 
-            if (_isBlocked) return; 
-            SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); 
-            _typingTimer?.cancel(); 
-            _typingTimer = Timer(const Duration(seconds: 2), () => SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone})); 
-            setState(() {}); 
-          }, 
-          decoration: const InputDecoration(hintText: 'Enter message', border: InputBorder.none)))),
-        const SizedBox(width: 12),
-        _messageController.text.trim().isEmpty ? GestureDetector(onTap: () { if (_isBlocked) return; _showVoiceRecorderModal(); }, child: const Icon(Icons.mic_rounded, color: Colors.orangeAccent, size: 28)) : GestureDetector(onTap: _sendMessage, child: const Icon(Icons.send_rounded, color: Colors.orangeAccent, size: 28))
-      ]))
-    ]);
+        child: Center(child: Text(isBlockedByMe ? 'You blocked this user.' : 'This chat is blocked', style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold))),
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 10),
+      color: const Color(0xFF1A1A1A),
+      child: Column(
+        children: [
+          if (_replyingToMessage != null) _buildReplyInputBar(),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => _showMediaPopup(),
+                child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 28)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)),
+                  child: TextField(
+                    controller: _messageController,
+                    onChanged: (val) => _handleTypingStatus(),
+                    onSubmitted: (_) => _sendMessage(),
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                    decoration: const InputDecoration(hintText: 'Type message...', hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _buildSendOrMicButton(),
+            ],
+          ),
+        ],
+      ),
+    );
   }
+
+  Widget _buildReplyInputBar() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Container(width: 4, height: 35, color: Colors.orangeAccent),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_replyingToMessage!.isMe ? 'You' : widget.name, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+            Text(_replyingToMessage!.text ?? 'Media', style: const TextStyle(color: Colors.white70, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          IconButton(icon: const Icon(Icons.close, size: 20, color: Colors.white38), onPressed: () => setState(() => _replyingToMessage = null)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSendOrMicButton() {
+    bool hasText = _messageController.text.trim().isNotEmpty;
+    return GestureDetector(
+      onTap: hasText ? _sendMessage : () => _showVoiceRecorderModal(),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
+        child: Icon(hasText ? Icons.send_rounded : Icons.mic_rounded, color: Colors.black, size: 24),
+      ),
+    );
+  }
+
+  void _handleTypingStatus() {
+    SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    _typingTimer?.cancel();
+    _typingTimer = Timer(const Duration(seconds: 2), () {
+      SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    });
+    setState(() {});
+  }
+
+  // --- POPUPS & MODALS ---
 
   void _showMediaPopup() {
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => MediaSelectionModal(currentUserPhone: currentUser!['phone'], onMediaSelected: (file, type, {String? url}) => _handleImagePreview(file, type, url: url)));
-  }
-
-  Future<void> _handleImagePreview(File file, String type, {String? url}) async {
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => MediaPreviewPage(file: file, imageUrl: url)));
-    if (result != null && result is Map<String, dynamic>) {
-      setState(() => _isLoading = true);
-      String? finalUrl = url;
-      if (finalUrl == null && file.path.isNotEmpty) {
-        var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
-        request.files.add(await http.MultipartFile.fromPath('image', file.path));
-        // Include phone to save in RecentPhoto model
-        request.fields['phone'] = currentUser!['phone'];
-        var response = await request.send();
-        if (response.statusCode == 200) {
-          var resBody = await http.Response.fromStream(response);
-          finalUrl = jsonDecode(resBody.body)['imageUrl'];
-          // Note: Since _fetchRecentPhotos is now inside MediaSelectionModal, 
-          // we don't need to call it here as the modal is closed after selection.
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MediaSelectionModal(
+        currentUserPhone: currentUser!['phone'],
+        onMediaSelected: (file, type, {String? url}) async {
+          if (url != null) {
+            SocketService().emit('send_message', {
+              'senderPhone': currentUser!['phone'],
+              'receiverPhone': widget.receiverPhone,
+              'senderName': currentUser!['name'] ?? 'User',
+              'message': '',
+              'imageUrl': url,
+              'type': 'image'
+            });
+          } else {
+            final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => MediaPreviewPage(file: file)));
+            if (result != null) _uploadMedia(file, type, isViewOnce: result['isViewOnce']);
+          }
         }
-      }
-      if (finalUrl != null) {
-        SocketService().emit('send_message', {'senderPhone': currentUser!['phone'], 'receiverPhone': widget.receiverPhone, 'message': '', 'imageUrl': finalUrl, 'type': type == 'video' ? 'video' : 'image', 'isViewOnce': result['isViewOnce']});
-      }
-      setState(() => _isLoading = false);
-    }
+      )
+    );
   }
 
-  void _showVoiceRecorderModal() { showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isDismissible: false, builder: (context) => VoiceRecorderModal(onSend: (path) => _uploadAudio(path))); }
+  void _showVoiceRecorderModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isDismissible: false,
+      builder: (_) => VoiceRecorderModal(onSend: (path) => _uploadMedia(File(path), 'audio'))
+    );
+  }
 
-  Widget _buildAudioBubble(ChatMessage msg) { return Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A), borderRadius: BorderRadius.circular(20)), child: AudioPlayerWidget(url: msg.audioUrl!, isMe: msg.isMe)); }
-
-  Widget _buildChatBubble(ChatMessage msg) {
-    return Column(crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
-      if (msg.type == 'audio') _buildAudioBubble(msg)
-      else if (msg.imageUrl != null)
-        GestureDetector(
-          onTap: () async {
-            bool canView = !msg.isViewOnce || (msg.isViewOnce && !msg.isMe && !msg.isOpened);
-            if (canView) {
-              await Navigator.push(context, MaterialPageRoute(builder: (context) => FullScreenImageViewer(imageUrl: msg.imageUrl!)));
-              if (msg.isViewOnce && !msg.isOpened) {
-                SocketService().emit('mark_opened', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
-                setState(() {
-                  msg.isOpened = true;
-                  msg.isSeen = true;
-                });
-              }
-            }
-          },
-          child: Container(
-            padding: msg.isViewOnce ? const EdgeInsets.all(12) : EdgeInsets.zero,
-            decoration: BoxDecoration(color: msg.isViewOnce ? (msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A)) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
-            child: msg.isViewOnce
-                ? Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(msg.isOpened ? Icons.done_all : Icons.looks_one, color: msg.isMe ? Colors.black : (msg.isOpened ? Colors.greenAccent : Colors.orangeAccent), size: 20),
-                    const SizedBox(width: 8),
-                    Text(msg.isOpened ? 'Opened' : 'Photo', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontWeight: FontWeight.bold)),
-                    if (!msg.isMe && !msg.isOpened) ...[
-                      const SizedBox(width: 12),
-                      ClipRRect(borderRadius: BorderRadius.circular(8), child: ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15), child: CachedNetworkImage(imageUrl: msg.imageUrl!, width: 40, height: 40, fit: BoxFit.cover)))
-                    ]
-                  ])
-                : ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: msg.imageUrl!, width: 200, height: 200, fit: BoxFit.cover)),
+  void _showContextMenu(ChatMessage msg) {
+    if (msg.type == 'block_event') return;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2))),
+              ListTile(leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent), title: const Text('Reply', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); setState(() => _replyingToMessage = msg); }),
+              ListTile(leading: const Icon(Icons.copy_rounded, color: Colors.orangeAccent), title: const Text('Copy', style: TextStyle(color: Colors.white)), onTap: () { Clipboard.setData(ClipboardData(text: msg.text ?? '')); Navigator.pop(context); }),
+              if (msg.isMe && msg.type == 'text' && !msg.isDeletedForEveryone) ListTile(leading: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent), title: const Text('Edit', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); setState(() { _editingMessageId = msg.id; _messageController.text = msg.text ?? ''; }); }),
+              if (msg.isMe && !msg.isDeletedForEveryone) ListTile(leading: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent), title: const Text('Delete for everyone', style: TextStyle(color: Colors.redAccent)), onTap: () { Navigator.pop(context); _confirmDeleteForEveryone(msg); }),
+              if (!msg.isDeletedForEveryone) ListTile(leading: const Icon(Icons.delete_outline, color: Colors.white54), title: const Text('Delete for me', style: TextStyle(color: Colors.white54)), onTap: () { Navigator.pop(context); _confirmDelete(msg); }),
+              const SizedBox(height: 15),
+            ],
           ),
-        )
-      else Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), decoration: BoxDecoration(color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A), borderRadius: BorderRadius.circular(16)), child: Text(msg.text ?? '', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white))),
-      Padding(padding: const EdgeInsets.only(top: 4), child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white54, fontSize: 10)),
-          if (msg.isMe) ...[
-            const SizedBox(width: 4),
-            _buildTicks(msg),
-          ]
-        ],
-      ))
-    ]);
+        ),
+      ),
+    );
   }
 
-  Widget _buildTicks(ChatMessage msg) {
-    if (msg.isSeen || msg.isOpened) {
-      return const Icon(Icons.done_all, color: Colors.greenAccent, size: 15);
-    } else if (msg.isDelivered) {
-      return const Icon(Icons.done_all, color: Colors.grey, size: 15);
-    } else {
-      return const Icon(Icons.done, color: Colors.grey, size: 15);
-    }
+  void _confirmDeleteForEveryone(ChatMessage msg) {
+    showDialog(context: context, builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF1A1A1A),
+      title: const Text('Delete for everyone?', style: TextStyle(color: Colors.white)),
+      content: const Text('This message will be deleted for everyone in this chat.', style: TextStyle(color: Colors.white70)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(onPressed: () {
+          SocketService().emit('delete_message_for_everyone', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+          Navigator.pop(context);
+        }, child: const Text('DELETE FOR EVERYONE', style: TextStyle(color: Colors.redAccent))),
+      ],
+    ));
+  }
+
+  void _confirmDelete(ChatMessage msg) {
+    showDialog(context: context, builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF1A1A1A),
+      title: const Text('Delete Message?', style: TextStyle(color: Colors.white)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(onPressed: () {
+          SocketService().emit('delete_message', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+          Navigator.pop(context);
+        }, child: const Text('DELETE', style: TextStyle(color: Colors.redAccent))),
+      ],
+    ));
+  }
+
+  // --- HELPERS ---
+
+  bool _isSameDay(DateTime d1, DateTime d2) => d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+  
+  String _getFormattedDate(DateTime date) {
+    final now = DateTime.now();
+    if (_isSameDay(date, now)) return 'Today';
+    if (_isSameDay(date, now.subtract(const Duration(days: 1)))) return 'Yesterday';
+    return DateFormat('MMMM d, y').format(date);
   }
 }
+
+// --- SUB-WIDGETS ---
 
 class MediaSelectionModal extends StatefulWidget {
   final String currentUserPhone;
@@ -554,6 +887,7 @@ class MediaSelectionModal extends StatefulWidget {
   @override
   State<MediaSelectionModal> createState() => _MediaSelectionModalState();
 }
+
 class _MediaSelectionModalState extends State<MediaSelectionModal> {
   List<dynamic> _recentPhotos = [];
   bool _isEditMode = false;
@@ -567,59 +901,23 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
 
   Future<void> _fetchRecentPhotos() async {
     try {
-      // Adding a timestamp to prevent cached results from the server
-      final url = 'http://72.61.170.181:5000/api/chat/recent-photos/${widget.currentUserPhone}?t=${DateTime.now().millisecondsSinceEpoch}';
-      final res = await http.get(Uri.parse(url));
+      final res = await http.get(Uri.parse('http://72.61.170.181:5000/api/chat/recent-photos/${widget.currentUserPhone}'));
       if (res.statusCode == 200) {
-        final List<dynamic> fetchedPhotos = jsonDecode(res.body)['photos'];
-        if (mounted) {
-          setState(() {
-            _recentPhotos = fetchedPhotos;
-          });
-        }
+        if (mounted) setState(() => _recentPhotos = jsonDecode(res.body)['photos']);
       }
     } catch (e) {}
-  }
-
-  Future<void> _deletePhoto(String id) async {
-    // 1. Permanently remove from the local list FIRST
-    setState(() {
-      _recentPhotos.removeWhere((p) => p['_id'] == id);
-    });
-
-    try {
-      // Call delete API silently
-      await http.delete(Uri.parse('http://72.61.170.181:5000/api/chat/photo/$id'));
-    } catch (e) {
-      print("Delete error: $e");
-    }
-    
-    // No more refreshing! The image stays gone from the UI.
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5)],
-      ),
+      decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Elegant Handle Bar
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10))),
           const SizedBox(height: 25),
-          // Action Grid
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -635,57 +933,24 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
                 final f = await _picker.pickImage(source: ImageSource.gallery);
                 if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); }
               }),
-              _buildActionItem(Icons.audio_file_rounded, 'Audio', Colors.orangeAccent, () {
-                Navigator.pop(context);
-                // Trigger voice recorder directly or similar action
-              }),
             ],
           ),
-          const SizedBox(height: 35),
-          // Recent Photos Header
+          const SizedBox(height: 30),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.lock_rounded, color: Colors.orangeAccent, size: 20),
-                  SizedBox(width: 8),
-                  Text('Recent Photos', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              TextButton(
-                onPressed: () => setState(() => _isEditMode = !_isEditMode),
-                style: TextButton.styleFrom(
-                  backgroundColor: _isEditMode ? Colors.orangeAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-                child: Text(
-                  _isEditMode ? 'Done' : 'Edit',
-                  style: TextStyle(
-                    color: _isEditMode ? Colors.orangeAccent : Colors.white70,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
+              const Text('Recent Photos', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              TextButton(onPressed: () => setState(() => _isEditMode = !_isEditMode), child: Text(_isEditMode ? 'Done' : 'Edit', style: const TextStyle(color: Colors.orangeAccent))),
             ],
           ),
-          const SizedBox(height: 20),
-          // Recent Photos List
           SizedBox(
-            height: 120,
-            child: ListView(
+            height: 100,
+            child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              children: [
-                _buildAddRecentItem(),
-                ..._recentPhotos.map((p) => _buildRecentImageItem(p)),
-              ],
+              itemCount: _recentPhotos.length,
+              itemBuilder: (_, i) => _buildRecentItem(_recentPhotos[i]),
             ),
-          ),
-          // Adding safe area padding at the bottom to avoid system navigation bar overlap
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
+          )
         ],
       ),
     );
@@ -694,82 +959,25 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
   Widget _buildActionItem(IconData icon, String label, Color color, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: color.withOpacity(0.2), width: 1),
-            ),
-            child: Icon(icon, color: color, size: 28),
-          ),
-          const SizedBox(height: 10),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
-        ],
-      ),
+      child: Column(children: [
+        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)), child: Icon(icon, color: color, size: 28)),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ]),
     );
   }
 
-  Widget _buildAddRecentItem() {
-    return GestureDetector(
-      onTap: () async {
-        final f = await _picker.pickImage(source: ImageSource.gallery);
-        if (f != null) { Navigator.pop(context); widget.onMediaSelected(File(f.path), 'image'); }
-      },
-      child: Container(
-        width: 90,
-        height: 110,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white10, width: 1),
-        ),
-        child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 32),
-      ),
-    );
-  }
-
-  Widget _buildRecentImageItem(dynamic p) {
+  Widget _buildRecentItem(dynamic p) {
     return Stack(
       children: [
         GestureDetector(
-          onTap: () {
-            if (!_isEditMode) {
-              Navigator.pop(context);
-              widget.onMediaSelected(File(''), 'image', url: p['imageUrl']);
-            }
-          },
+          onTap: () { if (!_isEditMode) { Navigator.pop(context); widget.onMediaSelected(File(''), 'image', url: p['imageUrl']); } },
           child: Container(
-            width: 90,
-            height: 110,
-            margin: const EdgeInsets.only(right: 12),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: CachedNetworkImage(
-                imageUrl: p['imageUrl'],
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(color: Colors.white10),
-                errorWidget: (context, url, error) => const Icon(Icons.error),
-              ),
-            ),
+            width: 80, height: 100, margin: const EdgeInsets.only(right: 10),
+            child: ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: p['imageUrl'], fit: BoxFit.cover)),
           ),
         ),
-        if (_isEditMode)
-          Positioned(
-            top: 5,
-            right: 17,
-            child: GestureDetector(
-              onTap: () => _deletePhoto(p['_id']),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)]),
-                child: const Icon(Icons.delete_forever_rounded, size: 18, color: Colors.white),
-              ),
-            ),
-          ),
+        if (_isEditMode) Positioned(top: 5, right: 15, child: GestureDetector(onTap: () {}, child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)))),
       ],
     );
   }
@@ -781,23 +989,59 @@ class VoiceRecorderModal extends StatefulWidget {
   @override
   State<VoiceRecorderModal> createState() => _VoiceRecorderModalState();
 }
+
 class _VoiceRecorderModalState extends State<VoiceRecorderModal> {
-  final AudioRecorder _recorder = AudioRecorder(); bool _isRecording = false; String? _path; int _seconds = 0; Timer? _timer;
+  final AudioRecorder _recorder = AudioRecorder(); 
+  bool _isRecording = false; 
+  String? _path; 
+  int _seconds = 0; 
+  Timer? _timer;
+
   void _startTimer() { _timer?.cancel(); _timer = Timer.periodic(const Duration(seconds: 1), (t) => setState(() => _seconds++)); }
   void _stopTimer() { _timer?.cancel(); }
+
   @override
   void dispose() { _recorder.dispose(); _timer?.cancel(); super.dispose(); }
+
   @override
   Widget build(BuildContext context) {
-    return Container(padding: const EdgeInsets.all(24), decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(30))), child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Text('${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}', style: const TextStyle(color: Colors.white, fontSize: 18)), const SizedBox(height: 20),
-      GestureDetector(onTap: () async {
-        if (_isRecording) { final p = await _recorder.stop(); _stopTimer(); setState(() { _isRecording = false; _path = p; }); }
-        else { if (await Permission.microphone.request().isGranted) { final dir = await getApplicationDocumentsDirectory(); final p = '${dir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a'; await _recorder.start(const RecordConfig(), path: p); _startTimer(); setState(() { _isRecording = true; _seconds = 0; }); } }
-      }, child: CircleAvatar(radius: 35, backgroundColor: _isRecording ? Colors.red : Colors.orangeAccent, child: Icon(_isRecording ? Icons.stop : Icons.mic, color: Colors.black))),
-      const SizedBox(height: 20),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.white54))), ElevatedButton(onPressed: _path == null ? null : () { widget.onSend(_path!); Navigator.pop(context); }, child: const Text('Send'))])
-    ])));
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 30),
+          GestureDetector(
+            onLongPress: () async {
+              if (await Permission.microphone.request().isGranted) {
+                final dir = await getApplicationDocumentsDirectory();
+                final p = '${dir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+                await _recorder.start(const RecordConfig(), path: p);
+                _startTimer();
+                setState(() { _isRecording = true; _seconds = 0; });
+              }
+            },
+            onLongPressEnd: (_) async {
+              final p = await _recorder.stop();
+              _stopTimer();
+              setState(() { _isRecording = false; _path = p; });
+            },
+            child: CircleAvatar(radius: 40, backgroundColor: _isRecording ? Colors.red : Colors.orangeAccent, child: Icon(_isRecording ? Icons.stop : Icons.mic, color: Colors.black, size: 30)),
+          ),
+          const SizedBox(height: 20),
+          const Text('Hold to Record, Release to Send', style: TextStyle(color: Colors.white38, fontSize: 12)),
+          if (_path != null) ...[
+            const SizedBox(height: 20),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+              TextButton(onPressed: () => setState(() => _path = null), child: const Text('Discard', style: TextStyle(color: Colors.redAccent))),
+              ElevatedButton(onPressed: () { widget.onSend(_path!); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent), child: const Text('Send Audio', style: TextStyle(color: Colors.black))),
+            ])
+          ]
+        ],
+      ),
+    );
   }
 }
 
@@ -807,41 +1051,112 @@ class AudioPlayerWidget extends StatefulWidget {
   @override
   State<AudioPlayerWidget> createState() => _AudioPlayerWidgetState();
 }
+
 class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
-  final AudioPlayer _player = AudioPlayer(); bool _isPlaying = false; Duration _duration = Duration.zero; Duration _position = Duration.zero;
+  final AudioPlayer _player = AudioPlayer(); 
+  bool _isPlaying = false; 
+  Duration _duration = Duration.zero; 
+  Duration _position = Duration.zero;
+
   @override
-  void initState() { super.initState(); _player.onDurationChanged.listen((d) => setState(() => _duration = d)); _player.onPositionChanged.listen((p) => setState(() => _position = p)); _player.onPlayerComplete.listen((_) => setState(() => _isPlaying = false)); }
+  void initState() { 
+    super.initState(); 
+    _player.onDurationChanged.listen((d) => setState(() => _duration = d)); 
+    _player.onPositionChanged.listen((p) => setState(() => _position = p)); 
+    _player.onPlayerComplete.listen((_) => setState(() => _isPlaying = false)); 
+  }
+
   @override
   void dispose() { _player.dispose(); super.dispose(); }
+
   @override
   Widget build(BuildContext context) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      IconButton(icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: widget.isMe ? Colors.black : Colors.orangeAccent), onPressed: () async { if (_isPlaying) { await _player.pause(); setState(() => _isPlaying = false); } else { await _player.play(UrlSource(widget.url)); setState(() => _isPlaying = true); } }),
-      Text('${_position.inSeconds}/${_duration.inSeconds}', style: TextStyle(color: widget.isMe ? Colors.black : Colors.white70, fontSize: 10))
-    ]);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: widget.isMe ? Colors.black : Colors.orangeAccent, size: 32),
+          onPressed: () async {
+            if (_isPlaying) { await _player.pause(); setState(() => _isPlaying = false); }
+            else { await _player.play(UrlSource(widget.url)); setState(() => _isPlaying = true); }
+          }
+        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(width: 100, height: 3, color: Colors.white24, child: FractionallySizedBox(alignment: Alignment.centerLeft, widthFactor: _duration.inSeconds > 0 ? _position.inSeconds / _duration.inSeconds : 0, child: Container(color: widget.isMe ? Colors.black : Colors.orangeAccent))),
+          const SizedBox(height: 4),
+          Text('${_position.inSeconds}s / ${_duration.inSeconds}s', style: TextStyle(color: widget.isMe ? Colors.black54 : Colors.white54, fontSize: 10)),
+        ])
+      ],
+    );
   }
 }
 
 class FullScreenImageViewer extends StatelessWidget {
   final String imageUrl;
-  const FullScreenImageViewer({super.key, required this.imageUrl});
+  final bool isViewOnce;
+  const FullScreenImageViewer({super.key, required this.imageUrl, this.isViewOnce = false});
   @override
-  Widget build(BuildContext context) { return Scaffold(backgroundColor: Colors.black, body: Center(child: InteractiveViewer(child: Image.network(imageUrl)))); }
+  Widget build(BuildContext context) { 
+    return Scaffold(
+      backgroundColor: Colors.black, 
+      appBar: AppBar(
+        backgroundColor: Colors.transparent, 
+        iconTheme: const IconThemeData(color: Colors.white),
+        automaticallyImplyLeading: !isViewOnce,
+      ), 
+      body: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              child: CachedNetworkImage(
+                imageUrl: imageUrl, 
+                placeholder: (_, __) => const CircularProgressIndicator(color: Colors.orangeAccent)
+              )
+            )
+          ),
+          if (isViewOnce)
+            Positioned(
+              bottom: 40,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                  label: const Text("Close & Destroy"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ); 
+  }
 }
 
 class MediaPreviewPage extends StatelessWidget {
-  final File file; final String? imageUrl;
-  const MediaPreviewPage({super.key, required this.file, this.imageUrl});
+  final File file;
+  const MediaPreviewPage({super.key, required this.file});
   @override
   Widget build(BuildContext context) {
-    return Scaffold(backgroundColor: Colors.black, body: SafeArea(child: Column(children: [
-          Expanded(child: Center(child: imageUrl != null ? Image.network(imageUrl!) : Image.file(file))),
-          Padding(padding: const EdgeInsets.all(24), child: Column(children: [
-              ElevatedButton(onPressed: () => Navigator.pop(context, {'isViewOnce': true}), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFA000), minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('View once ', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)), Icon(Icons.looks_one, color: Colors.black, size: 18)])),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: Center(child: Image.file(file))),
+            Padding(padding: const EdgeInsets.all(24), child: Column(children: [
+              ElevatedButton(onPressed: () => Navigator.pop(context, {'isViewOnce': true}), style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('Send as View Once ', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)), Icon(Icons.looks_one, color: Colors.black, size: 18)])),
               const SizedBox(height: 12),
-              ElevatedButton(onPressed: () => Navigator.pop(context, {'isViewOnce': false}), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), child: const Text('View many time', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold))),
+              ElevatedButton(onPressed: () => Navigator.pop(context, {'isViewOnce': false}), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), child: const Text('Send Normal', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold))),
             ])),
-        ])),
+          ],
+        ),
+      ),
     );
   }
 }

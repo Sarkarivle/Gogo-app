@@ -9,13 +9,11 @@ exports.getInbox = async (req, res) => {
     try {
         const phone = req.params.phone;
 
-        // Check if requester is deactivated
         const me = await User.findOne({ phone }, 'accountStatus');
         if (me && (me.accountStatus === 'Deactivated' || me.accountStatus === 'Suspended')) {
             return res.status(403).json({ success: false, message: "account deactivate" });
         }
 
-        // Get blocked list
         const blocks = await Block.find({ $or: [{ blockerPhone: phone }, { blockedPhone: phone }] });
         const blockedPhones = blocks.map(b => b.blockerPhone === phone ? b.blockedPhone : b.blockerPhone);
 
@@ -25,12 +23,9 @@ exports.getInbox = async (req, res) => {
             receiverPhone: { $nin: blockedPhones }
         }).sort({ timestamp: -1 });
 
-        // Count total unread for this user
-        const unreadCount = await Message.countDocuments({ receiverPhone: phone, seen: false });
+        const unreadCount = await Message.countDocuments({ receiverPhone: phone, isOpened: false });
 
         let partners = {};
-
-        // Fetch all users details
         const allUsers = await User.find({}, 'phone name lat lng position city area isOnline isVerified');
         const userMap = {};
         allUsers.forEach(u => userMap[u.phone] = u);
@@ -39,17 +34,17 @@ exports.getInbox = async (req, res) => {
             let other = m.senderPhone === phone ? m.receiverPhone : m.senderPhone;
             if (!partners[other]) {
                 const otherUser = userMap[other] || {};
-
                 const partnerUnread = await Message.countDocuments({
                     senderPhone: other,
                     receiverPhone: phone,
-                    seen: false
+                    isOpened: false
                 });
 
                 partners[other] = {
                     phone: other,
                     msg: m.type === 'audio' ? '🎵 Voice Message' : (m.message || (m.imageUrl ? '📷 Image' : '')),
                     time: new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    timestamp: m.timestamp,
                     name: otherUser.name || 'User',
                     pos: otherUser.position || 'Any',
                     lat: otherUser.lat,
@@ -59,7 +54,6 @@ exports.getInbox = async (req, res) => {
                     unread: partnerUnread,
                     isOnline: otherUser.isOnline || false,
                     isVerified: otherUser.isVerified || false,
-                    dist: 'Unknown'
                 };
             }
         }
@@ -72,15 +66,12 @@ exports.getInbox = async (req, res) => {
 exports.blockUser = async (req, res) => {
     try {
         const { blockerPhone, blockedPhone, reason, isReported } = req.body;
-
-        // 1. Save Block Record
         await Block.findOneAndUpdate(
             { blockerPhone, blockedPhone },
             { reason, isReported, timestamp: new Date() },
             { upsert: true, new: true }
         );
 
-        // 2. Create System Message in Chat for Permanent Record
         const roomId = [blockerPhone, blockedPhone].sort().join('_');
         const systemMsg = new Message({
             roomId,
@@ -90,8 +81,7 @@ exports.blockUser = async (req, res) => {
             type: 'block_event'
         });
         await systemMsg.save();
-
-        res.json({ success: true, message: "User blocked", systemMsg });
+        res.json({ success: true, message: "User blocked" });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -100,11 +90,8 @@ exports.blockUser = async (req, res) => {
 exports.unblockUser = async (req, res) => {
     try {
         const { blockerPhone, blockedPhone } = req.body;
-
-        // 1. Remove Block Record
         await Block.findOneAndDelete({ blockerPhone, blockedPhone });
 
-        // 2. Create System Message for Record
         const roomId = [blockerPhone, blockedPhone].sort().join('_');
         const systemMsg = new Message({
             roomId,
@@ -114,8 +101,7 @@ exports.unblockUser = async (req, res) => {
             type: 'unblock_event'
         });
         await systemMsg.save();
-
-        res.json({ success: true, message: "User unblocked", systemMsg });
+        res.json({ success: true, message: "User unblocked" });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -124,14 +110,8 @@ exports.unblockUser = async (req, res) => {
 exports.checkBlock = async (req, res) => {
     try {
         const { p1, p2 } = req.params;
-        // Check specifically if p1 blocked p2
         const blockRecord = await Block.findOne({ blockerPhone: p1, blockedPhone: p2 });
-
-        res.json({
-            success: true,
-            isBlocked: !!blockRecord,
-            blockerPhone: blockRecord ? blockRecord.blockerPhone : null
-        });
+        res.json({ success: true, isBlocked: !!blockRecord, blockerPhone: blockRecord ? blockRecord.blockerPhone : null });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -140,9 +120,10 @@ exports.checkBlock = async (req, res) => {
 exports.markSeen = async (req, res) => {
     try {
         const { myPhone, otherPhone } = req.body;
+        const roomId = [myPhone, otherPhone].sort().join('_');
         await Message.updateMany(
-            { senderPhone: otherPhone, receiverPhone: myPhone, seen: false },
-            { seen: true }
+            { roomId, receiverPhone: myPhone, isOpened: false },
+            { isOpened: true, isDelivered: true }
         );
         res.json({ success: true });
     } catch (e) {
@@ -153,23 +134,14 @@ exports.markSeen = async (req, res) => {
 exports.handleFileUpload = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: "Upload failed" });
-
         const fileUrl = `http://72.61.170.181:5000/uploads/${req.file.filename}`;
-
-        // Save to RecentPhoto ONLY during upload
         const phone = req.body.phone;
         if (phone) {
-            const newRecent = new RecentPhoto({
-                phone: phone,
-                imageUrl: fileUrl
-            });
+            const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });
             await newRecent.save();
-            console.log("RECENT_DEBUG: Saved to RecentPhoto for phone:", phone);
         }
-
         res.json({ success: true, imageUrl: fileUrl });
     } catch (err) {
-        console.error("RECENT_DEBUG: Error in handleFileUpload:", err);
         res.status(500).json({ success: false, error: err.message });
     }
 };
@@ -177,10 +149,7 @@ exports.handleFileUpload = async (req, res) => {
 exports.getRecentPhotos = async (req, res) => {
     try {
         const { phone } = req.params;
-        // Fetch ONLY from RecentPhoto collection
-        const photos = await RecentPhoto.find({ phone: phone })
-            .sort({ timestamp: -1 })
-            .limit(20);
+        const photos = await RecentPhoto.find({ phone: phone }).sort({ timestamp: -1 }).limit(20);
         res.json({ success: true, photos });
     } catch (e) {
         res.status(500).json({ success: false, photos: [] });
@@ -190,32 +159,18 @@ exports.getRecentPhotos = async (req, res) => {
 exports.deletePhoto = async (req, res) => {
     try {
         const { messageId } = req.params;
-
-        // 1. Find the photo in the dedicated RecentPhoto database
         const photo = await RecentPhoto.findById(messageId);
         if (!photo) return res.json({ success: true, message: "Not found" });
-
         const imageUrl = photo.imageUrl;
-
-        // 2. Delete from RecentPhoto database
         await RecentPhoto.findByIdAndDelete(messageId);
-
-        // 3. Delete physical file from server permanently
         try {
             const fileName = imageUrl.split('/').pop();
             const filePath = path.join(process.cwd(), 'uploads', fileName);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-                console.log("RECENT_DEBUG: Physical file deleted:", fileName);
-            }
-        } catch (fErr) {
-            console.error("RECENT_DEBUG: File delete error:", fErr);
-        }
-
-        res.json({ success: true, message: "Deleted permanently from RecentPhoto and Storage" });
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (fErr) {}
+        res.json({ success: true });
     } catch (e) {
-        console.error("RECENT_DEBUG: Global delete error:", e);
-        res.json({ success: true }); // Return success to UI anyway
+        res.json({ success: true });
     }
 };
 

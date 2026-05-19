@@ -4,47 +4,36 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/socket_service.dart';
 import 'chat_screen.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
+
   @override
   State<InboxScreen> createState() => _InboxScreenState();
 }
 
 class _InboxScreenState extends State<InboxScreen> {
-  List<dynamic> chatData = [];
+  List<dynamic> _chats = [];
   bool _isLoading = false;
-  Map<String, dynamic>? currentUser;
+  Map<String, dynamic>? _currentUser;
   StreamSubscription? _socketEventSub;
+  Position? _myPos;
+
+  // Filter States
+  String _selectedDistance = 'Any';
+  String _selectedAge = 'Any';
+  bool _isOnlineOnly = false;
+  String _havePlaceStatus = 'Any';
+  String _selectedPosition = 'Any';
 
   @override
   void initState() {
     super.initState();
-    _initInbox();
-  }
-
-  Future<void> _initInbox() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userData = prefs.getString('user_data');
-    if (userData != null) {
-      currentUser = jsonDecode(userData);
-      _listenToSocketEvents();
-    }
-    _fetchInbox();
-  }
-
-  void _listenToSocketEvents() {
-    _socketEventSub = SocketService().eventStream.listen((event) {
-      if (event['event'] == 'unread_update') {
-        final data = event['data'];
-        if (currentUser != null && data['phone'] == currentUser!['phone']) {
-          _fetchInbox();
-        }
-      }
-    });
+    _initialize();
   }
 
   @override
@@ -53,57 +42,121 @@ class _InboxScreenState extends State<InboxScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchInbox() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
+  Future<void> _initialize() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userData = prefs.getString('user_data');
+    if (userData != null) {
+      _currentUser = jsonDecode(userData);
+      _listenToSocketEvents();
+    }
+    await _getCurrentLocation();
+    _fetchInbox();
+  }
+
+  Future<void> _getCurrentLocation() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final user = jsonDecode(prefs.getString('user_data')!);
-      Position? myPos;
-      try { myPos = await Geolocator.getCurrentPosition(); } catch (_) {}
-      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/inbox/${user['phone']}'));
+      _myPos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low);
+    } catch (_) {}
+  }
+
+  void _listenToSocketEvents() {
+    _socketEventSub = SocketService().eventStream.listen((event) {
+      if (!mounted) return;
+      if (event['event'] == 'receive_message' || 
+          event['event'] == 'unread_update' ||
+          event['event'] == 'message_opened') {
+        _fetchInbox();
+      }
+    });
+  }
+
+  Future<void> _fetchInbox() async {
+    if (_currentUser == null) return;
+    if (mounted && _chats.isEmpty) setState(() => _isLoading = true);
+
+    try {
+      final response = await http.get(
+          Uri.parse('http://72.61.170.181:5000/api/chat/inbox/${_currentUser!['phone']}'));
+      
       if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        List<dynamic> data = decoded['chats'] ?? [];
-        if (myPos != null) {
-          for (var chat in data) {
+        final data = jsonDecode(response.body);
+        List<dynamic> fetchedChats = data['chats'] ?? [];
+
+        if (_myPos != null) {
+          for (var chat in fetchedChats) {
             if (chat['lat'] != null && chat['lng'] != null) {
-              double dist = Geolocator.distanceBetween(myPos.latitude, myPos.longitude, chat['lat'], chat['lng']) / 1000;
-              chat['dist'] = "${dist.toStringAsFixed(1)} km";
+              double dist = Geolocator.distanceBetween(
+                  _myPos!.latitude, _myPos!.longitude, 
+                  chat['lat'], chat['lng']) / 1000;
+              chat['calculated_dist'] = dist;
+              chat['dist_str'] = "${dist.toStringAsFixed(2)} km";
+            } else {
+              chat['dist_str'] = "Unknown";
             }
           }
         }
-        if (mounted) setState(() => chatData = data);
+
+        fetchedChats.sort((a, b) => (b['timestamp'] ?? '').compareTo(a['timestamp'] ?? ''));
+
+        if (mounted) setState(() => _chats = fetchedChats);
       }
-    } catch (e) { print(e); } finally { if (mounted) setState(() => _isLoading = false); }
+    } catch (e) {
+      debugPrint("Inbox Fetch Error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  void _showLongPressMenu(int index) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF2A0D17),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-        ),
-        child: SafeArea(
+  List<dynamic> _getFilteredChats() {
+    return _chats.where((chat) {
+      if (_isOnlineOnly) {
+        bool isOnline = SocketService().onlineUsers.value[chat['phone']] ?? chat['isOnline'] ?? false;
+        if (!isOnline) return false;
+      }
+      if (_selectedDistance != 'Any') {
+        double maxDist = double.tryParse(_selectedDistance.replaceAll('km', '')) ?? 999.0;
+        if ((chat['calculated_dist'] ?? 0.0) > maxDist) return false;
+      }
+      if (_selectedPosition != 'Any' && chat['pos'] != _selectedPosition) return false;
+      return true;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredChats = _getFilteredChats();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF2A0D17),
+        elevation: 0,
+        title: const Text("Inbox", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white)),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _fetchInbox,
+        color: Colors.orangeAccent,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 12),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 15),
-              Text(chatData[index]['name'] ?? 'User', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-              const SizedBox(height: 10),
-              const Divider(color: Colors.white10),
-              _buildPopupItem("Turn off notifications", Icons.notifications_off_outlined),
-              _buildPopupItem("Delete from chats", Icons.delete_sweep_rounded, isDelete: true, onTap: () {
-                setState(() { chatData.removeAt(index); });
-                Navigator.pop(context);
-              }),
-              _buildPopupItem("Save as Favourites", Icons.star_border_rounded),
-              const SizedBox(height: 15),
+              _buildFilterSection(),
+              _buildFavouritesSection(),
+              const Divider(color: Colors.white10, height: 1),
+              if (_isLoading && _chats.isEmpty)
+                const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)))
+              else if (filteredChats.isEmpty)
+                _buildEmptyState()
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: filteredChats.length,
+                  separatorBuilder: (c, i) => const Divider(color: Colors.white10, height: 1),
+                  itemBuilder: (context, index) => _buildChatItem(filteredChats[index]),
+                ),
             ],
           ),
         ),
@@ -111,125 +164,236 @@ class _InboxScreenState extends State<InboxScreen> {
     );
   }
 
-  Widget _buildPopupItem(String text, IconData icon, {bool isDelete = false, VoidCallback? onTap}) {
-    return ListTile(
-      onTap: onTap ?? () => Navigator.pop(context),
-      leading: Icon(icon, color: isDelete ? Colors.redAccent : Colors.orangeAccent, size: 22),
-      title: Text(text, style: TextStyle(color: isDelete ? Colors.redAccent : Colors.white.withOpacity(0.9), fontSize: 15, fontWeight: FontWeight.w500)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-      dense: true,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(backgroundColor: const Color(0xFF2A0D17), elevation: 0, title: const Text("Inbox", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22))),
-      body: RefreshIndicator(
-        onRefresh: _fetchInbox,
-        color: Colors.orangeAccent,
-        backgroundColor: const Color(0xFF1A1A1A),
-        child: Column(children: [
-          Container(
-            color: const Color(0xFF2A0D17),
-            padding: const EdgeInsets.only(bottom: 15),
-            child: SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
-              _buildInboxFilter("Distance"), _buildInboxFilter("Age"), _buildInboxFilter("Online"), _buildInboxFilter("Kamra hai"), _buildInboxFilter("Position")
-            ])),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(), 
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, 
-                children: [
-                  Padding(padding: const EdgeInsets.all(16), child: Row(children: [const Icon(Icons.star, color: Colors.orangeAccent, size: 20), const SizedBox(width: 8), const Text("Favourites", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 16))])),
-                  SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
-                    _buildFavCard("Karan", "Mumbai", "Top"), const SizedBox(width: 12), _buildFavCard("Sachin", "Delhi", "Bottom")
-                  ])),
-                  const SizedBox(height: 20), const Divider(color: Colors.white10, height: 1),
-                  if (_isLoading && chatData.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)))
-                  else ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: chatData.length,
-                    separatorBuilder: (c, i) => const Divider(color: Colors.white10, height: 1),
-                    itemBuilder: (context, i) {
-                      final chat = chatData[i];
-                      return ValueListenableBuilder(
-                        valueListenable: SocketService().onlineUsers,
-                        builder: (context, onlineMap, _) {
-                          return ValueListenableBuilder(
-                            valueListenable: SocketService().typingUsers,
-                            builder: (context, typingMap, _) {
-                              final bool isTyping = typingMap[chat['phone']] ?? false;
-                              final bool isOnline = onlineMap[chat['phone']] ?? chat['isOnline'] ?? false;
-                              
-                              return ListTile(
-                                onTap: () async {
-                                  await Navigator.push(context, MaterialPageRoute(builder: (c) => ChatPage(name: chat['name'] ?? chat['phone'], receiverPhone: chat['phone'], distance: chat['dist'] ?? '', position: chat['pos'] ?? '')));
-                                  _fetchInbox();
-                                },
-                                onLongPress: () => _showLongPressMenu(i),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                leading: Stack(
-                                  children: [
-                                    const CircleAvatar(radius: 28, backgroundColor: Colors.white10, child: Icon(Icons.person, color: Colors.white54, size: 30)),
-                                    if (isOnline) Positioned(right: 2, bottom: 2, child: Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0F0F0F), width: 2)))),
-                                  ],
-                                ),
-                                title: Row(children: [
-                                  Expanded(child: Text("${chat['name']}, ${chat['pos'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                                  Text(chat['time'] ?? '', style: const TextStyle(color: Colors.white54, fontSize: 12))
-                                ]),
-                                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  const SizedBox(height: 4), 
-                                  Row(
-                                    children: [
-                                      Text((chat['area'] != null && chat['area'] != "Unknown" && chat['area'] != "") ? "${chat['area']}, ${chat['dist'] ?? ''}" : (chat['city'] ?? chat['dist'] ?? ''), style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                      if (isOnline) ...[
-                                        const SizedBox(width: 6),
-                                        const Icon(Icons.circle, color: Colors.greenAccent, size: 8),
-                                        const SizedBox(width: 4),
-                                        const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold))
-                                      ]
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(children: [
-                              Expanded(
-                                child: Text(
-                                  isTyping ? "typing..." : (chat['msg'] ?? ''), 
-                                  style: TextStyle(
-                                    color: isTyping ? Colors.greenAccent : Colors.white70, 
-                                    fontSize: 14, 
-                                    fontWeight: isTyping ? FontWeight.bold : FontWeight.normal,
-                                    fontStyle: isTyping ? FontStyle.italic : FontStyle.normal
-                                  ), 
-                                  maxLines: 1, 
-                                  overflow: TextOverflow.ellipsis
-                                )
-                              ),
-                                    if ((chat['unread'] ?? 0) > 0) Container(padding: const EdgeInsets.all(6), decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: Text(chat['unread'].toString(), style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)))
-                                  ]),
-                                ]),
-                              );
-                            }
-                          );
-                        }
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ]),
+  Widget _buildFilterSection() {
+    return Container(
+      color: const Color(0xFF2A0D17),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 15),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 10,
+        children: [
+          _buildFilterChip('Distance', _selectedDistance, () {
+            _showFilterDialog('Distance Range', ['Any', '5km', '10km', '25km', '50km'], _selectedDistance, (v) => setState(() => _selectedDistance = v));
+          }),
+          _buildFilterChip('Age', _selectedAge, () {
+            _showFilterDialog('Age Selection', ['Any', '18-25', '26-35', '36+'], _selectedAge, (v) => setState(() => _selectedAge = v));
+          }),
+          _buildFilterChip('Online', _isOnlineOnly ? 'Yes' : 'Any', () {
+            setState(() => _isOnlineOnly = !_isOnlineOnly);
+          }, isActive: _isOnlineOnly),
+          _buildFilterChip('Kamra hai', _havePlaceStatus, () {
+            _showFilterDialog('Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (v) => setState(() => _havePlaceStatus = v));
+          }),
+          _buildFilterChip('Position', _selectedPosition, () {
+            _showFilterDialog('Position', ['Any', 'Top', 'Bottom', 'Versatile'], _selectedPosition, (v) => setState(() => _selectedPosition = v));
+          }),
+        ],
       ),
     );
   }
 
-  Widget _buildInboxFilter(String label) => Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(20)), child: Row(children: [Text(label, style: const TextStyle(fontSize: 12, color: Colors.white)), const SizedBox(width: 4), const Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.white54)]));
-  Widget _buildFavCard(String name, String dist, String pos) => Container(width: 160, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(15)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orangeAccent)), Text(dist, style: const TextStyle(fontSize: 11, color: Colors.white70))]), const SizedBox(height: 8), Text(pos, style: const TextStyle(fontSize: 12, color: Colors.white70))]));
+  Widget _buildFilterChip(String label, String value, VoidCallback onTap, {bool isActive = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w500)),
+            if (value != 'Any') ...[
+              const SizedBox(width: 4),
+              Text(value, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold)),
+            ],
+            const SizedBox(width: 4),
+            const Icon(Icons.keyboard_arrow_down, size: 16, color: Colors.black54),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFavouritesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Row(
+            children: [
+              Icon(Icons.star, color: Colors.orangeAccent, size: 20),
+              SizedBox(width: 8),
+              Text("Favourites", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 90,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: 2, // Dummy count
+            itemBuilder: (context, index) {
+              return Container(
+                width: 170,
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(child: Text("maurya ji", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        Text(index == 0 ? "21.40 km" : "15.0 km", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Top", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                        Text(index == 0 ? "Online" : "", style: const TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Widget _buildChatItem(dynamic chat) {
+    return ValueListenableBuilder<Map<String, bool>>(
+      valueListenable: SocketService().onlineUsers,
+      builder: (context, onlineMap, _) {
+        return ValueListenableBuilder<Map<String, bool>>(
+          valueListenable: SocketService().typingUsers,
+          builder: (context, typingMap, _) {
+            final bool isOnline = onlineMap[chat['phone']] ?? chat['isOnline'] ?? false;
+            final bool isTyping = typingMap[chat['phone']] ?? false;
+
+            return ListTile(
+              onTap: () async {
+                await Navigator.push(context, MaterialPageRoute(
+                  builder: (c) => ChatPage(
+                    name: chat['name'], 
+                    receiverPhone: chat['phone'], 
+                    distance: chat['dist_str'] ?? '', 
+                    position: chat['pos'] ?? ''
+                  )
+                ));
+                _fetchInbox();
+              },
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              leading: const CircleAvatar(
+                radius: 28,
+                backgroundColor: Colors.white,
+                child: Icon(Icons.person, color: Colors.grey, size: 35),
+              ),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: Text("${chat['name']}, ${chat['pos'] ?? ''}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Text(_formatTime(chat['timestamp']), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                ],
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(chat['dist_str'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      if (isOnline) ...[
+                        const Text(" • ", style: TextStyle(color: Colors.white38)),
+                        const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ]
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isTyping ? "typing..." : (chat['msg'] ?? ''),
+                    style: TextStyle(
+                      color: isTyping ? Colors.greenAccent : Colors.white60,
+                      fontSize: 14,
+                      fontStyle: isTyping ? FontStyle.italic : FontStyle.normal,
+                    ),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      height: 300,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 60, color: Colors.white.withOpacity(0.05)),
+          const SizedBox(height: 16),
+          const Text("No messages yet", style: TextStyle(color: Colors.white38, fontSize: 15)),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(dynamic timestamp) {
+    if (timestamp == null) return '';
+    try {
+      DateTime date = DateTime.parse(timestamp).toLocal();
+      final now = DateTime.now();
+      if (date.year == now.year && date.month == now.month && date.day == now.day) {
+        return DateFormat('h:mm a').format(date);
+      }
+      if (date.year == now.year && date.month == now.month && date.day == now.day - 1) {
+        return "Yesterday";
+      }
+      return DateFormat('d MMM').format(date);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  void _showFilterDialog(String title, List<String> options, String current, Function(String) onSelect) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (c) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 15),
+            Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+            const Divider(color: Colors.white10),
+            ...options.map((opt) => ListTile(
+              title: Text(opt, style: TextStyle(color: opt == current ? Colors.orangeAccent : Colors.white)),
+              trailing: opt == current ? const Icon(Icons.check, color: Colors.orangeAccent) : null,
+              onTap: () { onSelect(opt); Navigator.pop(context); },
+            )),
+          ],
+        ),
+      ),
+    );
+  }
 }
