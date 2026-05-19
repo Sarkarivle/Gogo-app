@@ -80,9 +80,13 @@ class ProfileCard extends StatelessWidget {
             ]),
             const SizedBox(height: 14),
             Row(children: [
-              Text(
-                name,
-                style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
+              Expanded(
+                child: Text(
+                  name,
+                  style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (isVerified) ...[
                 const SizedBox(width: 6),
@@ -101,14 +105,21 @@ class ProfileCard extends StatelessWidget {
                   gradient: LinearGradient(colors: [Colors.amber.shade400, Colors.orange.shade400]),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Row(children: [
-                  const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Liked by $likedBy People',
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
-                  )
-                ]),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Liked by $likedBy People',
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )
+                  ],
+                ),
               ),
           ],
         ),
@@ -121,7 +132,14 @@ class ProfileCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6.0),
       child: Row(children: [
         Text('$label ', style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500)),
-        Text(value, style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w700)),
+        Expanded(
+          child: Text(
+            value, 
+            style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w700),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ]),
     );
   }

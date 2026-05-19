@@ -55,26 +55,64 @@ app.get('/admin', (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: "Active", version: "2.0.0" }));
 
-const connectedUsers = new Map();
+const connectedUsers = new Map(); // socket.id -> phone
+const phoneToSocket = new Map(); // phone -> socket.id
 
 io.on('connection', (socket) => {
     socket.on('set_online', async (phone) => {
         if (!phone) return;
         connectedUsers.set(socket.id, phone);
+        phoneToSocket.set(phone, socket.id);
+
         await User.findOneAndUpdate({ phone }, { isOnline: true, lastSeen: new Date() });
         io.emit('user_status_change', { phone, isOnline: true });
+
+        // Deliver pending messages
+        try {
+            const undelivered = await Message.find({ receiverPhone: phone, isDelivered: false });
+            for (let msg of undelivered) {
+                msg.isDelivered = true;
+                await msg.save();
+                // Notify the sender that message is delivered
+                const senderRoom = [msg.senderPhone, msg.receiverPhone].sort().join('_');
+                io.to(senderRoom).emit('message_delivered', { messageId: msg._id });
+            }
+        } catch (err) {
+            console.log("Error delivering pending messages:", err);
+        }
     });
 
-    socket.on('join_room', (roomId) => socket.join(roomId));
+    socket.on('join_room', async (roomId) => {
+        socket.join(roomId);
+        // When joining, check if the other user in the room is online
+        const phones = roomId.split('_');
+        const myPhone = connectedUsers.get(socket.id);
+        const otherPhone = phones.find(p => p !== myPhone);
+
+        if (otherPhone) {
+            const isOtherOnline = phoneToSocket.has(otherPhone);
+            socket.emit('user_status_change', { phone: otherPhone, isOnline: isOtherOnline });
+        }
+    });
 
     socket.on('typing', (data) => {
         const roomId = [data.myPhone, data.otherPhone].sort().join('_');
         socket.to(roomId).emit('display_typing', { phone: data.myPhone });
+        // Also notify specifically for Inbox screen
+        const otherSocketId = phoneToSocket.get(data.otherPhone);
+        if (otherSocketId) {
+            io.to(otherSocketId).emit('display_typing', { phone: data.myPhone });
+        }
     });
 
     socket.on('stop_typing', (data) => {
         const roomId = [data.myPhone, data.otherPhone].sort().join('_');
         socket.to(roomId).emit('hide_typing', { phone: data.myPhone });
+        // Also notify specifically for Inbox screen
+        const otherSocketId = phoneToSocket.get(data.otherPhone);
+        if (otherSocketId) {
+            io.to(otherSocketId).emit('hide_typing', { phone: data.myPhone });
+        }
     });
 
     socket.on('notify_block', (data) => {
@@ -121,6 +159,10 @@ io.on('connection', (socket) => {
 
             const users = [data.senderPhone, data.receiverPhone].sort();
             const roomId = users.join('_');
+
+            // Check if receiver is online to set initial delivery status
+            const isReceiverOnline = phoneToSocket.has(data.receiverPhone);
+
             const newMessage = new Message({
                 roomId,
                 senderPhone: data.senderPhone,
@@ -129,13 +171,16 @@ io.on('connection', (socket) => {
                 imageUrl: data.imageUrl,
                 audioUrl: data.audioUrl,
                 type: data.type || (data.audioUrl ? 'audio' : (data.imageUrl ? 'image' : 'text')),
-                isViewOnce: data.isViewOnce || false
+                isViewOnce: data.isViewOnce || false,
+                isDelivered: isReceiverOnline
             });
             const savedMsg = await newMessage.save();
             data._id = savedMsg._id;
             data.type = savedMsg.type;
             data.timestamp = savedMsg.timestamp;
             data.isViewOnce = savedMsg.isViewOnce;
+            data.isDelivered = savedMsg.isDelivered;
+
             io.to(roomId).emit('receive_message', data);
 
             // Notification
@@ -155,10 +200,25 @@ io.on('connection', (socket) => {
 
     socket.on('mark_opened', async (data) => {
         try {
-            await Message.findByIdAndUpdate(data.messageId, { isOpened: true });
+            await Message.findByIdAndUpdate(data.messageId, { isOpened: true, isDelivered: true });
             const roomId = [data.myPhone, data.otherPhone].sort().join('_');
             io.to(roomId).emit('message_opened', { messageId: data.messageId });
         } catch (e) {}
+    });
+
+    socket.on('mark_chat_seen', async (data) => {
+        try {
+            const roomId = [data.myPhone, data.otherPhone].sort().join('_');
+            // Mark all messages as delivered and opened
+            await Message.updateMany(
+                { roomId, receiverPhone: data.myPhone, isOpened: false },
+                { isOpened: true, isDelivered: true }
+            );
+            // Notify other user that their messages are seen
+            socket.to(roomId).emit('chat_seen_update', { by: data.myPhone });
+        } catch (e) {
+            console.log("Error marking chat seen:", e);
+        }
     });
 
     socket.on('disconnect', async () => {
@@ -167,6 +227,7 @@ io.on('connection', (socket) => {
             await User.findOneAndUpdate({ phone }, { isOnline: false, lastSeen: new Date() });
             io.emit('user_status_change', { phone, isOnline: false });
             connectedUsers.delete(socket.id);
+            phoneToSocket.delete(phone);
         }
     });
 

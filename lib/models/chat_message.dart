@@ -9,6 +9,8 @@ class ChatMessage {
   final bool isMe;
   final DateTime timestamp;
   bool isEdited;
+  bool isDelivered;
+  bool isSeen;
 
   ChatMessage({
     this.id,
@@ -21,5 +23,7 @@ class ChatMessage {
     required this.isMe,
     required this.timestamp,
     this.isEdited = false,
+    this.isDelivered = false,
+    this.isSeen = false,
   });
 }

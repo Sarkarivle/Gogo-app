@@ -55,6 +55,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _initGlobalSocket() {
     socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{'transports': ['websocket'], 'autoConnect': true});
+    socket.onConnect((_) {
+      if (currentUser != null) {
+        socket.emit('set_online', currentUser!['phone']);
+      }
+    });
     socket.on('unread_update', (data) {
       if (currentUser != null && data['phone'] == currentUser!['phone']) _fetchUnreadCount();
     });

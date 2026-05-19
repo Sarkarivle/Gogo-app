@@ -96,13 +96,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _joinRoom() {
     if (currentUser != null) {
+      socket.emit('set_online', currentUser!['phone']); // Tell server I'm online
       socket.emit('join_room', _getRoomId());
     }
   }
 
   Future<void> _fetchReceiverStatus() async {
     try {
-      final response = await ApiService.get('/api/user/user/${widget.receiverPhone}/full');
+      final response = await ApiService.get('/api/admin/user/${widget.receiverPhone}/full');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) setState(() => _isOnline = data['user']['isOnline'] ?? false);
@@ -146,6 +147,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 isOpened: msg['isOpened'] ?? false,
                 isMe: msg['senderPhone'] == currentUser!['phone'],
                 timestamp: DateTime.parse(msg['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
+                isDelivered: msg['isDelivered'] ?? true, // Default to true for history
+                isSeen: msg['isOpened'] ?? false,
               ));
             }
           });
@@ -163,7 +166,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _initSocket() {
     socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{'transports': ['websocket'], 'autoConnect': true});
-    socket.onConnect((_) { _joinRoom(); });
+    socket.onConnect((_) { 
+      if (currentUser != null) {
+        socket.emit('set_online', currentUser!['phone']);
+      }
+      _joinRoom(); 
+    });
     socket.on('receive_message', (data) {
       if (mounted) {
         setState(() {
@@ -171,6 +179,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             _messages.removeWhere((m) => m.id != null && m.id!.startsWith('temp_') && m.text == data['message']);
           }
           if (_messages.any((m) => m.id == data['_id'])) return;
+          
+          bool isMe = data['senderPhone'] == currentUser?['phone'];
+          
           _messages.add(ChatMessage(
             id: data['_id'],
             text: data['message'],
@@ -179,18 +190,52 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             type: data['type'] ?? 'text',
             isViewOnce: data['isViewOnce'] ?? false,
             isOpened: data['isOpened'] ?? false,
-            isMe: data['senderPhone'] == currentUser?['phone'],
+            isMe: isMe,
             timestamp: DateTime.parse(data['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
+            isDelivered: data['isDelivered'] ?? true,
+            isSeen: data['isOpened'] ?? false,
           ));
+
+          // If I am the receiver and I'm currently in this chat, mark it as seen immediately
+          if (!isMe) {
+            socket.emit('mark_opened', {
+              'messageId': data['_id'], 
+              'myPhone': currentUser!['phone'], 
+              'otherPhone': widget.receiverPhone
+            });
+          }
         });
         _scrollToBottom();
+      }
+    });
+    socket.on('message_delivered', (data) {
+      if (mounted) {
+        setState(() {
+          final index = _messages.indexWhere((m) => m.id == data['messageId']);
+          if (index != -1) _messages[index].isDelivered = true;
+        });
       }
     });
     socket.on('message_opened', (data) {
       if (mounted) {
         setState(() {
           final index = _messages.indexWhere((m) => m.id == data['messageId']);
-          if (index != -1) _messages[index].isOpened = true;
+          if (index != -1) {
+            _messages[index].isOpened = true;
+            _messages[index].isSeen = true;
+          }
+        });
+      }
+    });
+    socket.on('chat_seen_update', (data) {
+      if (mounted) {
+        setState(() {
+          for (var msg in _messages) {
+            if (msg.isMe) {
+              msg.isSeen = true;
+              msg.isDelivered = true;
+            }
+          }
         });
       }
     });
@@ -209,7 +254,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Future<void> _markMessagesAsSeen() async {
     if (currentUser == null) return;
-    socket.emit('mark_seen', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    // Mark all messages from this specific user as seen
+    socket.emit('mark_chat_seen', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
   }
 
   Future<void> _uploadAudio(String path) async {
@@ -291,23 +337,78 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Widget _buildMessageList() {
     List<Widget> children = [];
-    if (_messages.isNotEmpty) {
+    
+    // If no messages, show safety banner at top
+    if (_messages.isEmpty) {
       children.add(const SizedBox(height: 20));
+      children.add(_buildSafetyBanner());
+    }
+
+    if (_messages.isNotEmpty) {
       DateTime? lastDate;
       for (int i = 0; i < _messages.length; i++) {
         final msg = _messages[i];
         if (lastDate == null || DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day) != lastDate) {
           children.add(Center(child: Container(margin: const EdgeInsets.symmetric(vertical: 20), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(15)), child: Text(DateFormat('EEE, MMM d').format(msg.timestamp), style: const TextStyle(color: Colors.white60, fontSize: 11)))));
           lastDate = DateTime(msg.timestamp.year, msg.timestamp.month, msg.timestamp.day);
+          
+          // Show safety banner after first date header
+          if (i == 0) {
+            children.add(_buildSafetyBanner());
+          }
         }
         children.add(Padding(padding: const EdgeInsets.only(bottom: 15, left: 20, right: 20), child: GestureDetector(onLongPress: () => _showContextMenu(msg), child: _buildMessageItem(msg))));
       }
-      if (_isOtherTyping) children.add(_buildTypingIndicator());
     }
+    
+    if (_isOtherTyping) children.add(_buildTypingIndicator());
+    
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.only(bottom: 20),
       children: children,
+    );
+  }
+
+  Widget _buildSafetyBanner() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF9C4).withOpacity(0.9), // Light Yellow
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_box_rounded, color: Colors.green, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'अपनी कम्युनिटी को सेफ रखें',
+                  style: TextStyle(
+                    color: Colors.black.withOpacity(0.8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'अगर कोई यूजर पैसे मांगta है, तो तुरंत रिपोर्ट करें - हम तुरंत एक्शन लेंगे।',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.black.withOpacity(0.7),
+                fontSize: 10,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -398,7 +499,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               await Navigator.push(context, MaterialPageRoute(builder: (context) => FullScreenImageViewer(imageUrl: msg.imageUrl!)));
               if (msg.isViewOnce && !msg.isOpened) {
                 socket.emit('mark_opened', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
-                setState(() => msg.isOpened = true);
+                setState(() {
+                  msg.isOpened = true;
+                  msg.isSeen = true;
+                });
               }
             }
           },
@@ -407,7 +511,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             decoration: BoxDecoration(color: msg.isViewOnce ? (msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A)) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
             child: msg.isViewOnce
                 ? Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(msg.isOpened ? Icons.done_all : Icons.looks_one, color: msg.isMe ? Colors.black : Colors.orangeAccent, size: 20),
+                    Icon(msg.isOpened ? Icons.done_all : Icons.looks_one, color: msg.isMe ? Colors.black : (msg.isOpened ? Colors.greenAccent : Colors.orangeAccent), size: 20),
                     const SizedBox(width: 8),
                     Text(msg.isOpened ? 'Opened' : 'Photo', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontWeight: FontWeight.bold)),
                     if (!msg.isMe && !msg.isOpened) ...[
@@ -419,8 +523,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         )
       else Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), decoration: BoxDecoration(color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A), borderRadius: BorderRadius.circular(16)), child: Text(msg.text ?? '', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white))),
-      Padding(padding: const EdgeInsets.only(top: 4), child: Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white54, fontSize: 10)))
+      Padding(padding: const EdgeInsets.only(top: 4), child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white54, fontSize: 10)),
+          if (msg.isMe) ...[
+            const SizedBox(width: 4),
+            _buildTicks(msg),
+          ]
+        ],
+      ))
     ]);
+  }
+
+  Widget _buildTicks(ChatMessage msg) {
+    if (msg.isSeen || msg.isOpened) {
+      return const Icon(Icons.done_all, color: Colors.greenAccent, size: 15);
+    } else if (msg.isDelivered) {
+      return const Icon(Icons.done_all, color: Colors.grey, size: 15);
+    } else {
+      return const Icon(Icons.done, color: Colors.grey, size: 15);
+    }
   }
 }
 
