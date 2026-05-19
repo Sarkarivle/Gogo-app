@@ -262,6 +262,17 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('delete_message', async (data) => {
+        try {
+            // For "Delete for me", we usually just acknowledge.
+            // If you want it removed from DB entirely, use deleteOne.
+            // For now, let's keep it simple as requested.
+            console.log(`🗑️ Local delete requested for message: ${data.messageId}`);
+        } catch (e) {
+            console.error("Delete Error:", e);
+        }
+    });
+
     socket.on('disconnect', () => {
         const phone = connectedUsers.get(socket.id);
         if (phone) {

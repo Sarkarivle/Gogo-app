@@ -58,13 +58,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _messageController.addListener(() { if (mounted) setState(() {}); }); // Instant Mic/Send swap
+    _messageController.addListener(() { if (mounted) setState(() {}); });
     _loadUserAndHistory();
     _listenToSocket();
+    
+    // Auto-scroll when typing status changes
+    SocketService().typingUsers.addListener(_handleTypingScroll);
+  }
+
+  void _handleTypingScroll() {
+    final bool isTyping = SocketService().typingUsers.value[widget.receiverPhone] ?? false;
+    if (isTyping) {
+      _scrollToBottom();
+    }
   }
 
   @override
   void dispose() {
+    SocketService().typingUsers.removeListener(_handleTypingScroll);
     SocketService().leaveRoom();
     WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
@@ -181,6 +192,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (!_messages.any((m) => m.id == newMessage.id)) {
         _messages.add(newMessage);
         if (!newMessage.isMe) {
+          // Instant hide typing bubble when message is received
+          SocketService().setTyping(widget.receiverPhone, false);
+
           SocketService().emit('mark_opened', {
             'messageId': newMessage.id,
             'myPhone': currentUser!['phone'],
@@ -429,21 +443,32 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildMessageList() {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      itemCount: _messages.length,
-      itemBuilder: (context, index) {
-        final msg = _messages[index];
-        final showDateHeader = index == 0 || !_isSameDay(_messages[index - 1].timestamp, msg.timestamp);
+    return ValueListenableBuilder<Map<String, bool>>(
+      valueListenable: SocketService().typingUsers,
+      builder: (context, typingMap, _) {
+        final bool isTyping = typingMap[widget.receiverPhone] ?? false;
+        
+        return ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          itemCount: _messages.length + (isTyping ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == _messages.length) {
+              return _buildTypingIndicator();
+            }
 
-        return Column(
-          children: [
-            if (showDateHeader) _buildDateHeader(msg.timestamp),
-            _buildMessageBubble(msg),
-          ],
+            final msg = _messages[index];
+            final showDateHeader = index == 0 || !_isSameDay(_messages[index - 1].timestamp, msg.timestamp);
+
+            return Column(
+              children: [
+                if (showDateHeader) _buildDateHeader(msg.timestamp),
+                _buildMessageBubble(msg),
+              ],
+            );
+          },
         );
-      },
+      }
     );
   }
 
@@ -668,6 +693,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15, top: 5), // Added padding to prevent "daba hua" look
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: const BoxDecoration(
+            color: Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(18),
+              topRight: Radius.circular(18),
+              bottomRight: Radius.circular(18),
+            ),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(radius: 3, backgroundColor: Colors.white38),
+              SizedBox(width: 4),
+              CircleAvatar(radius: 3, backgroundColor: Colors.white38),
+              SizedBox(width: 4),
+              CircleAvatar(radius: 3, backgroundColor: Colors.white38),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputArea() {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 10),
@@ -847,10 +902,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     showDialog(context: context, builder: (context) => AlertDialog(
       backgroundColor: const Color(0xFF1A1A1A),
       title: const Text('Delete Message?', style: TextStyle(color: Colors.white)),
+      content: const Text('This message will be removed from your chat history.', style: TextStyle(color: Colors.white70)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
         TextButton(onPressed: () {
-          SocketService().emit('delete_message', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+          // Local Delete: Remove from UI instantly
+          setState(() {
+            _messages.removeWhere((m) => m.id == msg.id || (m.localId != null && m.localId == msg.localId));
+          });
+          
+          // Server Notify (Optional but good for persistence if server supports it)
+          SocketService().emit('delete_message', {
+            'messageId': msg.id, 
+            'myPhone': currentUser!['phone'], 
+            'otherPhone': widget.receiverPhone
+          });
+
           Navigator.pop(context);
         }, child: const Text('DELETE', style: TextStyle(color: Colors.redAccent))),
       ],

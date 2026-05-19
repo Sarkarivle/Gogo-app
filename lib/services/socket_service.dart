@@ -151,6 +151,12 @@ class SocketService with WidgetsBindingObserver {
     _setOnline();
   }
 
+  void setTyping(String phone, bool isTyping) {
+    final updated = Map<String, bool>.from(typingUsers.value);
+    updated[phone] = isTyping;
+    typingUsers.value = updated;
+  }
+
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _socket?.dispose();
