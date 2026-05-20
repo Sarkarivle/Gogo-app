@@ -1,9 +1,12 @@
+import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import 'package:flutter/services.dart';
 import 'onboarding/location_permission_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,31 +18,95 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
+  final List<TextEditingController> _otpControllers = List.generate(6, (index) => TextEditingController());
+  final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
+  
   bool _isLoading = false;
   bool _isOlderThan18 = true;
   String? _verificationId;
+  bool _showOTPView = false;
+  int _resendTimerCount = 30;
+  Timer? _timer;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  static const _channel = MethodChannel('com.gogo.app/phone_hint');
+
+  @override
+  void initState() {
+    super.initState();
+    // Show phone hint as soon as screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showPhoneHint();
+    });
+  }
+
+  Future<void> _showPhoneHint() async {
+    try {
+      final String? result = await _channel.invokeMethod('showPhoneHint');
+      if (result != null && result.isNotEmpty) {
+        // Step 1: Remove all non-digit characters
+        String digits = result.replaceAll(RegExp(r'[^0-9]'), '');
+        
+        // Step 2: Extract last 10 digits if it's an Indian number
+        String finalNumber = digits;
+        if (digits.length >= 10) {
+          finalNumber = digits.substring(digits.length - 10);
+        }
+
+        setState(() {
+          _phoneController.text = finalNumber;
+        });
+
+        // Step 3: Auto-send OTP only if we have exactly 10 digits
+        if (finalNumber.length == 10) {
+          _sendOTP();
+        }
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Phone Hint Error: ${e.message}");
+    }
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    for (var controller in _otpControllers) controller.dispose();
+    for (var node in _focusNodes) node.dispose();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _resendTimerCount = 30;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_resendTimerCount == 0) timer.cancel();
+      else setState(() => _resendTimerCount--);
+    });
+  }
+
   Future<void> _sendOTP() async {
-    if (_phoneController.text.length < 10) {
+    String phone = _phoneController.text.trim();
+    if (phone.length < 10) {
       _showSnackBar('Please enter a valid mobile number');
       return;
     }
+    
+    // Normalize: Add +91 only if no country code is present
+    String fullPhoneNumber = phone.startsWith('+') ? phone : '+91$phone';
+
     if (!_isOlderThan18) {
       _showSnackBar('You must be 18+ to use this app');
       return;
     }
-
     setState(() => _isLoading = true);
-
     try {
       await _auth.verifyPhoneNumber(
-        phoneNumber: '+91${_phoneController.text.trim()}',
+        phoneNumber: fullPhoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await _auth.signInWithCredential(credential);
-          _handleBackendLogin(_phoneController.text.trim());
+          _handleBackendLogin(phone);
         },
         verificationFailed: (FirebaseAuthException e) {
           setState(() => _isLoading = false);
@@ -49,8 +116,9 @@ class _LoginScreenState extends State<LoginScreen> {
           setState(() {
             _verificationId = verId;
             _isLoading = false;
+            _showOTPView = true;
           });
-          _showOTPDialog();
+          _startTimer();
         },
         codeAutoRetrievalTimeout: (String verId) => _verificationId = verId,
         timeout: const Duration(seconds: 60),
@@ -62,15 +130,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _verifyOTP() async {
-    if (_otpController.text.length < 6) return;
+    String otp = _otpControllers.map((e) => e.text).join();
+    if (otp.length < 6) return;
     setState(() => _isLoading = true);
     try {
       PhoneAuthCredential credential = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
-        smsCode: _otpController.text.trim(),
+        smsCode: otp,
       );
       await _auth.signInWithCredential(credential);
-      Navigator.pop(context); // Close dialog
       _handleBackendLogin(_phoneController.text.trim());
     } catch (e) {
       setState(() => _isLoading = false);
@@ -80,14 +148,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleBackendLogin(String phone) async {
     try {
-      // Step 1: Attempt Login
       final response = await ApiService.post('/api/user/login', {'phone': phone});
       final data = jsonDecode(response.body);
-
       if (data['success'] == true) {
         _saveUserAndGoHome(data['user']);
       } else {
-        // Step 2: Auto-Register if not found
         final regResponse = await ApiService.post('/api/user/register', {
           'phone': phone,
           'name': 'User ${phone.substring(phone.length - 4)}',
@@ -96,15 +161,11 @@ class _LoginScreenState extends State<LoginScreen> {
           'hasCompletedOnboarding': false
         });
         final regData = jsonDecode(regResponse.body);
-        if (regData['success'] == true) {
-          _saveUserAndGoHome(regData['user']);
-        } else {
-          _showSnackBar('Registration failed. Please try later.');
-        }
+        if (regData['success'] == true) _saveUserAndGoHome(regData['user']);
+        else _showSnackBar('Registration failed. Please try later.');
       }
     } catch (e) {
-      debugPrint('Login Error: $e');
-      _showSnackBar('Connection failed. Please check your internet or server.');
+      _showSnackBar('Connection failed. Please check your internet.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -114,85 +175,133 @@ class _LoginScreenState extends State<LoginScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_data', jsonEncode(userData));
     await NotificationService.updateTokenToServer();
-    if (mounted) {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LocationPermissionScreen()));
-    }
+    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LocationPermissionScreen()));
   }
 
-  // UI Helper methods (SnackBar, Dialog, build) remain same...
   void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  void _showOTPDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Enter OTP', style: TextStyle(color: Colors.orangeAccent)),
-        content: TextField(
-          controller: _otpController,
-          keyboardType: TextInputType.number,
-          style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
-          textAlign: TextAlign.center,
-          decoration: const InputDecoration(filled: true, fillColor: Colors.white10),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(onPressed: _verifyOTP, child: const Text('VERIFY')),
-        ],
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Container(
-              height: 300,
-              width: double.infinity,
-              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(bottom: Radius.circular(40))),
-              child: const Icon(Icons.people_rounded, size: 100, color: Color(0xFF6C63FF)),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(30.0),
-              child: Column(
-                children: [
-                  const Text('GoGo - Gay Dating', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
-                  const SizedBox(height: 30),
-                  TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Mobile No',
-                      prefixText: '+91 ',
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: Colors.white24)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: Colors.orangeAccent)),
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity, height: 60,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _sendOTP,
-                      child: _isLoading ? const CircularProgressIndicator() : const Text('Get OTP'),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Checkbox(value: _isOlderThan18, onChanged: (val) => setState(() => _isOlderThan18 = val!)),
-                      const Text('I am older than 18', style: TextStyle(color: Colors.white70)),
-                    ],
-                  ),
-                ],
+      resizeToAvoidBottomInset: true, // कीबोर्ड आने पर लेआउट को एडजस्ट करने दें
+      body: Stack(
+        children: [
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: Container(
+              height: MediaQuery.of(context).size.height * 0.45,
+              decoration: const BoxDecoration(
+                image: DecorationImage(image: NetworkImage('https://img.freepik.com/free-vector/flat-lgbt-community-illustration_23-2148906969.jpg'), fit: BoxFit.cover),
               ),
             ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              height: MediaQuery.of(context).size.height * 0.6,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
+              decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(40))),
+              child: AutofillGroup( // पूरे फॉर्म को इसमें डाला
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      Text(_showOTPView ? 'GoGo - Gay Dating' : 'Welcome to GoGo', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white)),
+                      const SizedBox(height: 10),
+                      Text(
+                        _showOTPView 
+                          ? '6 digit OTP has been sent to your mobile number\n+91 ${_phoneController.text}. Please wait'
+                          : 'Connect with people nearby',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14, color: Colors.white54),
+                      ),
+                      const SizedBox(height: 40),
+                      
+                      if (!_showOTPView) _buildPhoneInput() else _buildOTPInput(),
+                      
+                      const SizedBox(height: 30),
+                      SizedBox(
+                        width: double.infinity, height: 60,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : (_showOTPView ? _verifyOTP : _sendOTP),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), elevation: 0),
+                          child: _isLoading ? const CircularProgressIndicator(color: Colors.black) : Text(_showOTPView ? 'VERIFY' : 'Get OTP', style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      if (_showOTPView) ...[
+                        const SizedBox(height: 20),
+                        Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text("Resend OTP in ", style: TextStyle(color: Colors.white38, fontSize: 13)), Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle), child: Text('$_resendTimerCount', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))]),
+                        const SizedBox(height: 15),
+                        TextButton(onPressed: () => setState(() => _showOTPView = false), child: const Text('re-enter phone number', style: TextStyle(color: Colors.white70, decoration: TextDecoration.underline))),
+                      ],
+                      const SizedBox(height: 50),
+                      _buildPolicyText(), // पॉलिसी टेक्स्ट को यहाँ कॉलम के अंदर डाला
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhoneInput() {
+    return Column(
+      children: [
+        TextField(
+          controller: _phoneController,
+          keyboardType: TextInputType.phone,
+          autofillHints: const [AutofillHints.telephoneNumber],
+          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            hintText: 'Mobile No', hintStyle: const TextStyle(color: Colors.white10),
+            prefixIcon: const Padding(padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14), child: Text('+91 ', style: TextStyle(color: Colors.orangeAccent, fontSize: 18, fontWeight: FontWeight.bold))),
+            filled: true, fillColor: Colors.white.withOpacity(0.05),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+          ),
+        ),
+        const SizedBox(height: 15),
+        Row(children: [Checkbox(value: _isOlderThan18, activeColor: Colors.orangeAccent, onChanged: (val) => setState(() => _isOlderThan18 = val!)), const Text('I am older than 18', style: TextStyle(color: Colors.white70))]),
+      ],
+    );
+  }
+
+  Widget _buildOTPInput() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(6, (index) => SizedBox(
+        width: 45, height: 55,
+        child: TextField(
+          controller: _otpControllers[index], focusNode: _focusNodes[index],
+          keyboardType: TextInputType.number, textAlign: TextAlign.center, maxLength: 1,
+          style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(counterText: "", filled: true, fillColor: Colors.white.withOpacity(0.05), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.orangeAccent))),
+          onChanged: (value) {
+            if (value.length == 1 && index < 5) _focusNodes[index + 1].requestFocus();
+            if (value.isEmpty && index > 0) _focusNodes[index - 1].requestFocus();
+            if (index == 5 && value.isNotEmpty) _verifyOTP();
+          },
+        ),
+      )),
+    );
+  }
+
+  Widget _buildPolicyText() {
+    return Center(
+      child: RichText(
+        textAlign: TextAlign.center,
+        text: TextSpan(
+          style: const TextStyle(color: Colors.white38, fontSize: 11, height: 1.5),
+          children: [
+            const TextSpan(text: "By signing in, you agree to our "),
+            TextSpan(text: "Terms of Service", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, decoration: TextDecoration.underline), recognizer: TapGestureRecognizer()..onTap = () {}),
+            const TextSpan(text: " and\n"),
+            TextSpan(text: "Privacy Policy", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, decoration: TextDecoration.underline), recognizer: TapGestureRecognizer()..onTap = () {}),
           ],
         ),
       ),
