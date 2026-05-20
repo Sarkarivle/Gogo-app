@@ -116,7 +116,7 @@ exports.updatePremium = async (req, res) => {
         const { phone, isPremium } = req.body;
         const updatedUser = await User.findOneAndUpdate(
             { phone },
-            { isPremium, hasCompletedOnboarding: true, lastSeen: new Date() },
+            { isPremium, lastSeen: new Date() },
             { new: true }
         );
         res.json({ success: true, user: updatedUser });

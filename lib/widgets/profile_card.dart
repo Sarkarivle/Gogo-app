@@ -70,24 +70,28 @@ class ProfileCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isOnline) ...[
-              const Row(
-                children: [
-                  BlinkingDot(),
-                  SizedBox(width: 6),
-                  Text(
-                    'Online Now',
-                    style: TextStyle(
-                      color: Color(0xFF00C853),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-            ],
+            // Fixed height container for online status to prevent shifting
+            SizedBox(
+              height: 20,
+              child: isOnline 
+                ? const Row(
+                    children: [
+                      BlinkingDot(),
+                      SizedBox(width: 6),
+                      Text(
+                        'Online Now',
+                        style: TextStyle(
+                          color: Color(0xFF00C853),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 6),
             Row(children: [
               const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
               const SizedBox(width: 6),
@@ -132,9 +136,9 @@ class ProfileCard extends StatelessWidget {
                   children: [
                     const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 14),
                     const SizedBox(width: 4),
-                    Expanded(
+                    Flexible(
                       child: Text(
-                        'Liked by $likedBy People',
+                        'Liked by $likedBy',
                         style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

@@ -4,6 +4,7 @@ import 'package:confetti/confetti.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../home_screen.dart';
+import 'profile_setup_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
@@ -98,7 +99,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       onPressed: () {
                         Navigator.pushAndRemoveUntil(
                           context,
-                          MaterialPageRoute(builder: (context) => const HomeScreen()),
+                          MaterialPageRoute(builder: (context) => const ProfileSetupScreen()),
                           (route) => false,
                         );
                       },
