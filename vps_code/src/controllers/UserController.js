@@ -169,9 +169,23 @@ exports.getDiscover = async (req, res) => {
         }
 
         let sort = { lastSeen: -1 };
-        if (tab === 'New') sort = { createdAt: -1 };
-        else if (tab === 'Popular') sort = { isPremium: -1, lastSeen: -1 };
-        else if (tab === 'Online') {
+        if (tab === 'Nearby') {
+            sort = { lastSeen: -1 };
+            // If distance filter is applied on Nearby tab
+            if (lat && lng && distance && distance !== 'Any') {
+                const maxDistKm = parseInt(distance.replace('km', ''));
+                if (!isNaN(maxDistKm)) {
+                    // Note: This is a broad filter to support separate lat/lng fields.
+                    // Accurate filtering is done on app-side, but this helps limit DB results.
+                    const latRange = maxDistKm / 111;
+                    query.lat = { $gte: parseFloat(lat) - latRange, $lte: parseFloat(lat) + latRange };
+                }
+            }
+        } else if (tab === 'New') {
+            sort = { createdAt: -1 };
+        } else if (tab === 'Popular') {
+            sort = { isPremium: -1, lastSeen: -1 };
+        } else if (tab === 'Online') {
             query.isOnline = true;
             sort = { lastSeen: -1 };
         }

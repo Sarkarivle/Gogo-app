@@ -36,6 +36,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Timer? _unreadTimer;
   StreamSubscription? _socketEventSub;
 
+  String _selectedDistance = '20km';
+  String _selectedAge = 'Any';
+  bool _isOnlineOnly = false;
+  String _havePlaceStatus = 'Any';
+  String _selectedPosition = 'Top, Ver';
+
   @override
   void initState() {
     super.initState();
@@ -219,6 +225,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         myPhone: currentUser?['phone'] ?? '',
         page: loadMore ? _currentPage + 1 : 1,
         tab: tabName,
+        distance: tabName == 'Nearby' ? _selectedDistance : null,
+        age: _selectedAge,
+        isOnlineOnly: tabName == 'Online' ? true : _isOnlineOnly,
+        havePlace: _havePlaceStatus,
+        position: _selectedPosition,
         lat: myPos?.latitude,
         lng: myPos?.longitude,
       );
@@ -228,29 +239,43 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _isLoadingProfiles = false;
           _isLoadingMore = false;
           
+          List<dynamic> processedProfiles = [];
+
+          // App-side fine-tuned distance filtering for 'Nearby'
+          if (tabName == 'Nearby' && _selectedDistance != 'Any' && myPos != null) {
+            final maxKm = double.tryParse(_selectedDistance.replaceAll('km', '')) ?? 20.0;
+            processedProfiles = newProfiles.where((p) {
+              if (p['lat'] == null || p['lng'] == null) return false;
+              double d = Geolocator.distanceBetween(myPos!.latitude, myPos!.longitude, p['lat'], p['lng']) / 1000;
+              p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
+              return d <= maxKm;
+            }).toList();
+          } else {
+            processedProfiles = newProfiles;
+            for (var p in processedProfiles) {
+              if (myPos != null && p['lat'] != null && p['lng'] != null) {
+                double d = Geolocator.distanceBetween(myPos.latitude, myPos.longitude, p['lat'], p['lng']) / 1000;
+                p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
+              } else if (p['calculated_dist'] == null) {
+                p['calculated_dist'] = "Unknown";
+              }
+            }
+          }
+
           if (loadMore) {
-            if (newProfiles.isEmpty) {
+            if (processedProfiles.isEmpty) {
               _hasMore = false;
             } else {
               final existingPhones = _profiles.map((p) => p['phone']).toSet();
-              final filteredNew = newProfiles.where((p) => !existingPhones.contains(p['phone'])).toList();
+              final filteredNew = processedProfiles.where((p) => !existingPhones.contains(p['phone'])).toList();
               _profiles.addAll(filteredNew);
               _currentPage++;
               _hasMore = newProfiles.length >= 20;
             }
           } else {
-            _profiles = newProfiles;
+            _profiles = processedProfiles;
             _currentPage = 1;
             _hasMore = newProfiles.length >= 20;
-          }
-
-          for (var p in _profiles) {
-            if (myPos != null && p['lat'] != null && p['lng'] != null) {
-              double dist = Geolocator.distanceBetween(myPos.latitude, myPos.longitude, p['lat'], p['lng']) / 1000;
-              p['calculated_dist'] = "${dist.toStringAsFixed(1)} km";
-            } else if (p['calculated_dist'] == null) {
-              p['calculated_dist'] = "Unknown";
-            }
           }
         });
       }
@@ -311,27 +336,107 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         systemOverlayStyle: const SystemUiOverlayStyle(statusBarColor: Color(0xFF2A0D17), statusBarIconBrightness: Brightness.light),
         backgroundColor: const Color(0xFF0F0F0F),
         elevation: 0,
-        toolbarHeight: 80,
-        title: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          indicatorColor: Colors.orangeAccent,
-          indicatorWeight: 3,
-          labelColor: Colors.orangeAccent,
-          unselectedLabelColor: Colors.white54,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          dividerColor: Colors.transparent,
-          tabs: [
-            const Tab(text: 'Nearby'),
-            Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [const Text('Online'), const SizedBox(width: 8), const BlinkingDot()])),
-            const Tab(text: 'New'),
-            const Tab(text: 'Popular'),
-          ],
-        ),
+        toolbarHeight: 120,
+        title: Column(children: [
+          SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+            _buildFilterChip('Distance: $_selectedDistance', true, onTap: () { _showFilterDialog('Distance Range', ['1km', '5km', '10km', '20km', '50km', '100km+'], _selectedDistance, (val) { setState(() => _selectedDistance = val); _resetAndFetch(); }); }),
+            _buildFilterChip('Age: $_selectedAge', true, onTap: () { _showFilterDialog('Age Selection', ['Any', '18-25', '26-35', '36-45', '46+'], _selectedAge, (val) { setState(() => _selectedAge = val); _resetAndFetch(); }); }),
+            _buildFilterChip(_isOnlineOnly ? 'Online Now' : 'Online', true, isLive: _isOnlineOnly, onTap: () { setState(() => _isOnlineOnly = !_isOnlineOnly); _resetAndFetch(); }),
+            _buildFilterChip('Place: $_havePlaceStatus', true, onTap: () { _showFilterDialog('Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (val) { setState(() => _havePlaceStatus = val); _resetAndFetch(); }); }),
+            _buildFilterChip('Pos: $_selectedPosition', false, onTap: () { _showFilterDialog('Position', ['Top', 'Bottom', 'Versatile', 'Top, Ver'], _selectedPosition, (val) { setState(() => _selectedPosition = val); _resetAndFetch(); }); }),
+          ])),
+          const SizedBox(height: 10),
+          TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            indicatorColor: Colors.orangeAccent,
+            indicatorWeight: 3,
+            labelColor: Colors.orangeAccent,
+            unselectedLabelColor: Colors.white54,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            dividerColor: Colors.transparent,
+            tabs: [
+              const Tab(text: 'Nearby'),
+              Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [const Text('Online'), const SizedBox(width: 8), const BlinkingDot()])),
+              const Tab(text: 'New'),
+              const Tab(text: 'Popular'),
+            ],
+          ),
+        ]),
+        actions: [Padding(padding: const EdgeInsets.only(bottom: 50.0), child: IconButton(icon: const Icon(Icons.tune_rounded, color: Colors.white70), onPressed: () {}))],
       ),
-      body: TabBarView(controller: _tabController, children: [_buildProfileGrid(), _buildProfileGrid(), _buildProfileGrid(), _buildProfileGrid()]),
+      body: TabBarView(
+        controller: _tabController, 
+        physics: const NeverScrollableScrollPhysics(), // Disables left-right slide
+        children: [_buildProfileGrid(), _buildProfileGrid(), _buildProfileGrid(), _buildProfileGrid()]
+      ),
     );
+  }
+
+  void _showFilterDialog(String title, List<String> options, String currentValue, Function(String) onSelect) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withOpacity(0.7),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) => Container(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: ScaleTransition(
+            scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
+            child: FadeTransition(
+              opacity: anim1,
+              child: AlertDialog(
+                backgroundColor: const Color(0xFF1E1E1E).withOpacity(0.9),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28), side: const BorderSide(color: Colors.white10)),
+                title: Column(children: [Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))), const SizedBox(height: 20), Text(title, style: const TextStyle(color: Colors.orangeAccent, fontSize: 20, fontWeight: FontWeight.w800))]),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (context, index) {
+                      final option = options[index];
+                      final bool isSelected = option == currentValue;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () { onSelect(option); Navigator.pop(context); },
+                            borderRadius: BorderRadius.circular(15),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: isSelected ? Colors.orangeAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(color: isSelected ? Colors.orangeAccent.withOpacity(0.3) : Colors.transparent),
+                              ),
+                              child: Row(children: [
+                                Text(option, style: TextStyle(color: isSelected ? Colors.orangeAccent : Colors.white, fontSize: 16, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                                const Spacer(),
+                                if (isSelected) const Icon(Icons.check_circle_rounded, color: Colors.orangeAccent, size: 22),
+                              ]),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip(String label, bool drop, {bool isLive = false, VoidCallback? onTap}) {
+    return GestureDetector(onTap: onTap, child: Container(margin: const EdgeInsets.only(right: 10), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), border: Border.all(color: Colors.white.withOpacity(0.15)), borderRadius: BorderRadius.circular(12)), child: Row(children: [if (isLive) ...[const BlinkingDot(), const SizedBox(width: 8)], Text(label, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500)), if (drop) ...[const SizedBox(width: 4), const Icon(Icons.expand_more_rounded, size: 18, color: Colors.white70)]])));
   }
 
   Widget _buildProfileGrid() {
