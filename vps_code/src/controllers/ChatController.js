@@ -146,8 +146,10 @@ exports.markSeen = async (req, res) => {
     try {
         const { myPhone, otherPhone } = req.body;
         const roomId = [myPhone, otherPhone].sort().join('_');
+        // IMPORTANT: We only mark regular messages as opened (seen).
+        // View-once media must NOT be automatically marked as opened by markSeen.
         await Message.updateMany(
-            { roomId, receiverPhone: myPhone, isOpened: false },
+            { roomId, receiverPhone: myPhone, isOpened: false, isViewOnce: false },
             { isOpened: true, isDelivered: true }
         );
         res.json({ success: true });

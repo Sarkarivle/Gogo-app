@@ -442,6 +442,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 )
               : GridView.builder(
                   controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,

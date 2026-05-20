@@ -195,7 +195,11 @@ io.on('connection', (socket) => {
     socket.on('mark_chat_seen', async (data) => {
         try {
             const roomId = [data.myPhone, data.otherPhone].sort().join('_');
-            await Message.updateMany({ roomId, receiverPhone: data.myPhone, isOpened: false }, { isOpened: true, isDelivered: true });
+            // Do not auto-open view-once messages when just viewing the chat
+            await Message.updateMany(
+                { roomId, receiverPhone: data.myPhone, isOpened: false, isViewOnce: false },
+                { isOpened: true, isDelivered: true }
+            );
             socket.to(roomId).emit('chat_seen_update', { by: data.myPhone });
         } catch (e) {}
     });

@@ -153,6 +153,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (idx != -1) {
               _messages[idx].status = MessageStatus.seen;
               _messages[idx].isOpened = true;
+              if (_messages[idx].isViewOnce) {
+                _messages[idx].imageUrl = null;
+              }
             }
             break;
           case 'chat_seen_update':
@@ -201,7 +204,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _messages.add(newMessage);
         if (!newMessage.isMe) {
           SocketService().setTyping(widget.receiverPhone, false);
-          _chatRepository.markOpened(newMessage.id!, currentUser!['phone'], widget.receiverPhone);
+          if (!newMessage.isViewOnce) {
+            _chatRepository.markOpened(newMessage.id!, currentUser!['phone'], widget.receiverPhone);
+          }
         }
       }
     });
@@ -531,7 +536,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               if (msg.replyToId != null) _buildReplyPreview(msg),
               Container(
                 constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: EdgeInsets.symmetric(
+                  horizontal: msg.isViewOnce ? 12 : 14, 
+                  vertical: msg.isViewOnce ? 8 : 10
+                ),
                 decoration: BoxDecoration(
                   color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A),
                   borderRadius: BorderRadius.only(
@@ -563,6 +571,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Widget _buildBubbleContent(ChatMessage msg) {
     if (msg.type == 'image' || msg.imageUrl != null) {
+      if (msg.isViewOnce) {
+        return _buildViewOnceImage(msg);
+      }
       return _buildImageContent(msg);
     } else if (msg.type == 'audio') {
       return AudioPlayerWidget(url: msg.audioUrl!, isMe: msg.isMe);
@@ -571,10 +582,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildImageContent(ChatMessage msg) {
-    if (msg.isViewOnce) {
-      return _buildViewOnceImage(msg);
-    }
-
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(imageUrl: msg.imageUrl!))),
       child: ClipRRect(
@@ -594,39 +601,74 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildViewOnceImage(ChatMessage msg) {
     bool isOpened = msg.isOpened;
 
+    // Sender View (Always a small bubble)
     if (msg.isMe) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
+      if (!isOpened) {
+        return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(isOpened ? Icons.done_all : Icons.looks_one, color: Colors.black87, size: 18),
+            const Icon(Icons.looks_one_rounded, color: Colors.black, size: 18),
             const SizedBox(width: 8),
-            Text(isOpened ? 'Opened' : 'One-time Photo', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
+            const Text(
+              'Photo', 
+              style: TextStyle(
+                color: Colors.black, 
+                fontWeight: FontWeight.bold, 
+                fontSize: 13,
+                letterSpacing: 0.5
+              )
+            ),
           ],
-        ),
+        );
+      } else {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.done_all, color: Colors.black54, size: 20),
+            const SizedBox(width: 10),
+            const Text(
+              'Opened', 
+              style: TextStyle(
+                color: Colors.black54,
+                fontWeight: FontWeight.bold, 
+                fontSize: 14,
+                letterSpacing: 0.5
+              )
+            ),
+          ],
+        );
+      }
+    }
+
+    // Receiver View
+    if (isOpened) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.drafts_outlined, color: Colors.white12, size: 20),
+          const SizedBox(width: 10),
+          const Text(
+            'Opened', 
+            style: TextStyle(
+              color: Colors.white12, 
+              fontWeight: FontWeight.bold, 
+              fontSize: 14,
+            )
+          ),
+        ],
       );
     }
 
-    // Receiver Side
+    // Unopened Receiver Side (Blurred Box)
     return GestureDetector(
       onTap: () async {
-        if (isOpened) return;
-        
         await Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(
           imageUrl: msg.imageUrl!,
           isViewOnce: true,
         )));
         
-        SocketService().emit('mark_opened', {
-          'messageId': msg.id,
-          'myPhone': currentUser!['phone'],
-          'otherPhone': widget.receiverPhone
-        });
+        _chatRepository.markOpened(msg.id!, currentUser!['phone'], widget.receiverPhone);
+        
         setState(() {
           msg.isOpened = true;
           msg.imageUrl = null;
@@ -634,52 +676,42 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (!isOpened && msg.imageUrl != null)
-              ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: CachedNetworkImage(
-                  imageUrl: msg.imageUrl!,
-                  width: 150,
-                  height: 150,
-                  fit: BoxFit.cover,
+        child: Container(
+          width: 150,
+          height: 150,
+          color: const Color(0xFF1E1E1E),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (msg.imageUrl != null)
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                  child: CachedNetworkImage(
+                    imageUrl: msg.imageUrl!,
+                    width: 150,
+                    height: 150,
+                    fit: BoxFit.cover,
+                  ),
                 ),
-              )
-            else
-              Container(
-                width: 150,
-                height: 150,
-                color: Colors.white.withOpacity(0.05),
-              ),
-            Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                color: isOpened ? Colors.transparent : Colors.black26,
-              ),
-              child: Column(
+              Container(color: Colors.black.withOpacity(0.3)),
+              Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    isOpened ? Icons.drafts_outlined : Icons.looks_one,
-                    color: isOpened ? Colors.white24 : Colors.white,
-                    size: 30,
-                  ),
+                  const Icon(Icons.looks_one_rounded, color: Colors.white, size: 32),
                   const SizedBox(height: 8),
-                  Text(
-                    isOpened ? 'Opened' : 'View Photo',
+                  const Text(
+                    'Photo', 
                     style: TextStyle(
-                      color: isOpened ? Colors.white24 : Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                      color: Colors.white, 
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 13,
+                      letterSpacing: 0.5
+                    )
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -849,14 +881,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           }
 
           if (url != null) {
-            SocketService().emit('send_message', {
-              'senderPhone': currentUser!['phone'],
-              'receiverPhone': widget.receiverPhone,
-              'senderName': currentUser!['name'] ?? 'User',
-              'message': '',
-              'imageUrl': url,
-              'type': 'image'
-            });
+            final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => MediaPreviewPage(imageUrl: url)));
+            if (result != null) {
+              _chatRepository.sendMessage(
+                senderPhone: currentUser!['phone'],
+                receiverPhone: widget.receiverPhone,
+                senderName: currentUser!['name'] ?? 'User',
+                message: '',
+                imageUrl: url,
+                type: 'image',
+                isViewOnce: result['isViewOnce']
+              );
+            }
           } else {
             final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => MediaPreviewPage(file: file)));
             if (result != null) _uploadMedia(file, type, isViewOnce: result['isViewOnce']);
@@ -1322,45 +1358,25 @@ class FullScreenImageViewer extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent, 
         iconTheme: const IconThemeData(color: Colors.white),
-        automaticallyImplyLeading: !isViewOnce,
+        automaticallyImplyLeading: true, // Always show back button so user can exit
       ), 
-      body: Stack(
-        children: [
-          Center(
-            child: InteractiveViewer(
-              child: CachedNetworkImage(
-                imageUrl: imageUrl, 
-                placeholder: (_, __) => const CircularProgressIndicator(color: Colors.orangeAccent)
-              )
-            )
-          ),
-          if (isViewOnce)
-            Positioned(
-              bottom: 40,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                  label: const Text("Close & Destroy"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  ),
-                ),
-              ),
-            ),
-        ],
+      body: Center(
+        child: InteractiveViewer(
+          child: CachedNetworkImage(
+            imageUrl: imageUrl, 
+            placeholder: (_, __) => const CircularProgressIndicator(color: Colors.orangeAccent)
+          )
+        )
       ),
     ); 
   }
 }
 
 class MediaPreviewPage extends StatelessWidget {
-  final File file;
-  const MediaPreviewPage({super.key, required this.file});
+  final File? file;
+  final String? imageUrl;
+  const MediaPreviewPage({super.key, this.file, this.imageUrl});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1368,11 +1384,42 @@ class MediaPreviewPage extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            Expanded(child: Center(child: Image.file(file))),
+            Expanded(
+              child: Center(
+                child: file != null 
+                  ? Image.file(file!) 
+                  : CachedNetworkImage(
+                      imageUrl: imageUrl!, 
+                      placeholder: (_, __) => const CircularProgressIndicator(color: Colors.orangeAccent)
+                    )
+              )
+            ),
             Padding(padding: const EdgeInsets.all(24), child: Column(children: [
-              ElevatedButton(onPressed: () => Navigator.pop(context, {'isViewOnce': true}), style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('Send as View Once ', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)), Icon(Icons.looks_one, color: Colors.black, size: 18)])),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, {'isViewOnce': true}), 
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orangeAccent, 
+                  minimumSize: const Size(double.infinity, 50), 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))
+                ), 
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center, 
+                  children: [
+                    Text('Send as View Once ', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)), 
+                    Icon(Icons.looks_one, color: Colors.black, size: 18)
+                  ]
+                )
+              ),
               const SizedBox(height: 12),
-              ElevatedButton(onPressed: () => Navigator.pop(context, {'isViewOnce': false}), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), child: const Text('Send Normal', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold))),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, {'isViewOnce': false}), 
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white, 
+                  minimumSize: const Size(double.infinity, 50), 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))
+                ), 
+                child: const Text('Send Normal', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold))
+              ),
             ])),
           ],
         ),
