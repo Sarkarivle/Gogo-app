@@ -801,6 +801,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildSendOrMicButton() {
     bool hasText = _messageController.text.trim().isNotEmpty;
     return GestureDetector(
+      onLongPress: hasText ? null : () => _showVoiceRecorderModal(),
       onTap: hasText ? _sendMessage : () => _showVoiceRecorderModal(),
       child: Container(
         padding: const EdgeInsets.all(10),
@@ -866,10 +867,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _showVoiceRecorderModal() {
+    HapticFeedback.heavyImpact();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isDismissible: false,
+      isDismissible: true,
+      enableDrag: false,
       builder: (_) => VoiceRecorderModal(onSend: (path) => _uploadMedia(File(path), 'audio'))
     );
   }
@@ -985,7 +988,7 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).padding.bottom + 20),
       decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1095,59 +1098,172 @@ class VoiceRecorderModal extends StatefulWidget {
 }
 
 class _VoiceRecorderModalState extends State<VoiceRecorderModal> {
-  final AudioRecorder _recorder = AudioRecorder(); 
-  bool _isRecording = false; 
-  String? _path; 
-  int _seconds = 0; 
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _isRecording = false;
+  int _seconds = 0;
   Timer? _timer;
+  bool _isCancelled = false;
+  double _dragX = 0;
+  final double _cancelThreshold = -100.0; // Left swipe threshold to cancel
 
-  void _startTimer() { _timer?.cancel(); _timer = Timer.periodic(const Duration(seconds: 1), (t) => setState(() => _seconds++)); }
-  void _stopTimer() { _timer?.cancel(); }
+  void _startTimer() {
+    _timer?.cancel();
+    _seconds = 0;
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) => setState(() => _seconds++));
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+  }
 
   @override
-  void dispose() { _recorder.dispose(); _timer?.cancel(); super.dispose(); }
+  void dispose() {
+    _recorder.dispose();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    if (await Permission.microphone.request().isGranted) {
+      final dir = await getApplicationDocumentsDirectory();
+      final p = '${dir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: p);
+      _startTimer();
+      setState(() {
+        _isRecording = true;
+        _isCancelled = false;
+        _dragX = 0;
+      });
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  Future<void> _stopAndSend() async {
+    final path = await _recorder.stop();
+    _stopTimer();
+    setState(() => _isRecording = false);
+
+    if (!_isCancelled && path != null) {
+      final duration = _seconds;
+      if (duration < 1) {
+        // Too short
+        return;
+      }
+      widget.onSend(path);
+      Navigator.pop(context);
+      HapticFeedback.lightImpact();
+    } else {
+      setState(() => _isRecording = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 30),
-          GestureDetector(
-            onLongPress: () async {
-              if (await Permission.microphone.request().isGranted) {
-                final dir = await getApplicationDocumentsDirectory();
-                final p = '${dir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
-                await _recorder.start(const RecordConfig(), path: p);
-                _startTimer();
-                setState(() { _isRecording = true; _seconds = 0; });
-              }
-            },
-            onLongPressEnd: (_) async {
-              final p = await _recorder.stop();
-              _stopTimer();
-              setState(() { _isRecording = false; _path = p; });
-            },
-            child: CircleAvatar(radius: 40, backgroundColor: _isRecording ? Colors.red : Colors.orangeAccent, child: Icon(_isRecording ? Icons.stop : Icons.mic, color: Colors.black, size: 30)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_isRecording) const BlinkingDotRed(),
+              const SizedBox(width: 8),
+              Text(
+                '${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}',
+                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          const Text('Hold to Record, Release to Send', style: TextStyle(color: Colors.white38, fontSize: 12)),
-          if (_path != null) ...[
-            const SizedBox(height: 20),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-              TextButton(onPressed: () => setState(() => _path = null), child: const Text('Discard', style: TextStyle(color: Colors.redAccent))),
-              ElevatedButton(onPressed: () { widget.onSend(_path!); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent), child: const Text('Send Audio', style: TextStyle(color: Colors.black))),
-            ])
-          ]
+          const SizedBox(height: 40),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              if (_isRecording)
+                Positioned(
+                  left: 0,
+                  right: 80,
+                  child: Opacity(
+                    opacity: (1 - (_dragX.abs() / _cancelThreshold.abs())).clamp(0.0, 1.0),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.arrow_back_ios, color: Colors.white24, size: 16),
+                        Text(' Slide to cancel', style: TextStyle(color: Colors.white38)),
+                      ],
+                    ),
+                  ),
+                ),
+              GestureDetector(
+                onLongPressStart: (_) => _start(),
+                onLongPressEnd: (_) => _stopAndSend(),
+                onLongPressMoveUpdate: (details) {
+                  setState(() {
+                    _dragX = details.localPosition.dx;
+                    if (_dragX < _cancelThreshold) {
+                      _isCancelled = true;
+                    } else {
+                      _isCancelled = false;
+                    }
+                  });
+                },
+                child: Transform.scale(
+                  scale: _isRecording ? 1.2 : 1.0,
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: _isCancelled 
+                        ? Colors.red.withOpacity(0.5) 
+                        : (_isRecording ? Colors.red : Colors.orangeAccent),
+                    child: Icon(
+                      _isCancelled ? Icons.delete_outline : (_isRecording ? Icons.mic : Icons.mic_none),
+                      color: Colors.black,
+                      size: 35,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 30),
+          Text(
+            _isCancelled ? 'Release to cancel' : 'Hold to record, release to send',
+            style: TextStyle(
+              color: _isCancelled ? Colors.redAccent : Colors.white38,
+              fontSize: 14,
+              fontWeight: _isCancelled ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
         ],
       ),
     );
   }
 }
+
+class BlinkingDotRed extends StatefulWidget {
+  const BlinkingDotRed({super.key});
+  @override
+  State<BlinkingDotRed> createState() => _BlinkingDotRedState();
+}
+
+class _BlinkingDotRedState extends State<BlinkingDotRed> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
+  }
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(opacity: _controller, child: Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)));
+  }
+}
+
 
 class AudioPlayerWidget extends StatefulWidget {
   final String url; final bool isMe;
