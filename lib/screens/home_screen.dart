@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/socket_service.dart';
 import '../services/profile_repository.dart';
+import '../services/user_repository.dart';
+import '../services/chat_repository.dart';
 import '../widgets/profile_card.dart';
 import '../widgets/blinking_dot.dart';
 import 'inbox_screen.dart';
@@ -34,13 +34,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _totalUnreadCount = 0;
   Map<String, dynamic>? currentUser;
   Timer? _unreadTimer;
+  Timer? _unreadDebounce;
   StreamSubscription? _socketEventSub;
+  
+  // Professional Request Lifecycle Management
+  int _lastRequestTimestamp = 0;
+  bool _isRequestInProgress = false;
 
   String _selectedDistance = '20km';
   String _selectedAge = 'Any';
   bool _isOnlineOnly = false;
   String _havePlaceStatus = 'Any';
   String _selectedPosition = 'Top, Ver';
+
+  final UserRepository _userRepository = UserRepository();
+  final ChatRepository _chatRepository = ChatRepository();
 
   @override
   void initState() {
@@ -53,17 +61,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _handleTabChange() {
     if (_tabController.indexIsChanging) {
-      final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
-      final cached = ProfileRepository.getCachedProfiles(tabName);
-      
-      setState(() {
-        _profiles = cached != null ? List.from(cached) : [];
-        _currentPage = 1;
-        _hasMore = true;
-        _isLoadingProfiles = _profiles.isEmpty;
-      });
-      
-      _fetchProfiles();
+      _resetAndFetch(forceLoading: true);
     }
   }
 
@@ -75,40 +73,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _resetAndFetch() {
+  void _resetAndFetch({bool forceLoading = false}) {
     final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
+    
+    // Clear relevant cache when filters change to ensure fresh data
+    // Especially important for the "Nearby" tab which is highly filter-dependent
+    if (tabName == 'Nearby') {
+      ProfileRepository.clearCache();
+    }
+
     final cached = ProfileRepository.getCachedProfiles(tabName);
     
     setState(() {
-      if (cached != null) {
+      if (cached != null && !forceLoading) {
         _profiles = List.from(cached);
       } else {
         _profiles = [];
       }
       _currentPage = 1;
       _hasMore = true;
+      // We set this to true if we have no data to show, to trigger the spinner
       _isLoadingProfiles = _profiles.isEmpty;
     });
+    
+    // Ensure we don't hit the "is already loading" block by using a slight delay or resetting flag
+    _isRequestInProgress = false;
     _fetchProfiles();
   }
 
   Future<void> _initHomeScreen() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userData = prefs.getString('user_data');
-    if (userData != null) {
-      currentUser = jsonDecode(userData);
+    currentUser = await _userRepository.getCurrentUser();
+    if (currentUser != null) {
       SocketService().updateCurrentUser(currentUser!['phone']);
     }
-    _listenToSocketEvents();
     
+    _listenToSocketEvents();
     _fetchUnreadCount();
-    _unreadTimer = Timer.periodic(const Duration(seconds: 10), (t) => _fetchUnreadCount());
+    
+    // Background unread sync every 30s (backup for socket)
+    _unreadTimer = Timer.periodic(const Duration(seconds: 30), (t) => _fetchUnreadCount());
 
     _loadInitialData();
 
-    _updateMyLocation().then((_) {
-      _fetchProfiles();
-    });
+    // Location & Profiles
+    _updateLocationAndProfiles();
   }
 
   void _loadInitialData() {
@@ -124,103 +132,70 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _updateLocationAndProfiles() async {
+    if (currentUser != null) {
+      await _userRepository.updateLocation(currentUser!['phone']);
+      // After location update, refresh current user and profiles
+      currentUser = await _userRepository.getCurrentUser();
+      if (mounted) setState(() {});
+    }
+    
+    try {
+      _lastKnownPosition = await Geolocator.getLastKnownPosition() ?? 
+                           await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
+    } catch (_) {}
+    
+    _fetchProfiles();
+  }
+
   void _listenToSocketEvents() {
     _socketEventSub = SocketService().eventStream.listen((event) {
-      if (event['event'] == 'unread_update') {
-        final data = event['data'];
-        if (currentUser != null && data['phone'] == currentUser!['phone']) {
-          _fetchUnreadCount();
-        }
+      if (!mounted) return;
+      
+      if (event['event'] == 'unread_update' || event['event'] == 'receive_message') {
+        _fetchUnreadCount();
       }
     });
   }
 
   Future<void> _fetchUnreadCount() async {
-    try {
-      if (currentUser == null) {
-        final prefs = await SharedPreferences.getInstance();
-        final userData = prefs.getString('user_data');
-        if (userData != null) currentUser = jsonDecode(userData);
-      }
-      if (currentUser == null) return;
-      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/chat/inbox/${currentUser!['phone']}'));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) setState(() => _totalUnreadCount = data['totalUnread'] ?? 0);
-      }
-    } catch (e) { debugPrint(e.toString()); }
-  }
-
-  Future<void> _updateMyLocation() async {
-    try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-        Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
-        _lastKnownPosition = pos;
-        
-        String city = 'Unknown';
-        String area = 'Unknown';
-        try {
-          List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
-          if (placemarks.isNotEmpty) {
-            Placemark place = placemarks[0];
-            area = place.subLocality ?? place.thoroughfare ?? place.name ?? 'Unknown';
-            city = place.locality ?? place.subAdministrativeArea ?? 'Unknown';
-          }
-        } catch (e) { debugPrint('Geocoding error: $e'); }
-
-        if (currentUser != null) {
-          await http.post(
-            Uri.parse('http://72.61.170.181:5000/api/user/update-location'), 
-            headers: {'Content-Type': 'application/json'}, 
-            body: jsonEncode({
-              'phone': currentUser!['phone'], 
-              'lat': pos.latitude, 
-              'lng': pos.longitude,
-              'city': city,
-              'area': area
-            })
-          );
-
-          final prefs = await SharedPreferences.getInstance();
-          Map<String, dynamic> updatedUser = Map.from(currentUser!);
-          updatedUser['city'] = city;
-          updatedUser['area'] = area;
-          updatedUser['lat'] = pos.latitude;
-          updatedUser['lng'] = pos.longitude;
-          await prefs.setString('user_data', jsonEncode(updatedUser));
-          if (mounted) setState(() => currentUser = updatedUser);
+    if (currentUser == null) return;
+    
+    // Simple debounce to prevent multiple rapid API calls
+    if (_unreadDebounce?.isActive ?? false) return;
+    _unreadDebounce = Timer(const Duration(seconds: 2), () async {
+      try {
+        final data = await _chatRepository.getInbox(currentUser!['phone'], limit: 1);
+        if (mounted) {
+          setState(() => _totalUnreadCount = data['totalUnread'] ?? 0);
         }
+      } catch (e) {
+        debugPrint("Unread count error: $e");
       }
-    } catch (e) { debugPrint(e.toString()); }
+    });
   }
 
   Future<void> _fetchProfiles({bool loadMore = false}) async {
+    final int requestTimestamp = DateTime.now().millisecondsSinceEpoch;
+    
     if (loadMore) {
-      if (_isLoadingMore) return;
+      if (_isLoadingMore || !_hasMore || _isRequestInProgress) return;
       setState(() => _isLoadingMore = true);
     } else {
-      final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
-      final cached = ProfileRepository.getCachedProfiles(tabName);
+      // If a request is already in progress and it's not a "load more", 
+      // we update the timestamp to invalidate previous request's completion.
+      _lastRequestTimestamp = requestTimestamp;
       
-      if (mounted) {
-        setState(() {
-          if (cached != null && cached.isNotEmpty && _profiles.isEmpty) {
-            _profiles = List.from(cached);
-          }
-          _isLoadingProfiles = _profiles.isEmpty;
-        });
+      if (_profiles.isEmpty) {
+        setState(() => _isLoadingProfiles = true);
       }
     }
 
+    _isRequestInProgress = true;
+
     try {
       final String tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
-      Position? myPos = _lastKnownPosition;
-      if (myPos == null) {
-        try { myPos = await Geolocator.getLastKnownPosition(); } catch (_) {}
-      }
-
+      
       final newProfiles = await ProfileRepository.getDiscoverProfiles(
         myPhone: currentUser?['phone'] ?? '',
         page: loadMore ? _currentPage + 1 : 1,
@@ -230,34 +205,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         isOnlineOnly: tabName == 'Online' ? true : _isOnlineOnly,
         havePlace: _havePlaceStatus,
         position: _selectedPosition,
-        lat: myPos?.latitude,
-        lng: myPos?.longitude,
+        lat: _lastKnownPosition?.latitude,
+        lng: _lastKnownPosition?.longitude,
       );
+
+      // Check if this request is still relevant (not overridden by a newer filter change)
+      if (!loadMore && requestTimestamp != _lastRequestTimestamp) {
+        debugPrint("Skipping outdated discovery response");
+        return;
+      }
 
       if (mounted) {
         setState(() {
           _isLoadingProfiles = false;
           _isLoadingMore = false;
           
-          List<dynamic> processedProfiles = [];
-
-          // App-side fine-tuned distance filtering for 'Nearby'
-          if (tabName == 'Nearby' && _selectedDistance != 'Any' && myPos != null) {
-            final maxKm = double.tryParse(_selectedDistance.replaceAll('km', '')) ?? 20.0;
-            processedProfiles = newProfiles.where((p) {
-              if (p['lat'] == null || p['lng'] == null) return false;
-              double d = Geolocator.distanceBetween(myPos!.latitude, myPos!.longitude, p['lat'], p['lng']) / 1000;
-              p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
-              return d <= maxKm;
-            }).toList();
-          } else {
-            processedProfiles = newProfiles;
+          List<dynamic> processedProfiles = List.from(newProfiles);
+          
+          if (_lastKnownPosition != null) {
             for (var p in processedProfiles) {
-              if (myPos != null && p['lat'] != null && p['lng'] != null) {
-                double d = Geolocator.distanceBetween(myPos.latitude, myPos.longitude, p['lat'], p['lng']) / 1000;
+              if (p['lat'] != null && p['lng'] != null) {
+                double d = Geolocator.distanceBetween(_lastKnownPosition!.latitude, _lastKnownPosition!.longitude, p['lat'], p['lng']) / 1000;
                 p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
-              } else if (p['calculated_dist'] == null) {
-                p['calculated_dist'] = "Unknown";
+              } else {
+                p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
               }
             }
           }
@@ -280,12 +251,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         });
       }
     } catch (e) {
-      debugPrint('Fetch error: $e');
+      debugPrint('Discovery fetch error: $e');
       if (mounted) {
         setState(() {
           _isLoadingProfiles = false;
           _isLoadingMore = false;
         });
+      }
+    } finally {
+      // Only reset the progress flag if this was the latest request
+      if (requestTimestamp == _lastRequestTimestamp || loadMore) {
+        _isRequestInProgress = false;
       }
     }
   }
@@ -295,6 +271,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose(); 
     _unreadTimer?.cancel(); 
+    _unreadDebounce?.cancel();
     _socketEventSub?.cancel();
     _scrollController.dispose();
     super.dispose(); 

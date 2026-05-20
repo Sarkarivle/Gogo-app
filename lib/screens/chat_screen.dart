@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:record/record.dart';
@@ -14,8 +13,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/chat_message.dart';
-import '../services/api_service.dart';
 import '../services/socket_service.dart';
+import '../services/chat_repository.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
 
@@ -57,28 +56,33 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _editingMessageId;
   ChatMessage? _replyingToMessage;
 
+  final ChatRepository _chatRepository = ChatRepository();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _messageController.addListener(() { if (mounted) setState(() {}); });
+    _messageController.addListener(_onTextChanged);
     _loadUserAndHistory();
     _listenToSocket();
     
-    // Auto-scroll when typing status changes
     _scrollController.addListener(_onScroll);
     SocketService().typingUsers.addListener(_handleTypingScroll);
   }
 
+  void _onTextChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _onScroll() {
-    if (_scrollController.position.pixels == 0 && !_isLoadingMore && _hasMoreHistory && !_isLoadingHistory) {
+    if (_scrollController.position.pixels <= 100 && !_isLoadingMore && _hasMoreHistory && !_isLoadingHistory) {
       _fetchChatHistory(loadMore: true);
     }
   }
 
   void _handleTypingScroll() {
     final bool isTyping = SocketService().typingUsers.value[widget.receiverPhone] ?? false;
-    if (isTyping) {
+    if (isTyping && _scrollController.hasClients && _scrollController.position.pixels > _scrollController.position.maxScrollExtent - 100) {
       _scrollToBottom();
     }
   }
@@ -88,6 +92,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     SocketService().typingUsers.removeListener(_handleTypingScroll);
     SocketService().leaveRoom();
     WidgetsBinding.instance.removeObserver(this);
+    _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -111,8 +116,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       currentUser = jsonDecode(userData);
       final roomId = _getRoomId();
       SocketService().joinRoom(roomId);
-      SocketService().markChatSeen(currentUser!['phone'], widget.receiverPhone);
-      debugPrint('✅ Chat Room Active: $roomId');
+      _chatRepository.markChatSeen(currentUser!['phone'], widget.receiverPhone);
     }
     _checkBlockStatus();
     _fetchChatHistory();
@@ -145,14 +149,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (idx != -1) _messages[idx].status = MessageStatus.delivered;
             break;
           case 'message_opened':
-            final msgId = data['messageId'];
-            final isViewOnce = data['isViewOnce'] ?? false;
-            final idx = _messages.indexWhere((m) => m.id == msgId);
+            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
             if (idx != -1) {
-              setState(() {
-                _messages[idx].status = MessageStatus.seen;
-                _messages[idx].isOpened = true;
-              });
+              _messages[idx].status = MessageStatus.seen;
+              _messages[idx].isOpened = true;
             }
             break;
           case 'chat_seen_update':
@@ -161,11 +161,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           case 'message_deleted_for_everyone':
             final idx = _messages.indexWhere((m) => m.id == data['messageId']);
             if (idx != -1) {
-              setState(() {
-                _messages[idx].isDeletedForEveryone = true;
-                _messages[idx].imageUrl = null;
-                _messages[idx].audioUrl = null;
-              });
+              _messages[idx].isDeletedForEveryone = true;
+              _messages[idx].imageUrl = null;
+              _messages[idx].audioUrl = null;
             }
             break;
           case 'message_deleted':
@@ -202,14 +200,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (!_messages.any((m) => m.id == newMessage.id)) {
         _messages.add(newMessage);
         if (!newMessage.isMe) {
-          // Instant hide typing bubble when message is received
           SocketService().setTyping(widget.receiverPhone, false);
-
-          SocketService().emit('mark_opened', {
-            'messageId': newMessage.id,
-            'myPhone': currentUser!['phone'],
-            'otherPhone': widget.receiverPhone
-          });
+          _chatRepository.markOpened(newMessage.id!, currentUser!['phone'], widget.receiverPhone);
         }
       }
     });
@@ -217,7 +209,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _fetchChatHistory({bool loadMore = false}) async {
-    if (currentUser == null) return;
+    if (currentUser == null || (loadMore && !_hasMoreHistory)) return;
     
     if (loadMore) {
       setState(() => _isLoadingMore = true);
@@ -227,33 +219,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     try {
       final page = loadMore ? _currentHistoryPage + 1 : 1;
-      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/admin/chat-history/${currentUser!['phone']}/${widget.receiverPhone}?page=$page&limit=30'));
+      final newMsgs = await _chatRepository.getChatHistory(
+        myPhone: currentUser!['phone'],
+        otherPhone: widget.receiverPhone,
+        page: page,
+        limit: 30
+      );
       
-      if (response.statusCode == 200) {
-        final List<dynamic> history = jsonDecode(response.body);
-        final List<ChatMessage> newMsgs = history.map((m) => ChatMessage.fromJson(m, currentUser!['phone'])).toList();
-        
-        if (mounted) {
-          setState(() {
-            if (loadMore) {
-              // Add old messages to the beginning
-              _messages.insertAll(0, newMsgs);
-              _currentHistoryPage++;
-            } else {
-              _messages.clear();
-              _messages.addAll(newMsgs);
-              _currentHistoryPage = 1;
-            }
-            _hasMoreHistory = history.length >= 30;
-          });
-
-          if (!loadMore) {
-            _scrollToBottom(immediate: true);
-          } else if (newMsgs.isNotEmpty) {
-            // Maintain scroll position after loading more
-            // This is a bit tricky with ListView, but we can jump a bit
-            // For simplicity, we just keep it as is, usually jumping back to where it was is better.
+      if (mounted) {
+        setState(() {
+          if (loadMore) {
+            _messages.insertAll(0, newMsgs);
+            _currentHistoryPage++;
+          } else {
+            _messages.clear();
+            _messages.addAll(newMsgs);
+            _currentHistoryPage = 1;
           }
+          _hasMoreHistory = newMsgs.length >= 30;
+        });
+
+        if (!loadMore) {
+          _scrollToBottom(immediate: true);
         }
       }
     } catch (e) {
@@ -270,18 +257,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Future<void> _checkBlockStatus() async {
     if (currentUser == null) return;
-    try {
-      final res1 = await ApiService.get('/api/chat/check-block/${currentUser!['phone']}/${widget.receiverPhone}');
-      final res2 = await ApiService.get('/api/chat/check-block/${widget.receiverPhone}/${currentUser!['phone']}');
-      if (mounted) {
-        bool iBlocked = jsonDecode(res1.body)['isBlocked'] ?? false;
-        bool theyBlocked = jsonDecode(res2.body)['isBlocked'] ?? false;
-        setState(() {
-          _isBlocked = iBlocked || theyBlocked;
-          _blockerPhone = iBlocked ? currentUser!['phone'] : (theyBlocked ? widget.receiverPhone : null);
-        });
-      }
-    } catch (e) {}
+    final isBlocked = await _chatRepository.checkBlockStatus(currentUser!['phone'], widget.receiverPhone);
+    if (mounted) {
+      setState(() {
+        _isBlocked = isBlocked;
+      });
+    }
   }
 
   String _getRoomId() {
@@ -297,12 +278,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (text.isEmpty || currentUser == null) return;
 
     if (_editingMessageId != null) {
-      SocketService().emit('edit_message', {
-        'messageId': _editingMessageId,
-        'newText': text,
-        'myPhone': currentUser!['phone'],
-        'otherPhone': widget.receiverPhone
-      });
+      _chatRepository.editMessage(_editingMessageId!, text, currentUser!['phone'], widget.receiverPhone);
       setState(() => _editingMessageId = null);
       _messageController.clear();
       return;
@@ -327,28 +303,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
     _scrollToBottom();
 
-    if (_isBlocked) return; // Don't actually emit if blocked
+    if (_isBlocked) return;
 
-    SocketService().emit('send_message', {
-      'localId': localId,
-      'senderPhone': currentUser!['phone'],
-      'receiverPhone': widget.receiverPhone,
-      'senderName': currentUser!['name'] ?? 'User',
-      'message': text,
-      'type': 'text',
-      'replyToId': optimisticMsg.replyToId,
-      'replyText': optimisticMsg.replyText,
-      'replyType': optimisticMsg.replyType,
-    }, (ack) {
-      if (mounted && ack != null) {
-        if (ack['success'] == false) {
-          setState(() => optimisticMsg.status = MessageStatus.error);
+    _chatRepository.sendMessage(
+      senderPhone: currentUser!['phone'],
+      receiverPhone: widget.receiverPhone,
+      senderName: currentUser!['name'] ?? 'User',
+      message: text,
+      localId: localId,
+      replyToId: optimisticMsg.replyToId,
+      replyText: optimisticMsg.replyText,
+      replyType: optimisticMsg.replyType,
+      ack: (ack) {
+        if (mounted && ack != null) {
+          if (ack['success'] == false) {
+            setState(() => optimisticMsg.status = MessageStatus.error);
+          }
         }
       }
-    });
+    );
   }
 
   Future<void> _uploadMedia(File file, String type, {bool isViewOnce = false}) async {
+    if (currentUser == null) return;
+    
     if (_isBlocked) {
       final localId = DateTime.now().millisecondsSinceEpoch.toString();
       setState(() {
@@ -367,25 +345,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     setState(() => _isLoadingHistory = true);
     try {
-      var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
-      request.files.add(await http.MultipartFile.fromPath('image', file.path));
-      request.fields['phone'] = currentUser!['phone'];
-      
-      var streamedRes = await request.send();
-      if (streamedRes.statusCode == 200) {
-        var res = await http.Response.fromStream(streamedRes);
-        var url = jsonDecode(res.body)['imageUrl'];
-        
-        SocketService().emit('send_message', {
-          'senderPhone': currentUser!['phone'],
-          'receiverPhone': widget.receiverPhone,
-          'senderName': currentUser!['name'] ?? 'User',
-          'message': '',
-          'imageUrl': type != 'audio' ? url : null,
-          'audioUrl': type == 'audio' ? url : null,
-          'type': type,
-          'isViewOnce': isViewOnce
-        });
+      final url = await _chatRepository.uploadMedia(file, currentUser!['phone'], type);
+      if (url != null) {
+        _chatRepository.sendMessage(
+          senderPhone: currentUser!['phone'],
+          receiverPhone: widget.receiverPhone,
+          senderName: currentUser!['name'] ?? 'User',
+          message: '',
+          imageUrl: type != 'audio' ? url : null,
+          audioUrl: type == 'audio' ? url : null,
+          type: type,
+          isViewOnce: isViewOnce
+        );
       }
     } catch (e) {
       debugPrint("Upload error: $e");
@@ -397,13 +368,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _scrollToBottom({bool immediate = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
+        final double target = _scrollController.position.maxScrollExtent;
         if (immediate) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          _scrollController.jumpTo(target);
         } else {
           _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.decelerate,
+            target,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
           );
         }
       }
@@ -1005,10 +977,8 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
 
   Future<void> _fetchRecentPhotos() async {
     try {
-      final res = await http.get(Uri.parse('http://72.61.170.181:5000/api/chat/recent-photos/${widget.currentUserPhone}'));
-      if (res.statusCode == 200) {
-        if (mounted) setState(() => _recentPhotos = jsonDecode(res.body)['photos']);
-      }
+      final photos = await ChatRepository().getRecentPhotos(widget.currentUserPhone);
+      if (mounted) setState(() => _recentPhotos = photos);
     } catch (e) {}
   }
 

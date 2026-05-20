@@ -25,6 +25,7 @@ class SocketService with WidgetsBindingObserver {
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
 
   bool _isInitialized = false;
+  Timer? _reconnectTimer;
 
   void init() async {
     if (_isInitialized) return;
@@ -44,12 +45,14 @@ class SocketService with WidgetsBindingObserver {
   }
 
   void _connectSocket() {
+    _socket?.dispose();
     _socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
       'reconnection': true,
-      'reconnectionAttempts': 20,
-      'reconnectionDelay': 1000,
+      'reconnectionAttempts': 50,
+      'reconnectionDelay': 2000,
+      'timeout': 10000,
     });
 
     _socket!.onConnect((_) {
@@ -58,7 +61,6 @@ class SocketService with WidgetsBindingObserver {
       _setOnline();
       if (_activeRoomId != null) {
         _socket!.emit('join_room', _activeRoomId);
-        debugPrint('🏠 Re-joined active room: $_activeRoomId');
       }
     });
 
@@ -66,6 +68,9 @@ class SocketService with WidgetsBindingObserver {
       debugPrint('❌ Socket Disconnected');
       connectionStatus.value = false;
     });
+
+    _socket!.onConnectError((err) => debugPrint('⚠️ Connect Error: $err'));
+    _socket!.onError((err) => debugPrint('⚠️ Socket Error: $err'));
 
     _socket!.on('user_status_change', (data) {
       final phone = data['phone'];
@@ -76,20 +81,26 @@ class SocketService with WidgetsBindingObserver {
     });
 
     _socket!.on('display_typing', (data) {
-      final updated = Map<String, bool>.from(typingUsers.value);
-      updated[data['phone']] = true;
-      typingUsers.value = updated;
+      final phone = data['phone'];
+      if (phone != null) {
+        final updated = Map<String, bool>.from(typingUsers.value);
+        updated[phone] = true;
+        typingUsers.value = updated;
+      }
     });
 
     _socket!.on('hide_typing', (data) {
-      final updated = Map<String, bool>.from(typingUsers.value);
-      updated[data['phone']] = false;
-      typingUsers.value = updated;
+      final phone = data['phone'];
+      if (phone != null) {
+        final updated = Map<String, bool>.from(typingUsers.value);
+        updated[phone] = false;
+        typingUsers.value = updated;
+      }
     });
 
     _socket!.on('receive_message', (data) {
-      debugPrint('📩 New message received via socket');
       _messageController.add(data);
+      _eventController.add({'event': 'receive_message', 'data': data});
     });
     
     _socket!.on('message_delivered', (data) => _eventController.add({'event': 'message_delivered', 'data': data}));
@@ -100,6 +111,7 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('message_deleted_for_everyone', (data) => _eventController.add({'event': 'message_deleted_for_everyone', 'data': data}));
     _socket!.on('moderation_state_updated', (data) => _eventController.add({'event': 'moderation_state_updated', 'data': data}));
     _socket!.on('chat_status_update', (data) => _eventController.add({'event': 'chat_status_update', 'data': data}));
+    _socket!.on('unread_update', (data) => _eventController.add({'event': 'unread_update', 'data': data}));
   }
 
   void _setOnline() {
@@ -116,8 +128,7 @@ class SocketService with WidgetsBindingObserver {
         _socket!.emit(event, data);
       }
     } else {
-      debugPrint('⚠️ Cannot emit $event: Socket disconnected');
-      // If we emit a message while disconnected, we should try to reconnect
+      debugPrint('⚠️ Cannot emit $event: Socket disconnected. Attempting reconnect...');
       _socket?.connect();
     }
   }
@@ -129,12 +140,10 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
-  void markChatSeen(String myPhone, String otherPhone) {
-    emit('mark_chat_seen', {'myPhone': myPhone, 'otherPhone': otherPhone});
-  }
-
   void leaveRoom() {
     _activeRoomId = null;
+    // We don't necessarily need to tell the server we left, 
+    // but the next join_room will switch the room on server side if implemented that way.
   }
 
   IO.Socket? get socket => _socket;
@@ -143,12 +152,17 @@ class SocketService with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _socket?.connect();
+      _setOnline();
+    } else if (state == AppLifecycleState.paused) {
+      // Optional: Set offline on pause if you want strict presence
     }
   }
 
   void updateCurrentUser(String phone) {
-    _currentUserPhone = phone;
-    _setOnline();
+    if (_currentUserPhone != phone) {
+      _currentUserPhone = phone;
+      _setOnline();
+    }
   }
 
   void setTyping(String phone, bool isTyping) {
@@ -160,6 +174,7 @@ class SocketService with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _socket?.dispose();
+    _reconnectTimer?.cancel();
     _messageController.close();
     _eventController.close();
     _isInitialized = false;

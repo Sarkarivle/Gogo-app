@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/socket_service.dart';
+import '../services/chat_repository.dart';
 import 'chat_screen.dart';
 
 class InboxScreen extends StatefulWidget {
@@ -17,7 +17,7 @@ class InboxScreen extends StatefulWidget {
 }
 
 class _InboxScreenState extends State<InboxScreen> {
-  List<dynamic> _chats = [];
+  final List<dynamic> _chats = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
   int _currentPage = 1;
@@ -34,6 +34,8 @@ class _InboxScreenState extends State<InboxScreen> {
   bool _isOnlineOnly = false;
   String _havePlaceStatus = 'Any';
   String _selectedPosition = 'Any';
+
+  final ChatRepository _chatRepository = ChatRepository();
 
   @override
   void initState() {
@@ -70,66 +72,76 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Future<void> _getCurrentLocation() async {
     try {
-      _myPos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.low);
+      _myPos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
     } catch (_) {}
   }
 
   void _listenToSocketEvents() {
     _socketEventSub = SocketService().eventStream.listen((event) {
       if (!mounted) return;
-      if (event['event'] == 'receive_message' || 
-          event['event'] == 'unread_update' ||
-          event['event'] == 'message_opened') {
-        _fetchInbox();
+      
+      final eventName = event['event'];
+      final data = event['data'];
+
+      if (eventName == 'receive_message' || eventName == 'unread_update' || eventName == 'message_opened') {
+        _handleInboxUpdate(data);
       }
     });
+  }
+
+  // Optimize: Instead of re-fetching everything, update locally or just fetch the first page
+  void _handleInboxUpdate(dynamic data) {
+    // For simplicity and correctness, we fetch the first page to get updated order and counts
+    // but we avoid doing it too frequently (debouncing could be added)
+    _fetchInbox();
   }
 
   Future<void> _fetchInbox({bool loadMore = false}) async {
     if (_currentUser == null) return;
     
     if (loadMore) {
+      if (_isLoadingMore) return;
       setState(() => _isLoadingMore = true);
     } else {
+      if (_isLoading) return;
       if (mounted && _chats.isEmpty) setState(() => _isLoading = true);
     }
 
     try {
-      final page = loadMore ? _currentPage + 1 : 1;
-      final response = await http.get(
-          Uri.parse('http://72.61.170.181:5000/api/chat/inbox/${_currentUser!['phone']}?page=$page&limit=20'));
+      final data = await _chatRepository.getInbox(
+        _currentUser!['phone'], 
+        page: loadMore ? _currentPage + 1 : 1, 
+        limit: 20
+      );
       
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        List<dynamic> fetchedChats = data['chats'] ?? [];
+      List<dynamic> fetchedChats = data['chats'] ?? [];
 
-        if (_myPos != null) {
-          for (var chat in fetchedChats) {
-            if (chat['lat'] != null && chat['lng'] != null) {
-              double dist = Geolocator.distanceBetween(
-                  _myPos!.latitude, _myPos!.longitude, 
-                  chat['lat'], chat['lng']) / 1000;
-              chat['calculated_dist'] = dist;
-              chat['dist_str'] = "${dist.toStringAsFixed(2)} km";
-            } else {
-              chat['dist_str'] = "Unknown";
-            }
+      if (_myPos != null) {
+        for (var chat in fetchedChats) {
+          if (chat['lat'] != null && chat['lng'] != null) {
+            double dist = Geolocator.distanceBetween(
+                _myPos!.latitude, _myPos!.longitude, 
+                chat['lat'], chat['lng']) / 1000;
+            chat['calculated_dist'] = dist;
+            chat['dist_str'] = "${dist.toStringAsFixed(2)} km";
+          } else {
+            chat['dist_str'] = "Unknown";
           }
         }
+      }
 
-        if (mounted) {
-          setState(() {
-            if (loadMore) {
-              _chats.addAll(fetchedChats);
-              _currentPage++;
-            } else {
-              _chats = fetchedChats;
-              _currentPage = 1;
-            }
-            _hasMore = fetchedChats.length >= 20;
-          });
-        }
+      if (mounted) {
+        setState(() {
+          if (loadMore) {
+            _chats.addAll(fetchedChats);
+            _currentPage++;
+          } else {
+            _chats.clear();
+            _chats.addAll(fetchedChats);
+            _currentPage = 1;
+          }
+          _hasMore = fetchedChats.length >= 20;
+        });
       }
     } catch (e) {
       debugPrint("Inbox Fetch Error: $e");
