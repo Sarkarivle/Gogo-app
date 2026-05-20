@@ -43,6 +43,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [];
   
   bool _isLoadingHistory = false;
+  bool _isLoadingMore = false;
+  int _currentHistoryPage = 1;
+  bool _hasMoreHistory = true;
   bool _isBlocked = false;
   String? _blockerPhone;
   Map<String, dynamic>? currentUser;
@@ -63,7 +66,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _listenToSocket();
     
     // Auto-scroll when typing status changes
+    _scrollController.addListener(_onScroll);
     SocketService().typingUsers.addListener(_handleTypingScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels == 0 && !_isLoadingMore && _hasMoreHistory && !_isLoadingHistory) {
+      _fetchChatHistory(loadMore: true);
+    }
   }
 
   void _handleTypingScroll() {
@@ -206,25 +216,55 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _scrollToBottom();
   }
 
-  Future<void> _fetchChatHistory() async {
+  Future<void> _fetchChatHistory({bool loadMore = false}) async {
     if (currentUser == null) return;
-    setState(() => _isLoadingHistory = true);
+    
+    if (loadMore) {
+      setState(() => _isLoadingMore = true);
+    } else {
+      setState(() => _isLoadingHistory = true);
+    }
+
     try {
-      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/admin/chat-history/${currentUser!['phone']}/${widget.receiverPhone}'));
+      final page = loadMore ? _currentHistoryPage + 1 : 1;
+      final response = await http.get(Uri.parse('http://72.61.170.181:5000/api/admin/chat-history/${currentUser!['phone']}/${widget.receiverPhone}?page=$page&limit=30'));
+      
       if (response.statusCode == 200) {
         final List<dynamic> history = jsonDecode(response.body);
+        final List<ChatMessage> newMsgs = history.map((m) => ChatMessage.fromJson(m, currentUser!['phone'])).toList();
+        
         if (mounted) {
           setState(() {
-            _messages.clear();
-            _messages.addAll(history.map((m) => ChatMessage.fromJson(m, currentUser!['phone'])));
+            if (loadMore) {
+              // Add old messages to the beginning
+              _messages.insertAll(0, newMsgs);
+              _currentHistoryPage++;
+            } else {
+              _messages.clear();
+              _messages.addAll(newMsgs);
+              _currentHistoryPage = 1;
+            }
+            _hasMoreHistory = history.length >= 30;
           });
-          _scrollToBottom(immediate: true);
+
+          if (!loadMore) {
+            _scrollToBottom(immediate: true);
+          } else if (newMsgs.isNotEmpty) {
+            // Maintain scroll position after loading more
+            // This is a bit tricky with ListView, but we can jump a bit
+            // For simplicity, we just keep it as is, usually jumping back to where it was is better.
+          }
         }
       }
     } catch (e) {
       debugPrint("History error: $e");
     } finally {
-      if (mounted) setState(() => _isLoadingHistory = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingHistory = false;
+          _isLoadingMore = false;
+        });
+      }
     }
   }
 
@@ -451,14 +491,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          itemCount: _messages.length + (isTyping ? 1 : 0),
+          itemCount: _messages.length + (isTyping ? 1 : 0) + (_isLoadingMore ? 1 : 0),
           itemBuilder: (context, index) {
-            if (index == _messages.length) {
+            if (_isLoadingMore && index == 0) {
+              return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent)));
+            }
+            
+            final adjustedIndex = _isLoadingMore ? index - 1 : index;
+
+            if (adjustedIndex == _messages.length) {
               return _buildTypingIndicator();
             }
 
-            final msg = _messages[index];
-            final showDateHeader = index == 0 || !_isSameDay(_messages[index - 1].timestamp, msg.timestamp);
+            final msg = _messages[adjustedIndex];
+            final showDateHeader = adjustedIndex == 0 || !_isSameDay(_messages[adjustedIndex - 1].timestamp, msg.timestamp);
 
             return Column(
               children: [

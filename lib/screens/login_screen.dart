@@ -81,14 +81,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleBackendLogin(String phone) async {
     try {
       // Step 1: Attempt Login
-      final response = await ApiService.post('/api/login', {'phone': phone});
+      final response = await ApiService.post('/api/user/login', {'phone': phone});
       final data = jsonDecode(response.body);
 
       if (data['success'] == true) {
         _saveUserAndGoHome(data['user']);
       } else {
         // Step 2: Auto-Register if not found
-        final regResponse = await ApiService.post('/api/register', {
+        final regResponse = await ApiService.post('/api/user/register', {
           'phone': phone,
           'name': 'User ${phone.substring(phone.length - 4)}',
           'age': 18,
@@ -104,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       debugPrint('Login Error: $e');
-      _showSnackBar('Connection failed. Is server running on 5000?');
+      _showSnackBar('Connection failed. Please check your internet or server.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

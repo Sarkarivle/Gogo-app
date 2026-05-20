@@ -8,6 +8,8 @@ const fs = require('fs');
 exports.getInbox = async (req, res) => {
     try {
         const phone = req.params.phone;
+        const { page = 1, limit = 50 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const me = await User.findOne({ phone }, 'accountStatus');
         if (me && (me.accountStatus === 'Deactivated' || me.accountStatus === 'Suspended')) {
@@ -17,48 +19,71 @@ exports.getInbox = async (req, res) => {
         const blocks = await Block.find({ $or: [{ blockerPhone: phone }, { blockedPhone: phone }] });
         const blockedPhones = blocks.map(b => b.blockerPhone === phone ? b.blockedPhone : b.blockerPhone);
 
-        const messages = await Message.find({
-            $or: [{ senderPhone: phone }, { receiverPhone: phone }],
-            senderPhone: { $nin: blockedPhones },
-            receiverPhone: { $nin: blockedPhones }
-        }).sort({ timestamp: -1 });
+        // Find unique conversation partners using aggregation for efficiency
+        const conversations = await Message.aggregate([
+            {
+                $match: {
+                    $or: [{ senderPhone: phone }, { receiverPhone: phone }],
+                    senderPhone: { $nin: blockedPhones },
+                    receiverPhone: { $nin: blockedPhones }
+                }
+            },
+            { $sort: { timestamp: -1 } },
+            {
+                $group: {
+                    _id: {
+                        $cond: [
+                            { $eq: ["$senderPhone", phone] },
+                            "$receiverPhone",
+                            "$senderPhone"
+                        ]
+                    },
+                    lastMsg: { $first: "$$ROOT" }
+                }
+            },
+            { $sort: { "lastMsg.timestamp": -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) }
+        ]);
 
         const unreadCount = await Message.countDocuments({ receiverPhone: phone, isOpened: false });
 
-        let partners = {};
-        const allUsers = await User.find({}, 'phone name lat lng position city area isOnline isVerified');
+        const partnerPhones = conversations.map(c => c._id);
+        const partnerUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name lat lng position city area isOnline isVerified');
         const userMap = {};
-        allUsers.forEach(u => userMap[u.phone] = u);
+        partnerUsers.forEach(u => userMap[u.phone] = u);
 
-        for (const m of messages) {
-            let other = m.senderPhone === phone ? m.receiverPhone : m.senderPhone;
-            if (!partners[other]) {
-                const otherUser = userMap[other] || {};
-                const partnerUnread = await Message.countDocuments({
-                    senderPhone: other,
-                    receiverPhone: phone,
-                    isOpened: false
-                });
+        const chats = await Promise.all(conversations.map(async (conv) => {
+            const m = conv.lastMsg;
+            const other = conv._id;
+            const otherUser = userMap[other] || {};
 
-                partners[other] = {
-                    phone: other,
-                    msg: m.type === 'audio' ? '🎵 Voice Message' : (m.message || (m.imageUrl ? '📷 Image' : '')),
-                    time: new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    timestamp: m.timestamp,
-                    name: otherUser.name || 'User',
-                    pos: otherUser.position || 'Any',
-                    lat: otherUser.lat,
-                    lng: otherUser.lng,
-                    city: otherUser.city || 'Unknown',
-                    area: otherUser.area || '',
-                    unread: partnerUnread,
-                    isOnline: otherUser.isOnline || false,
-                    isVerified: otherUser.isVerified || false,
-                };
-            }
-        }
-        res.json({ totalUnread: unreadCount, chats: Object.values(partners) });
+            const partnerUnread = await Message.countDocuments({
+                senderPhone: other,
+                receiverPhone: phone,
+                isOpened: false
+            });
+
+            return {
+                phone: other,
+                msg: m.type === 'audio' ? '🎵 Voice Message' : (m.message || (m.imageUrl ? '📷 Image' : '')),
+                time: new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                timestamp: m.timestamp,
+                name: otherUser.name || 'User',
+                pos: otherUser.position || 'Any',
+                lat: otherUser.lat,
+                lng: otherUser.lng,
+                city: otherUser.city || 'Unknown',
+                area: otherUser.area || '',
+                unread: partnerUnread,
+                isOnline: otherUser.isOnline || false,
+                isVerified: otherUser.isVerified || false,
+            };
+        }));
+
+        res.json({ totalUnread: unreadCount, chats });
     } catch (e) {
+        console.error("GET_INBOX_ERROR:", e);
         res.status(500).json({ totalUnread: 0, chats: [] });
     }
 };

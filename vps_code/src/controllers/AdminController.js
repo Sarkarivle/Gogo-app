@@ -160,9 +160,17 @@ exports.getUserInboxes = async (req, res) => {
 exports.getChatHistory = async (req, res) => {
     try {
         const { p1, p2 } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
         const roomId = [p1, p2].sort().join('_');
-        const chats = await Message.find({ roomId }).sort({ timestamp: 1 });
-        res.json(chats);
+        const chats = await Message.find({ roomId })
+            .sort({ timestamp: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // Reverse because we fetched latest first for pagination, but UI expects chronological order
+        res.json(chats.reverse());
     } catch (e) {
         res.status(500).json([]);
     }

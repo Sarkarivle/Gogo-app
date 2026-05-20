@@ -19,6 +19,11 @@ class InboxScreen extends StatefulWidget {
 class _InboxScreenState extends State<InboxScreen> {
   List<dynamic> _chats = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  final ScrollController _scrollController = ScrollController();
+
   Map<String, dynamic>? _currentUser;
   StreamSubscription? _socketEventSub;
   Position? _myPos;
@@ -33,11 +38,21 @@ class _InboxScreenState extends State<InboxScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_scrollListener);
     _initialize();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (!_isLoading && !_isLoadingMore && _hasMore) {
+        _fetchInbox(loadMore: true);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _socketEventSub?.cancel();
     super.dispose();
   }
@@ -71,13 +86,19 @@ class _InboxScreenState extends State<InboxScreen> {
     });
   }
 
-  Future<void> _fetchInbox() async {
+  Future<void> _fetchInbox({bool loadMore = false}) async {
     if (_currentUser == null) return;
-    if (mounted && _chats.isEmpty) setState(() => _isLoading = true);
+    
+    if (loadMore) {
+      setState(() => _isLoadingMore = true);
+    } else {
+      if (mounted && _chats.isEmpty) setState(() => _isLoading = true);
+    }
 
     try {
+      final page = loadMore ? _currentPage + 1 : 1;
       final response = await http.get(
-          Uri.parse('http://72.61.170.181:5000/api/chat/inbox/${_currentUser!['phone']}'));
+          Uri.parse('http://72.61.170.181:5000/api/chat/inbox/${_currentUser!['phone']}?page=$page&limit=20'));
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -97,14 +118,28 @@ class _InboxScreenState extends State<InboxScreen> {
           }
         }
 
-        fetchedChats.sort((a, b) => (b['timestamp'] ?? '').compareTo(a['timestamp'] ?? ''));
-
-        if (mounted) setState(() => _chats = fetchedChats);
+        if (mounted) {
+          setState(() {
+            if (loadMore) {
+              _chats.addAll(fetchedChats);
+              _currentPage++;
+            } else {
+              _chats = fetchedChats;
+              _currentPage = 1;
+            }
+            _hasMore = fetchedChats.length >= 20;
+          });
+        }
       }
     } catch (e) {
       debugPrint("Inbox Fetch Error: $e");
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
     }
   }
 
@@ -135,9 +170,10 @@ class _InboxScreenState extends State<InboxScreen> {
         title: const Text("Inbox", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white)),
       ),
       body: RefreshIndicator(
-        onRefresh: _fetchInbox,
+        onRefresh: () async => _fetchInbox(),
         color: Colors.orangeAccent,
         child: SingleChildScrollView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,9 +189,14 @@ class _InboxScreenState extends State<InboxScreen> {
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: filteredChats.length,
+                  itemCount: filteredChats.length + (_isLoadingMore ? 1 : 0),
                   separatorBuilder: (c, i) => const Divider(color: Colors.white10, height: 1),
-                  itemBuilder: (context, index) => _buildChatItem(filteredChats[index]),
+                  itemBuilder: (context, index) {
+                    if (index == filteredChats.length) {
+                      return const Padding(padding: EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)));
+                    }
+                    return _buildChatItem(filteredChats[index]);
+                  },
                 ),
             ],
           ),

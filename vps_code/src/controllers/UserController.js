@@ -124,3 +124,82 @@ exports.updatePremium = async (req, res) => {
         res.status(500).json({ success: false, message: e.message });
     }
 };
+
+exports.getDiscover = async (req, res) => {
+    try {
+        const {
+            phone,
+            page = 1,
+            limit = 20,
+            tab = 'Nearby',
+            distance,
+            age,
+            isOnlineOnly,
+            havePlace,
+            position,
+            lat,
+            lng
+        } = req.query;
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        // Basic query: Don't show self and don't show explicitly banned users
+        const query = {
+            phone: { $ne: phone },
+            isBanned: { $ne: true }
+        };
+
+        // Filters - Only apply if they are not 'Any'
+        if (isOnlineOnly === 'true') query.isOnline = true;
+        if (havePlace && havePlace !== 'Any') query.havePlace = havePlace;
+
+        if (position && position !== 'Any') {
+            // If "Top, Ver" is passed, we check for both.
+            // If any other specific position is passed, we check that.
+            // We also handle cases where position might be empty in DB.
+            const searchTerms = position.split(',').map(p => p.trim()).filter(p => p.length > 0);
+            query.$or = searchTerms.map(term => ({ position: { $regex: term, $options: 'i' } }));
+        }
+
+        if (age && age !== 'Any') {
+            if (age === '18-25') query.age = { $gte: 18, $lte: 25 };
+            else if (age === '26-35') query.age = { $gte: 26, $lte: 35 };
+            else if (age === '36-45') query.age = { $gte: 36, $lte: 45 };
+            else if (age === '46+') query.age = { $gte: 46 };
+        }
+
+        let sort = { lastSeen: -1 };
+        if (tab === 'New') sort = { createdAt: -1 };
+        else if (tab === 'Popular') sort = { isPremium: -1, lastSeen: -1 };
+        else if (tab === 'Online') {
+            query.isOnline = true;
+            sort = { lastSeen: -1 };
+        }
+
+        const users = await User.find(query)
+            .sort(sort)
+            .skip(skip)
+            .limit(parseInt(limit))
+            .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+            .lean();
+
+        // Fallback: If no users found with strict filters on page 1, return active users
+        if (users.length === 0 && parseInt(page) === 1) {
+            const fallbackUsers = await User.find({ phone: { $ne: phone }, isBanned: { $ne: true } })
+                .sort({ lastSeen: -1 })
+                .limit(parseInt(limit))
+                .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                .lean();
+            return res.json({ success: true, page: 1, users: fallbackUsers || [] });
+        }
+
+        res.json({
+            success: true,
+            page: parseInt(page),
+            users: users || []
+        });
+    } catch (e) {
+        console.error("GET_DISCOVER_ERROR:", e);
+        res.status(500).json({ success: false, users: [] });
+    }
+};
