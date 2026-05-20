@@ -1051,9 +1051,39 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
             child: ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: p['imageUrl'], fit: BoxFit.cover)),
           ),
         ),
-        if (_isEditMode) Positioned(top: 5, right: 15, child: GestureDetector(onTap: () {}, child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)))),
+        if (_isEditMode) Positioned(
+          top: 5, 
+          right: 15, 
+          child: GestureDetector(
+            onTap: () async {
+              final confirmed = await _showDeleteConfirmation();
+              if (confirmed) {
+                final success = await ChatRepository().deleteRecentPhoto(widget.currentUserPhone, p['imageUrl']);
+                if (success) {
+                  _fetchRecentPhotos(); // UI Refresh
+                }
+              }
+            }, 
+            child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white))
+          )
+        ),
       ],
     );
+  }
+
+  Future<bool> _showDeleteConfirmation() async {
+    return await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Delete Photo?', style: TextStyle(color: Colors.white)),
+        content: const Text('This will permanently delete the photo.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('DELETE', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    ) ?? false;
   }
 }
 

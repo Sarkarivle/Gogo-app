@@ -199,6 +199,37 @@ exports.deletePhoto = async (req, res) => {
     }
 };
 
+exports.deleteRecentPhotoByUrl = async (req, res) => {
+    try {
+        const { phone, imageUrl } = req.body;
+        const photo = await RecentPhoto.findOne({ phone, imageUrl });
+
+        if (!photo) {
+            return res.status(404).json({ success: false, message: "Photo not found in database" });
+        }
+
+        // 1. Delete from Database
+        await RecentPhoto.deleteOne({ _id: photo._id });
+
+        // 2. Delete from Server Storage
+        try {
+            const fileName = imageUrl.split('/').pop();
+            const filePath = path.join(process.cwd(), 'uploads', fileName);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`✅ File deleted: ${fileName}`);
+            }
+        } catch (fErr) {
+            console.error("❌ File deletion error:", fErr);
+        }
+
+        res.json({ success: true, message: "Photo permanently deleted from server and database" });
+    } catch (e) {
+        console.error("DELETE_PHOTO_ERROR:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+};
+
 exports.wipeRecentData = async (req, res) => {
     try {
         await RecentPhoto.deleteMany({});

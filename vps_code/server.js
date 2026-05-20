@@ -164,12 +164,27 @@ io.on('connection', (socket) => {
 
     socket.on('delete_message_for_everyone', async (data) => {
         try {
-            await Message.findByIdAndUpdate(data.messageId, {
-                isDeletedForEveryone: true,
-                message: "",
-                imageUrl: null,
-                audioUrl: null
-            });
+            const message = await Message.findById(data.messageId);
+            if (message) {
+                // Delete physical files if any
+                const filesToDelete = [message.imageUrl, message.audioUrl];
+                filesToDelete.forEach(url => {
+                    if (url) {
+                        try {
+                            const fileName = url.split('/').pop();
+                            const filePath = path.join(__dirname, 'uploads', fileName);
+                            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                        } catch (fErr) {}
+                    }
+                });
+
+                message.isDeletedForEveryone = true;
+                message.message = "";
+                message.imageUrl = null;
+                message.audioUrl = null;
+                await message.save();
+            }
+
             const roomId = [data.myPhone, data.otherPhone].sort().join('_');
             io.to(roomId).emit('message_deleted_for_everyone', { messageId: data.messageId });
         } catch (e) {

@@ -11,109 +11,57 @@ class ChatRepository {
   factory ChatRepository() => _instance;
   ChatRepository._internal();
 
+  // Simple memory cache for chat history
+  static final Map<String, List<ChatMessage>> _chatCache = {};
+
   Future<List<ChatMessage>> getChatHistory({
     required String myPhone,
     required String otherPhone,
     int page = 1,
     int limit = 30,
   }) async {
+    final String cacheKey = '${myPhone}_$otherPhone';
+    
+    // Return cached data for page 1 for instant loading
+    if (page == 1 && _chatCache.containsKey(cacheKey)) {
+      _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit); // Background refresh
+      return _chatCache[cacheKey]!;
+    }
+
+    return await _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit, page: page);
+  }
+
+  Future<List<ChatMessage>> _fetchAndCacheHistory(String myPhone, String otherPhone, String cacheKey, int limit, {int page = 1}) async {
     try {
       final response = await ApiService.get('/api/admin/chat-history/$myPhone/$otherPhone?page=$page&limit=$limit');
       if (response.statusCode == 200) {
         final List<dynamic> history = jsonDecode(response.body);
-        return history.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
-        Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
+        final messages = history.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
+        
+        if (page == 1) {
+          _chatCache[cacheKey] = messages;
+        }
+        return messages;
       }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
       return [];
     } catch (e) {
       debugPrint("Chat history error: $e");
       return [];
-      Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
     }
   }
-}
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
 
   Future<Map<String, dynamic>> getInbox(String phone, {int page = 1, int limit = 20}) async {
     try {
       final response = await ApiService.get('/api/chat/inbox/$phone?page=$page&limit=$limit');
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
-        Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
       }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
       return {'chats': [], 'totalUnread': 0};
     } catch (e) {
       debugPrint("Inbox fetch error: $e");
       return {'chats': [], 'totalUnread': 0};
-      Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
     }
   }
-}
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
 
   Future<bool> checkBlockStatus(String myPhone, String otherPhone) async {
     try {
@@ -126,32 +74,8 @@ class ChatRepository {
       return iBlocked || theyBlocked;
     } catch (e) {
       return false;
-      Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
     }
   }
-}
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
 
   Future<String?> uploadMedia(File file, String phone, String type) async {
     try {
@@ -159,49 +83,13 @@ class ChatRepository {
       if (response.statusCode == 200) {
         var res = await http.Response.fromStream(response);
         return jsonDecode(res.body)['imageUrl'];
-        Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
       }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
       return null;
     } catch (e) {
       debugPrint("Upload error: $e");
       return null;
-      Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
     }
   }
-}
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
-  }
-}
 
   void sendMessage({
     required String senderPhone,
@@ -232,19 +120,7 @@ class ChatRepository {
       'replyText': replyText,
       'replyType': replyType,
     }, ack);
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
   }
-}
 
   void markOpened(String messageId, String myPhone, String otherPhone) {
     SocketService().emit('mark_opened', {
@@ -252,35 +128,11 @@ class ChatRepository {
       'myPhone': myPhone,
       'otherPhone': otherPhone
     });
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
   }
-}
 
   void markChatSeen(String myPhone, String otherPhone) {
     SocketService().emit('mark_chat_seen', {'myPhone': myPhone, 'otherPhone': otherPhone});
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
   }
-}
 
   void deleteMessageForEveryone(String messageId, String myPhone, String otherPhone) {
     SocketService().emit('delete_message_for_everyone', {
@@ -288,19 +140,7 @@ class ChatRepository {
       'myPhone': myPhone,
       'otherPhone': otherPhone
     });
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
   }
-}
 
   void deleteMessageForMe(String messageId, String myPhone, String otherPhone) {
     SocketService().emit('delete_message', {
@@ -308,19 +148,7 @@ class ChatRepository {
       'myPhone': myPhone,
       'otherPhone': otherPhone
     });
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
   }
-}
 
   void editMessage(String messageId, String newText, String myPhone, String otherPhone) {
     SocketService().emit('edit_message', {
@@ -329,19 +157,8 @@ class ChatRepository {
       'myPhone': myPhone,
       'otherPhone': otherPhone
     });
-    Future<List<dynamic>> getRecentPhotos(String phone) async {
-    try {
-      final res = await ApiService.get('/api/chat/recent-photos/$phone');
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Recent photos error: $e");
-      return [];
-    }
   }
-}
+
   Future<List<dynamic>> getRecentPhotos(String phone) async {
     try {
       final res = await ApiService.get('/api/chat/recent-photos/$phone');
@@ -353,5 +170,22 @@ class ChatRepository {
       debugPrint("Recent photos error: $e");
       return [];
     }
+  }
+
+  Future<bool> deleteRecentPhoto(String phone, String imageUrl) async {
+    try {
+      final response = await ApiService.post('/api/chat/delete-recent-photo', {
+        'phone': phone,
+        'imageUrl': imageUrl
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint("Delete photo error: $e");
+      return false;
+    }
+  }
+
+  static void clearChatCache(String myPhone, String otherPhone) {
+    _chatCache.remove('${myPhone}_$otherPhone');
   }
 }

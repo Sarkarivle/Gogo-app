@@ -24,6 +24,7 @@ router.post('/unblock', ChatController.unblockUser);
 router.post('/mark-seen', ChatController.markSeen);
 router.post('/upload', upload.single('image'), ChatController.handleFileUpload);
 router.get('/recent-photos/:phone', ChatController.getRecentPhotos);
+router.post('/delete-recent-photo', ChatController.deleteRecentPhotoByUrl);
 router.delete('/photo/:messageId', ChatController.deletePhoto);
 router.get('/wipe-recent-data', ChatController.wipeRecentData); // Temporary cleanup route
 
