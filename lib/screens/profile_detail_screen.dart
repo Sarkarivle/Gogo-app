@@ -264,7 +264,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       const SizedBox(height: 40),
                       const Text('About Me', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                       const SizedBox(height: 12),
-                      Text('Hey! I am ${widget.name}. Looking for someone to connect and explore ${widget.city.isNotEmpty ? widget.city : 'the city'} together.', style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.6), height: 1.5)),
+                      Text('Hey! मैं ${widget.name} हूँ। मैं किसी ऐसे इंसान की तलाश में हूँ जिससे मैं कनेक्ट हो सकूँ और साथ में ${widget.city.isNotEmpty ? widget.city : 'शहर'} घूम सकूँ।', style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.6), height: 1.5)),
                       const SizedBox(height: 120),
                     ],
                   ),

@@ -94,7 +94,7 @@ class ProfileCard extends StatelessWidget {
             const SizedBox(height: 6),
             Row(children: [
               const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   locationDisplay,
@@ -104,22 +104,25 @@ class ProfileCard extends StatelessWidget {
                 ),
               )
             ]),
-            const SizedBox(height: 14),
-            Row(children: [
-              Expanded(
-                child: Text(
-                  name,
-                  style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    name,
+                    style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              if (isVerified) ...[
-                const SizedBox(width: 6),
-                const Icon(Icons.verified, color: Colors.blueAccent, size: 20),
+                if (isVerified) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
+                ],
               ],
-            ]),
-            const SizedBox(height: 12),
+            ),
+            const SizedBox(height: 8),
             _buildInfoRow('Age', age.toString()),
             _buildInfoRow('Position', position),
             _buildInfoRow('Have Place', havePlace),
@@ -155,7 +158,7 @@ class ProfileCard extends StatelessWidget {
 
   Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
+      padding: const EdgeInsets.only(bottom: 4.0),
       child: Row(children: [
         Text('$label ', style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500)),
         Expanded(
