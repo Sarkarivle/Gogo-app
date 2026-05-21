@@ -69,23 +69,37 @@ exports.verifyPayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid Signature" });
         }
 
-        // Activate Premium instantly
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + 30); // Base month + 24h trial included implicitly
+        // Activate Premium instantly for the user
+        const now = new Date();
+        const trialExpiry = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 24 hours
+        const premiumExpiry = new Date(now.getTime() + (31 * 24 * 60 * 60 * 1000)); // 1 Month
 
         const updatedUser = await User.findOneAndUpdate(
             { phone },
             {
                 isPremium: true,
-                premiumExpiry: expiryDate,
+                premiumExpiry: premiumExpiry,
                 premiumPlan: 'Monthly Gold',
+                subscription: {
+                    id: razorpay_subscription_id,
+                    status: 'trial_active',
+                    trialStartDate: now,
+                    trialEndDate: trialExpiry,
+                    startDate: now,
+                    nextBillingDate: trialExpiry, // Billing starts after 24h
+                    autoRenew: true,
+                    lastPaymentDate: now,
+                    totalAmountPaid: 1,
+                    paymentMethod: 'UPI'
+                },
                 $push: {
                     paymentHistory: {
                         orderId: razorpay_subscription_id,
                         paymentId: razorpay_payment_id,
-                        amount: 1, // The upfront ₹1
-                        status: "Premium Activated",
-                        timestamp: new Date()
+                        amount: 1,
+                        status: "Success",
+                        method: "UPI",
+                        timestamp: now
                     }
                 }
             },
@@ -102,7 +116,7 @@ exports.verifyPayment = async (req, res) => {
 exports.handleWebhook = async (req, res) => {
     try {
         const { keySecret, webhookSecret } = await getRazorpayConfig();
-        const secret = webhookSecret || keySecret; // Use specific secret or fallback to Key Secret
+        const secret = webhookSecret || keySecret;
         const signature = req.headers['x-razorpay-signature'];
 
         const expectedSignature = crypto
@@ -117,36 +131,32 @@ exports.handleWebhook = async (req, res) => {
         const event = req.body.event;
         const payload = req.body.payload;
 
-        if (event === 'subscription.activated' || event === 'payment.captured') {
-            const subscriptionId = payload.subscription ? payload.subscription.entity.id : payload.payment.entity.subscription_id;
-            const phone = payload.subscription ? payload.subscription.entity.notes.phone : payload.payment.entity.notes.phone;
-            const paymentId = payload.payment ? payload.payment.entity.id : null;
+        console.log(`🔔 Razorpay Webhook Received: ${event}`);
 
-            if (subscriptionId && phone) {
-                // Activate Premium with Idempotency check
-                const user = await User.findOne({ phone: phone });
-                if (user && (!user.isPremium || !user.paymentHistory.some(p => p.orderId === subscriptionId))) {
-                    const expiryDate = new Date();
-                    expiryDate.setDate(expiryDate.getDate() + 30);
+        switch (event) {
+            case 'subscription.charged':
+                await handleSubscriptionCharged(payload);
+                break;
+            case 'subscription.cancelled':
+                await handleSubscriptionCancelled(payload);
+                break;
+            case 'subscription.expired':
+                await handleSubscriptionExpired(payload);
+                break;
+            case 'payment.failed':
+                await handlePaymentFailed(payload);
+                break;
+        }
 
-                    await User.findOneAndUpdate(
-                        { phone: phone },
-                        {
-                            isPremium: true,
-                            premiumPlan: 'Monthly Gold',
-                            premiumExpiry: expiryDate,
-                            $addToSet: { // Avoid duplicates in history
-                                paymentHistory: {
-                                    orderId: subscriptionId,
-                                    paymentId: paymentId,
-                                    amount: 1,
-                                    status: "Activated via Webhook",
-                                    timestamp: new Date()
-                                }
-                            }
-                        }
-                    );
-                    console.log(`✅ Premium activated via Webhook for ${phone}`);
+        if (event === 'subscription.charged' || event === 'payment.failed' || event === 'subscription.cancelled') {
+            const sub = payload.subscription ? payload.subscription.entity : null;
+            const phone = sub ? sub.notes.phone : (payload.payment ? payload.payment.entity.notes.phone : null);
+
+            if (phone) {
+                // Emit socket event for real-time premium update
+                const io = req.app.get('socketio');
+                if (io) {
+                    io.emit(`premium_update_${phone}`, { event: event });
                 }
             }
         }
@@ -157,3 +167,86 @@ exports.handleWebhook = async (req, res) => {
         res.status(500).send('Error');
     }
 };
+
+async function handleSubscriptionCharged(payload) {
+    const sub = payload.subscription.entity;
+    const payment = payload.payment.entity;
+    const phone = sub.notes.phone;
+
+    const amount = payment.amount / 100;
+    const nextBilling = sub.current_end ? new Date(sub.current_end * 1000) : null;
+
+    await User.findOneAndUpdate(
+        { phone: phone },
+        {
+            isPremium: true,
+            premiumPlan: 'Monthly Gold',
+            premiumExpiry: nextBilling ? new Date(nextBilling.getTime() + (24 * 60 * 60 * 1000)) : undefined,
+            'subscription.status': 'active',
+            'subscription.nextBillingDate': nextBilling,
+            'subscription.lastPaymentDate': new Date(),
+            'subscription.paymentMethod': payment.method,
+            $inc: { 'subscription.totalAmountPaid': amount },
+            $push: {
+                paymentHistory: {
+                    orderId: sub.id,
+                    paymentId: payment.id,
+                    amount: amount,
+                    status: "Success",
+                    method: payment.method,
+                    timestamp: new Date()
+                }
+            }
+        }
+    );
+}
+
+async function handleSubscriptionCancelled(payload) {
+    const sub = payload.subscription.entity;
+    const phone = sub.notes.phone;
+
+    await User.findOneAndUpdate(
+        { phone: phone },
+        {
+            'subscription.status': 'cancelled',
+            'subscription.autoRenew': false,
+            'subscription.cancellationDate': new Date()
+        }
+    );
+}
+
+async function handleSubscriptionExpired(payload) {
+    const sub = payload.subscription.entity;
+    const phone = sub.notes.phone;
+
+    await User.findOneAndUpdate(
+        { phone: phone },
+        {
+            isPremium: false,
+            'subscription.status': 'expired',
+            'subscription.autoRenew': false
+        }
+    );
+}
+
+async function handlePaymentFailed(payload) {
+    const payment = payload.payment.entity;
+    const phone = payment.notes.phone;
+
+    await User.findOneAndUpdate(
+        { phone: phone },
+        {
+            'subscription.status': 'payment_failed',
+            $push: {
+                paymentHistory: {
+                    orderId: payment.subscription_id,
+                    paymentId: payment.id,
+                    amount: payment.amount / 100,
+                    status: "Failed",
+                    method: payment.method,
+                    timestamp: new Date()
+                }
+            }
+        }
+    );
+}

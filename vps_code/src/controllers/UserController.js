@@ -26,6 +26,16 @@ exports.updateFcmToken = async (req, res) => {
     }
 };
 
+exports.getProfile = async (req, res) => {
+    try {
+        const user = await User.findOne({ phone: req.params.phone });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        res.json({ success: true, user });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+};
+
 exports.login = async (req, res) => {
     try {
         const user = await User.findOne({ phone: req.body.phone });

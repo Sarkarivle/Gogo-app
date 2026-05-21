@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
@@ -24,6 +25,8 @@ const io = new Server(server, {
 });
 
 connectDB();
+
+app.set('socketio', io); // Set socket.io instance to app for global access
 
 app.use(cors());
 app.use(express.json());

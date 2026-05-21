@@ -5,6 +5,7 @@ const ContactController = require('../controllers/ContactController');
 const PolicyController = require('../controllers/PolicyController');
 
 router.post('/login', UserController.login);
+router.get('/profile/:phone', UserController.getProfile);
 router.post('/register', UserController.register);
 router.post('/update-location', UserController.updateLocation);
 router.post('/update-profile', UserController.updateProfile);

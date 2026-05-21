@@ -25,17 +25,38 @@ const UserSchema = new mongoose.Schema({
     // Status & Moderation
     isPremium: { type: Boolean, default: false },
     premiumExpiry: { type: Date },
-    premiumPlan: { type: String }, // e.g., 'Monthly', 'Yearly'
+    premiumPlan: { type: String }, // e.g., 'Monthly Gold'
     isVerified: { type: Boolean, default: false }, // Blue tick status
+
+    // Advanced Subscription Management
+    subscription: {
+        id: { type: String, index: true }, // Razorpay Subscription ID
+        customerId: String,
+        planId: String,
+        status: {
+            type: String,
+            enum: ['none', 'trial_active', 'active', 'payment_failed', 'cancelled', 'expired'],
+            default: 'none'
+        },
+        trialStartDate: Date,
+        trialEndDate: Date,
+        startDate: Date,
+        nextBillingDate: Date,
+        totalAmountPaid: { type: Number, default: 0 },
+        autoRenew: { type: Boolean, default: true },
+        cancellationDate: Date,
+        lastPaymentDate: Date,
+        paymentMethod: String,
+    },
 
     // Payment Tracking
     paymentHistory: [{
         orderId: String,
         paymentId: String,
         amount: Number,
-        currency: String,
-        status: String,
-        plan: String,
+        currency: { type: String, default: 'INR' },
+        status: String, // e.g., 'Captured', 'Failed', 'Refunded'
+        method: String,
         timestamp: { type: Date, default: Date.now }
     }],
     accountStatus: {
