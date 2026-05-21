@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
+import '../services/premium_service.dart';
 import 'chat_screen.dart';
+import 'onboarding/payment_screen.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   final String name;
@@ -288,7 +290,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(30),
-                    onTap: () {
+                    onTap: () async {
+                      final isPremium = await PremiumService().checkPremiumAndRedirect(context);
+                      if (!isPremium) return;
+
+                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(

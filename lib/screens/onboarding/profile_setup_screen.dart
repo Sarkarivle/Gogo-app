@@ -17,13 +17,14 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   // Page 1 Data
   final TextEditingController _nicknameController = TextEditingController();
+  final FocusNode _nicknameFocusNode = FocusNode();
   String? _selectedDay;
   String? _selectedMonth;
   String? _selectedYear;
-  String? _havePlace; // 'YES' or 'NO'
+  String? _havePlace = 'NO'; // Default set to NO as requested
 
   // Page 2 Data
-  String? _selectedPosition;
+  String? _selectedPosition = 'Top'; // Default set to Top as requested
 
   bool _isLoading = false;
 
@@ -37,6 +38,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   @override
   void dispose() {
     _nicknameController.dispose();
+    _nicknameFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -65,6 +67,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   void _showPicker(String title, List<String> items, Function(String) onSelect) {
+    _nicknameFocusNode.unfocus(); // Forcefully remove focus from Nickname
+    FocusScope.of(context).requestFocus(FocusNode()); // Switch focus to a blank node
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E1E1E),
@@ -168,8 +173,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                _currentPage == 0 ? 'Tell us about yourself' : 'My Position (आप क्या हैं)',
-                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+                _currentPage == 0 ? 'Create Profile' : 'My Position',
+                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5),
               ),
             ),
             const SizedBox(height: 40),
@@ -201,6 +206,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _nicknameController,
+            focusNode: _nicknameFocusNode,
             style: const TextStyle(color: Colors.white, fontSize: 16),
             onChanged: (v) => setState(() {}),
             decoration: InputDecoration(
@@ -241,15 +247,20 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   Widget _buildPageTwo() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         children: [
           _buildPositionCard('Top', 'Prefers leading role in intimacy', Icons.keyboard_double_arrow_up),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildPositionCard('Bottom', 'Prefers receiving role in intimacy', Icons.keyboard_double_arrow_down),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildPositionCard('Versatile', 'Comfortable in both roles', Icons.swap_vert),
+          const SizedBox(height: 12),
+          _buildPositionCard('Vers Top', 'Versatile but prefers being Top', Icons.vertical_align_top_rounded),
+          const SizedBox(height: 12),
+          _buildPositionCard('Vers Bottom', 'Versatile but prefers being Bottom', Icons.vertical_align_bottom_rounded),
+          const SizedBox(height: 30),
         ],
       ),
     );
@@ -282,18 +293,22 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   Widget _buildOptionButton(String text, bool isSelected, VoidCallback onTap) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        FocusScope.of(context).unfocus(); // Dismiss keyboard when selecting options
+        onTap();
+      },
       borderRadius: BorderRadius.circular(15),
       child: Container(
-        height: 60,
+        height: 55,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orangeAccent : Colors.white.withOpacity(0.05),
+          color: isSelected ? Colors.orangeAccent.withOpacity(0.1) : const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white.withOpacity(0.05)),
         ),
         child: Text(
           text,
-          style: TextStyle(color: isSelected ? Colors.black : Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          style: TextStyle(color: isSelected ? Colors.orangeAccent : Colors.white38, fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -302,34 +317,47 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   Widget _buildPositionCard(String title, String description, IconData icon) {
     bool isSelected = _selectedPosition == title;
     return InkWell(
-      onTap: () => setState(() => _selectedPosition = title),
+      onTap: () {
+        FocusScope.of(context).unfocus(); // Dismiss keyboard if any
+        setState(() => _selectedPosition = title);
+      },
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orangeAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+          color: isSelected ? Colors.orangeAccent.withOpacity(0.08) : const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.transparent, width: 2),
+          border: Border.all(
+            color: isSelected ? Colors.orangeAccent.withOpacity(0.5) : Colors.white.withOpacity(0.05),
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: isSelected ? [
+            BoxShadow(color: Colors.orangeAccent.withOpacity(0.1), blurRadius: 15, spreadRadius: -2)
+          ] : [],
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: isSelected ? Colors.orangeAccent : Colors.white10, borderRadius: BorderRadius.circular(15)),
-              child: Icon(icon, color: isSelected ? Colors.black : Colors.white70, size: 28),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.orangeAccent.withOpacity(0.15) : Colors.white.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: isSelected ? Colors.orangeAccent : Colors.white38, size: 24),
             ),
-            const SizedBox(width: 20),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: isSelected ? Colors.orangeAccent : Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(description, style: TextStyle(color: isSelected ? Colors.white70 : Colors.white38, fontSize: 13)),
+                  Text(title, style: TextStyle(color: isSelected ? Colors.orangeAccent : Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(description, style: TextStyle(color: isSelected ? Colors.white60 : Colors.white24, fontSize: 11)),
                 ],
               ),
             ),
-            if (isSelected) const Icon(Icons.check_circle, color: Colors.orangeAccent),
+            if (isSelected) 
+              const Icon(Icons.check_circle_rounded, color: Colors.orangeAccent, size: 20),
           ],
         ),
       ),

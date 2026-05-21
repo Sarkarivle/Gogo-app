@@ -47,6 +47,7 @@ const UserSchema = new mongoose.Schema({
         cancellationDate: Date,
         lastPaymentDate: Date,
         paymentMethod: String,
+        hasUsedTrial: { type: Boolean, default: false },
     },
 
     // Payment Tracking

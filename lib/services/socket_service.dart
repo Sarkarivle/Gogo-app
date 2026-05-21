@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'premium_service.dart';
 
 class SocketService with WidgetsBindingObserver {
   static final SocketService _instance = SocketService._internal();
@@ -112,6 +113,13 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('moderation_state_updated', (data) => _eventController.add({'event': 'moderation_state_updated', 'data': data}));
     _socket!.on('chat_status_update', (data) => _eventController.add({'event': 'chat_status_update', 'data': data}));
     _socket!.on('unread_update', (data) => _eventController.add({'event': 'unread_update', 'data': data}));
+
+    if (_currentUserPhone != null) {
+      _socket!.on('premium_update_$_currentUserPhone', (data) {
+        PremiumService().updatePremiumStatus(true);
+        _eventController.add({'event': 'premium_update', 'data': data});
+      });
+    }
   }
 
   void _setOnline() {
@@ -162,6 +170,15 @@ class SocketService with WidgetsBindingObserver {
     if (_currentUserPhone != phone) {
       _currentUserPhone = phone;
       _setOnline();
+      
+      // Re-bind premium update listener for new phone
+      if (_socket != null) {
+        _socket!.off('premium_update'); // Clear old ones if any generic ones existed
+        _socket!.on('premium_update_$phone', (data) {
+          PremiumService().updatePremiumStatus(true);
+          _eventController.add({'event': 'premium_update', 'data': data});
+        });
+      }
     }
   }
 

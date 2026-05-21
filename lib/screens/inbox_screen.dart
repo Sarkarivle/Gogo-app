@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/socket_service.dart';
 import '../services/chat_repository.dart';
+import '../services/premium_service.dart';
 import 'chat_screen.dart';
 
 class InboxScreen extends StatefulWidget {
@@ -340,6 +341,10 @@ class _InboxScreenState extends State<InboxScreen> {
 
             return ListTile(
               onTap: () async {
+                final isPremium = await PremiumService().checkPremiumAndRedirect(context);
+                if (!isPremium) return;
+
+                if (!mounted) return;
                 await Navigator.push(context, MaterialPageRoute(
                   builder: (c) => ChatPage(
                     name: chat['name'], 

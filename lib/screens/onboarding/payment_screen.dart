@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:intl/intl.dart';
 import 'profile_setup_screen.dart';
+import '../../services/premium_service.dart';
 
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
@@ -20,6 +21,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   late ConfettiController _confettiController;
   bool _isLoading = false;
   String? _currentSubscriptionId;
+  bool _isTrialAvailable = true;
 
   Timer? _timer;
   int _secondsRemaining = 600; // 10 minutes
@@ -32,7 +34,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    _loadTrialStatus();
     _startTimer();
+  }
+
+  Future<void> _loadTrialStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userData = prefs.getString('user_data');
+    if (userData != null) {
+      final user = jsonDecode(userData);
+      setState(() {
+        _isTrialAvailable = !(user['subscription']?['hasUsedTrial'] ?? false);
+      });
+    }
   }
 
   void _startTimer() {
@@ -166,6 +180,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (verifyRes.statusCode == 200 && data['success'] == true) {
         debugPrint("Step 9: Subscription fully activated!");
         await prefs.setString('user_data', jsonEncode(data['user']));
+        await PremiumService().updatePremiumStatus(true);
         _confettiController.play();
         _showSuccessDialog();
       } else {
@@ -189,7 +204,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.redAccent));
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userDataStr = prefs.getString('user_data');
+    bool hasCompleted = false;
+    if (userDataStr != null) {
+      hasCompleted = jsonDecode(userDataStr)['hasCompletedOnboarding'] ?? false;
+    }
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -210,7 +234,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ProfileSetupScreen())),
+                    onPressed: () {
+                      if (hasCompleted) {
+                        Navigator.pop(context); // Close dialog
+                        Navigator.pop(context); // Go back to Chat/Inbox
+                      } else {
+                        // FIX: Clear all onboarding screens and go to Profile Setup
+                        Navigator.pushAndRemoveUntil(
+                          context, 
+                          MaterialPageRoute(builder: (context) => ProfileSetupScreen()),
+                          (route) => false
+                        );
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber.shade700,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -288,35 +324,36 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   
                   const SizedBox(height: 16),
                   
-                  // Eye-Catchy Urgent Badge with Timer
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.red.withOpacity(0.25)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
-                        const SizedBox(width: 8),
-                        RichText(
-                          text: TextSpan(
-                            style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold),
-                            children: [
-                              const TextSpan(text: "₹1 ऑफर सिर्फ "),
-                              TextSpan(
-                                text: _formatTime(_secondsRemaining),
-                                style: const TextStyle(color: Colors.white, backgroundColor: Colors.red),
-                              ),
-                              const TextSpan(text: " मिनट के लिए मान्य"),
-                            ],
+                  // Eye-Catchy Urgent Badge with Timer (Only if trial is available)
+                  if (_isTrialAvailable)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.red.withOpacity(0.25)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
+                          const SizedBox(width: 8),
+                          RichText(
+                            text: TextSpan(
+                              style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold),
+                              children: [
+                                const TextSpan(text: "₹1 ऑफर सिर्फ "),
+                                TextSpan(
+                                  text: _formatTime(_secondsRemaining),
+                                  style: const TextStyle(color: Colors.white, backgroundColor: Colors.red),
+                                ),
+                                const TextSpan(text: " मिनट के लिए मान्य"),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
 
                   const SizedBox(height: 16),
                   
@@ -346,9 +383,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text("Monthly Plan", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(
+                              _isTrialAvailable ? "Monthly Plan" : "Premium Gold",
+                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)
+                            ),
                             const SizedBox(height: 2),
-                            const Text("Premium Access", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                            Text(
+                              _isTrialAvailable ? "Premium Access" : "Full Access Unlocked",
+                              style: const TextStyle(color: Colors.grey, fontSize: 11)
+                            ),
                             Text("Valid till $validityDate", style: const TextStyle(color: Colors.grey, fontSize: 9)),
                           ],
                         ),
@@ -359,7 +402,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: Colors.amber.withOpacity(0.15))
                           ),
-                          child: Text("ACTIVE", style: TextStyle(color: Colors.amber.shade600, fontWeight: FontWeight.bold, fontSize: 10)),
+                          child: Text(_isTrialAvailable ? "ACTIVE" : "UPGRADE", style: TextStyle(color: Colors.amber.shade600, fontWeight: FontWeight.bold, fontSize: 10)),
                         )
                       ],
                     ),

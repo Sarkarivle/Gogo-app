@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'cancel_membership_screen.dart';
+import 'onboarding/trial_onboarding_screen.dart';
 
 class PremiumSettingsPage extends StatefulWidget {
   const PremiumSettingsPage({super.key});
@@ -176,7 +177,23 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
 
                   const SizedBox(height: 10),
                   
-                  if (sub['autoRenew'] == true && (status == 'active' || status == 'trial_active'))
+                  if (!isPremium || status == 'none' || status == 'expired' || status == 'payment_failed')
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const TrialOnboardingScreen()));
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orangeAccent,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('ACTIVATE PREMIUM GOLD', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+
+                  if (isPremium && sub['autoRenew'] == true && (status == 'active' || status == 'trial_active'))
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(

@@ -15,8 +15,10 @@ import 'package:intl/intl.dart';
 import '../models/chat_message.dart';
 import '../services/socket_service.dart';
 import '../services/chat_repository.dart';
+import '../services/premium_service.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
+import 'onboarding/payment_screen.dart';
 
 class ChatPage extends StatefulWidget {
   final String name;
@@ -278,9 +280,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // --- ACTIONS ---
 
-  void _sendMessage() {
+  void _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty || currentUser == null) return;
+
+    final isPremium = await PremiumService().checkPremiumAndRedirect(context);
+    if (!isPremium) return;
 
     if (_editingMessageId != null) {
       _chatRepository.editMessage(_editingMessageId!, text, currentUser!['phone'], widget.receiverPhone);
@@ -332,6 +337,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _uploadMedia(File file, String type, {bool isViewOnce = false}) async {
     if (currentUser == null) return;
     
+    final isPremium = await PremiumService().checkPremiumAndRedirect(context);
+    if (!isPremium) return;
+
     if (_isBlocked) {
       final localId = DateTime.now().millisecondsSinceEpoch.toString();
       setState(() {

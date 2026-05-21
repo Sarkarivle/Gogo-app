@@ -80,61 +80,72 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('send_message', (data, callback) => {
-        const users = [data.senderPhone, data.receiverPhone].sort();
-        const roomId = users.join('_');
-        const isReceiverOnline = phoneToSockets.has(data.receiverPhone);
+    socket.on('send_message', async (data, callback) => {
+        try {
+            const sender = await User.findOne({ phone: data.senderPhone });
+            if (!sender || !sender.isPremium) {
+                if (callback) callback({ success: false, message: "Premium required" });
+                return;
+            }
 
-        const tempId = new mongoose.Types.ObjectId();
-        const timestamp = new Date();
+            const users = [data.senderPhone, data.receiverPhone].sort();
+            const roomId = users.join('_');
+            const isReceiverOnline = phoneToSockets.has(data.receiverPhone);
 
-        const responseData = {
-            ...data,
-            _id: tempId,
-            roomId: roomId,
-            timestamp: timestamp,
-            isDelivered: isReceiverOnline
-        };
+            const tempId = new mongoose.Types.ObjectId();
+            const timestamp = new Date();
 
-        // --- STEP 1: INSTANT BROADCAST ---
-        // Emit to the entire room (including sender) for sync
-        io.to(roomId).emit('receive_message', responseData);
+            const responseData = {
+                ...data,
+                _id: tempId,
+                roomId: roomId,
+                timestamp: timestamp,
+                isDelivered: isReceiverOnline
+            };
 
-        // Immediate ACK to sender to stop the "loading wheel"
-        if (callback) callback({ success: true, messageId: tempId, localId: data.localId });
+            // --- STEP 1: INSTANT BROADCAST ---
+            // Emit to the entire room (including sender) for sync
+            io.to(roomId).emit('receive_message', responseData);
 
-        // --- STEP 2: BACKGROUND TASKS ---
-        setImmediate(async () => {
-            try {
-                const newMessage = new Message({
-                    _id: tempId,
-                    roomId,
-                    senderPhone: data.senderPhone,
-                    receiverPhone: data.receiverPhone,
-                    message: data.message,
-                    imageUrl: data.imageUrl,
-                    audioUrl: data.audioUrl,
-                    type: data.type || 'text',
-                    isViewOnce: data.isViewOnce || false,
-                    isDelivered: isReceiverOnline,
-                    replyToId: data.replyToId,
-                    replyText: data.replyText,
-                    replyType: data.replyType,
-                    timestamp: timestamp
-                });
-                await newMessage.save();
+            // Immediate ACK to sender to stop the "loading wheel"
+            if (callback) callback({ success: true, messageId: tempId, localId: data.localId });
 
-                if (!isReceiverOnline) {
-                    const receiverUser = await User.findOne({ phone: data.receiverPhone }, 'fcmToken');
-                    if (receiverUser && receiverUser.fcmToken) {
-                        notificationService.sendPushNotification(receiverUser.fcmToken, data.senderName || "New Message", data.message || "Sent a photo", {
-                            senderPhone: String(data.senderPhone),
-                            type: 'chat'
-                        });
+            // --- STEP 2: BACKGROUND TASKS ---
+            setImmediate(async () => {
+                try {
+                    const newMessage = new Message({
+                        _id: tempId,
+                        roomId,
+                        senderPhone: data.senderPhone,
+                        receiverPhone: data.receiverPhone,
+                        message: data.message,
+                        imageUrl: data.imageUrl,
+                        audioUrl: data.audioUrl,
+                        type: data.type || 'text',
+                        isViewOnce: data.isViewOnce || false,
+                        isDelivered: isReceiverOnline,
+                        replyToId: data.replyToId,
+                        replyText: data.replyText,
+                        replyType: data.replyType,
+                        timestamp: timestamp
+                    });
+                    await newMessage.save();
+
+                    if (!isReceiverOnline) {
+                        const receiverUser = await User.findOne({ phone: data.receiverPhone }, 'fcmToken');
+                        if (receiverUser && receiverUser.fcmToken) {
+                            notificationService.sendPushNotification(receiverUser.fcmToken, data.senderName || "New Message", data.message || "Sent a photo", {
+                                senderPhone: String(data.senderPhone),
+                                type: 'chat'
+                            });
+                        }
                     }
-                }
-            } catch (err) { console.log("DB Error:", err); }
-        });
+                } catch (err) { console.log("DB Error:", err); }
+            });
+        } catch (err) {
+            console.error("Socket send_message error:", err);
+            if (callback) callback({ success: false, message: "Server error" });
+        }
     });
 
     socket.on('typing', (data) => {

@@ -12,41 +12,50 @@ const getRazorpayConfig = async () => {
     return keys;
 };
 
-// 1. Create Subscription (with 1 Day Trial + ₹1 Upfront Verification)
+// 1. Create Subscription (Smart Trial Logic)
 exports.createOrder = async (req, res) => {
     try {
-        console.log("Creating subscription for:", req.body.phone);
+        const { phone } = req.body;
+        console.log("Creating subscription for:", phone);
+
+        const user = await User.findOne({ phone });
+        const hasUsedTrial = user?.subscription?.hasUsedTrial || false;
+
         const { keyId, keySecret, planId } = await getRazorpayConfig();
         const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
 
-        // Billing starts after 24 hours
-        const startAt = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
-
-        const subscriptionRequest = {
+        let subscriptionRequest = {
             plan_id: planId,
-            total_count: 12, // 1 year of recurring monthly billing
+            total_count: 12,
             quantity: 1,
             customer_notify: 1,
-            start_at: startAt,
-            // Upfront ₹1 non-refundable trial/verification charge
-            addons: [
-                {
-                    item: {
-                        name: "One-time Trial Activation",
-                        amount: 100, // 100 paise = ₹1
-                        currency: "INR"
-                    }
-                }
-            ],
             notes: {
-                phone: req.body.phone, // Crucial for Webhook identification
-                purpose: "Premium Gold Activation",
-                trial: "24h"
+                phone: phone,
+                purpose: "Premium Gold Activation"
             }
         };
 
+        if (hasUsedTrial) {
+            // User already used trial: Charge ₹199 Upfront, No ₹1 Addon
+            subscriptionRequest.start_at = Math.floor(Date.now() / 1000) + 60; // Start in 1 min
+            subscriptionRequest.notes.trial = "none";
+        } else {
+            // New User: ₹1 Upfront + 24h Trial
+            subscriptionRequest.start_at = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
+            subscriptionRequest.addons = [
+                {
+                    item: {
+                        name: "One-time Trial Activation",
+                        amount: 100, // ₹1
+                        currency: "INR"
+                    }
+                }
+            ];
+            subscriptionRequest.notes.trial = "24h";
+        }
+
         const subscription = await razorpay.subscriptions.create(subscriptionRequest);
-        res.json({ success: true, subscription, keyId });
+        res.json({ success: true, subscription, keyId, hasUsedTrial });
     } catch (error) {
         console.error("Subscription Error:", error.message);
         res.status(500).json({ success: false, message: error.message });
@@ -69,9 +78,7 @@ exports.verifyPayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid Signature" });
         }
 
-        // Activate Premium instantly for the user
         const now = new Date();
-        const trialExpiry = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 24 hours
         const premiumExpiry = new Date(now.getTime() + (31 * 24 * 60 * 60 * 1000)); // 1 Month
 
         const updatedUser = await User.findOneAndUpdate(
@@ -80,23 +87,17 @@ exports.verifyPayment = async (req, res) => {
                 isPremium: true,
                 premiumExpiry: premiumExpiry,
                 premiumPlan: 'Monthly Gold',
-                subscription: {
-                    id: razorpay_subscription_id,
-                    status: 'trial_active',
-                    trialStartDate: now,
-                    trialEndDate: trialExpiry,
-                    startDate: now,
-                    nextBillingDate: trialExpiry, // Billing starts after 24h
-                    autoRenew: true,
-                    lastPaymentDate: now,
-                    totalAmountPaid: 1,
-                    paymentMethod: 'UPI'
-                },
+                'subscription.id': razorpay_subscription_id,
+                'subscription.status': 'active',
+                'subscription.startDate': now,
+                'subscription.autoRenew': true,
+                'subscription.lastPaymentDate': now,
+                'subscription.hasUsedTrial': true, // Mark trial as used
                 $push: {
                     paymentHistory: {
                         orderId: razorpay_subscription_id,
                         paymentId: razorpay_payment_id,
-                        amount: 1,
+                        amount: 1, // Will be updated by webhook for full amounts
                         status: "Success",
                         method: "UPI",
                         timestamp: now
