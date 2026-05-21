@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:confetti/confetti.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +23,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isLoading = false;
   String? _currentSubscriptionId;
   bool _isTrialAvailable = true;
+  int _joinedCount = 51;
+  String _userCity = "आस-पास";
 
   Timer? _timer;
   int _secondsRemaining = 600; // 10 minutes
@@ -29,6 +32,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   @override
   void initState() {
     super.initState();
+    _joinedCount = 51 + Random().nextInt(15);
     _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
@@ -45,17 +49,33 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final user = jsonDecode(userData);
       setState(() {
         _isTrialAvailable = !(user['subscription']?['hasUsedTrial'] ?? false);
+        if (user['city'] != null && user['city'].toString().isNotEmpty) {
+          _userCity = user['city'];
+        }
       });
     }
   }
 
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      bool changed = false;
       if (_secondsRemaining > 0) {
-        setState(() {
-          _secondsRemaining--;
-        });
-      } else {
+        _secondsRemaining--;
+        changed = true;
+      }
+
+      // Increment joined count every 4 seconds
+      if (timer.tick % 4 == 0) {
+        _joinedCount += Random().nextInt(3) + 1;
+        if (_joinedCount > 99) _joinedCount = 99; // Keep within request range or let it grow slowly
+        changed = true;
+      }
+
+      if (changed && mounted) {
+        setState(() {});
+      }
+
+      if (_secondsRemaining <= 0 && timer.tick % 4 != 0) {
         _timer?.cancel();
       }
     });
@@ -319,42 +339,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text("Activate Gold Status", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFFFFD700), letterSpacing: -0.6)),
-                  const SizedBox(height: 4),
-                  Text("Join the exclusive circle of verified members", style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
                   
-                  const SizedBox(height: 16),
-                  
-                  // Eye-Catchy Urgent Badge with Timer (Only if trial is available)
-                  if (_isTrialAvailable)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.red.withOpacity(0.25)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
-                          const SizedBox(width: 8),
-                          RichText(
-                            text: TextSpan(
-                              style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold),
-                              children: [
-                                const TextSpan(text: "₹1 ऑफर सिर्फ "),
-                                TextSpan(
-                                  text: _formatTime(_secondsRemaining),
-                                  style: const TextStyle(color: Colors.white, backgroundColor: Colors.red),
-                                ),
-                                const TextSpan(text: " मिनट के लिए मान्य"),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                   const SizedBox(height: 16),
                   
                   // Premium Plan Card - More Eye Catchy
@@ -408,41 +393,108 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 12),
-                  
-                  // GPay Logo - Clean & Smaller
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/gpay_logo.png',
-                        height: 14,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.white, size: 14),
-                      ),
-                      const SizedBox(width: 6),
-                      const Text("GPay", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-
                   const SizedBox(height: 16),
                   
-                  // Compact Trust Section
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.stars, size: 10, color: Colors.amber.shade600.withOpacity(0.6)),
-                      const SizedBox(width: 4),
-                      Text("JOINED BY 10,000+ MEMBERS", style: TextStyle(color: Colors.grey.shade500, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.3)),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildSecurityMark(Icons.security_update_good, "Verified", 16),
-                      _buildSecurityMark(Icons.verified_user, "Encrypted", 16),
-                      _buildSecurityMark(Icons.workspace_premium, "Gold Access", 16),
-                    ],
+                  // Eye-Catchy Urgent Badge with Timer (Only if trial is available)
+                  if (_isTrialAvailable)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.red.withOpacity(0.25)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
+                          const SizedBox(width: 8),
+                          RichText(
+                            text: TextSpan(
+                              style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold),
+                              children: [
+                                const TextSpan(text: "₹1 ऑफर सिर्फ "),
+                                TextSpan(
+                                  text: _formatTime(_secondsRemaining),
+                                  style: const TextStyle(color: Colors.white, backgroundColor: Colors.red),
+                                ),
+                                const TextSpan(text: " मिनट के लिए मान्य"),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 24),
+                  
+                  // Eye-Catchy Trust Section
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: Colors.amber.withOpacity(0.1)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.flash_on, size: 14, color: Colors.amber),
+                            const SizedBox(width: 4),
+                            Text(
+                              "आपके शहर $_userCity में धूम मची है!",
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "10 km के अंदर अभी तक ",
+                              style: TextStyle(color: Colors.grey.shade400, fontSize: 10.5),
+                            ),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 600),
+                              transitionBuilder: (Widget child, Animation<double> animation) {
+                                return SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0, 0.5),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: FadeTransition(opacity: animation, child: child),
+                                );
+                              },
+                              child: Container(
+                                key: ValueKey(_joinedCount),
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  "$_joinedCount",
+                                  style: const TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              " लोग प्रीमियम बन चुके हैं",
+                              style: TextStyle(color: Colors.grey.shade400, fontSize: 10.5),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "जल्द करें, यह ऑफर सीमित समय के लिए है!",
+                          style: TextStyle(color: Colors.amber.shade600, fontSize: 9, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

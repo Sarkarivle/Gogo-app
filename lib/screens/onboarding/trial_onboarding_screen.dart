@@ -13,7 +13,7 @@ class TrialOnboardingScreen extends StatefulWidget {
 }
 
 class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
-  String currentArea = "your area";
+  String currentArea = "आस-पास";
   bool hasUsedTrial = false;
 
   @override
@@ -24,9 +24,9 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
-    final userData = prefs.getString('user_data');
-    if (userData != null) {
-      final user = jsonDecode(userData);
+    final userDataStr = prefs.getString('user_data');
+    if (userDataStr != null) {
+      final user = jsonDecode(userDataStr);
       final bool isPremium = user['isPremium'] ?? false;
       final bool hasCompleted = user['hasCompletedOnboarding'] ?? false;
 
@@ -41,10 +41,10 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
         return;
       }
 
-      // If user is NOT premium, stay on this screen to collect payment.
-      // But update UI based on whether they have used a trial before.
       setState(() {
-        currentArea = user['area'] ?? user['city'] ?? "your area";
+        // Fetch location from DB (user_data in SharedPreferences)
+        currentArea = user['city']?.toString() ?? user['area']?.toString() ?? "आस-पास";
+        if (currentArea.toLowerCase() == "unknown") currentArea = "आस-पास";
         hasUsedTrial = user['subscription']?['hasUsedTrial'] ?? false;
       });
     }
@@ -59,7 +59,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
           image: DecorationImage(
             image: NetworkImage('https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=2000&auto=format&fit=crop'),
             fit: BoxFit.cover,
-            colorFilter: ColorFilter.mode(Colors.black45, BlendMode.darken),
+            colorFilter: ColorFilter.mode(Colors.black54, BlendMode.darken),
           ),
         ),
         child: Column(
@@ -69,39 +69,88 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 24),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(20),
+                color: Colors.white.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(color: Colors.black26, blurRadius: 20, spreadRadius: 5)
+                ]
               ),
               child: Column(
                 children: [
+                  // Premium Crown Icon with animation feel
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDAA520).withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.workspace_premium, color: Color(0xFFDAA520), size: 40),
+                  ),
+                  const SizedBox(height: 16),
                   RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(
-                      style: const TextStyle(color: Colors.black, fontSize: 22, fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.black, fontSize: 24, fontWeight: FontWeight.w900, height: 1.3),
                       children: [
-                        const TextSpan(text: "Meet with "),
-                        const TextSpan(text: "1000+ Singles", style: TextStyle(color: Color(0xFFDAA520))),
-                        TextSpan(text: " in $currentArea"),
+                        TextSpan(text: "$currentArea", style: const TextStyle(color: Color(0xFFDAA520))),
+                        const TextSpan(text: " में आपके जैसे\n"),
+                        const TextSpan(text: "1000+ Handsome लड़के", style: TextStyle(color: Color(0xFFDAA520))),
+                        const TextSpan(text: "\nआपका इंतज़ार कर रहे हैं!"),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    hasUsedTrial ? "Monthly Subscription" : "1 Day trial for",
-                    style: const TextStyle(color: Colors.black54, fontSize: 16),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "सिर्फ ₹1 में आज ही अपना पार्टनर ढूंढें",
+                    style: TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600),
                   ),
+                  const SizedBox(height: 24),
                   Text(
-                    hasUsedTrial ? "₹199" : "₹1",
-                    style: const TextStyle(color: Colors.green, fontSize: 48, fontWeight: FontWeight.w900),
+                    hasUsedTrial ? "Monthly Subscription" : "Special Trial Offer",
+                    style: const TextStyle(color: Colors.black54, fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        hasUsedTrial ? "₹199" : "₹1",
+                        style: const TextStyle(color: Color(0xFF1B5E20), fontSize: 90, fontWeight: FontWeight.w900, letterSpacing: -4),
+                      ),
+                      if (!hasUsedTrial) ...[
+                        const SizedBox(width: 4),
+                        const Text(
+                          "only",
+                          style: TextStyle(color: Colors.black38, fontSize: 22, fontWeight: FontWeight.w600),
+                        ),
+                      ]
+                    ],
                   ),
                   if (!hasUsedTrial)
-                    const Text(
-                      "₹199 after trial",
-                      style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold),
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: const Text(
+                        "₹199 after trial",
+                        style: TextStyle(color: Colors.black45, fontSize: 11, fontWeight: FontWeight.normal),
+                      ),
                     ),
-                  const Text(
-                    "Cancel anytime",
-                    style: TextStyle(color: Colors.black38, fontSize: 14),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.verified_user, color: Colors.blue.shade700, size: 16),
+                      const SizedBox(width: 6),
+                      const Text(
+                        "100% Secure • Cancel anytime",
+                        style: TextStyle(color: Colors.black45, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ],
               ),
