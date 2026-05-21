@@ -44,6 +44,7 @@ app.get('/admin', (req, res) => {
 app.use('/api/user', require('./src/routes/userRoutes'));
 app.use('/api/chat', require('./src/routes/chatRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
+app.use('/api/payment', require('./src/routes/paymentRoutes'));
 
 const connectedUsers = new Map(); // socket.id -> phone
 const phoneToSockets = new Map(); // phone -> Set of socket.ids

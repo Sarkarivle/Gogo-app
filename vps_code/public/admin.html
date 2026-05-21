@@ -20,7 +20,7 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .premium-badge { background: linear-gradient(45deg, #f97316, #facc15); color: black; font-weight: 900; }
+        select option { background: #12151f; color: white; }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden">
@@ -36,39 +36,86 @@
             </div>
         </div>
 
-        <nav class="flex-1 px-4 space-y-1 mt-4">
+        <nav class="flex-1 px-4 space-y-1 overflow-y-auto pb-10">
             <p class="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Operations</p>
-            <div onclick="changeModule('dashboard')" id="nav-dashboard" class="sidebar-item active w-full flex items-center p-4 rounded-xl">
+            <div onclick="changeModule('dashboard')" id="nav-dashboard" class="sidebar-item active w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
                 <i class="fas fa-chart-line mr-3 w-5 text-center"></i> Dashboard
             </div>
-            <div onclick="changeModule('users')" id="nav-users" class="sidebar-item w-full flex items-center p-4 rounded-xl">
-                <i class="fas fa-users mr-3 w-5 text-center"></i> User Manager
+            <div onclick="changeModule('monitoring')" id="nav-monitoring" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-microchip mr-3 w-5 text-center text-emerald-500"></i> Monitoring
             </div>
-            <div onclick="changeModule('reports')" id="nav-reports" class="sidebar-item w-full flex items-center p-4 rounded-xl">
-                <i class="fas fa-flag mr-3 w-5 text-center"></i> Reports Control
+            <div onclick="changeModule('users')" id="nav-users" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-users mr-3 w-5 text-center text-blue-500"></i> Users
             </div>
-            <div onclick="changeModule('verifications')" id="nav-verifications" class="sidebar-item w-full flex items-center p-4 rounded-xl">
-                <i class="fas fa-user-check mr-3 w-5 text-center"></i> Verification Center
+            <div onclick="changeModule('reports')" id="nav-reports" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-flag mr-3 w-5 text-center text-red-500"></i> Reports
             </div>
-            <div onclick="changeModule('policies')" id="nav-policies" class="sidebar-item w-full flex items-center p-4 rounded-xl">
-                <i class="fas fa-file-shield mr-3 w-5 text-center"></i> Policy Manager
+            <div onclick="changeModule('verifications')" id="nav-verifications" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-user-check mr-3 w-5 text-center text-blue-400"></i> Identity
             </div>
-            <div onclick="changeModule('messages')" id="nav-messages" class="sidebar-item w-full flex items-center p-4 rounded-xl">
-                <i class="fas fa-envelope-open-text mr-3 w-5 text-center"></i> Support Messages
+
+            <p class="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-8 mb-4">Ecosystem</p>
+            <div onclick="changeModule('analytics')" id="nav-analytics" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-magnifying-glass-chart mr-3 w-5 text-center"></i> Analytics
+            </div>
+            <div onclick="changeModule('monetization')" id="nav-monetization" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-sack-dollar mr-3 w-5 text-center"></i> Revenue
+            </div>
+            <div onclick="changeModule('discovery')" id="nav-discovery" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-compass mr-3 w-5 text-center"></i> Feed Control
+            </div>
+            <div onclick="changeModule('media')" id="nav-media" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-images mr-3 w-5 text-center"></i> Media
+            </div>
+
+            <p class="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-8 mb-4">Infrastructure</p>
+            <div onclick="changeModule('notifications')" id="nav-notifications" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-bullhorn mr-3 w-5 text-center"></i> Campaigns
+            </div>
+            <div onclick="changeModule('flags')" id="nav-flags" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-toggle-on mr-3 w-5 text-center"></i> Features
+            </div>
+            <div onclick="changeModule('policies')" id="nav-policies" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-file-contract mr-3 w-5 text-center"></i> Policies
+            </div>
+            <div onclick="changeModule('messages')" id="nav-messages" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-headset mr-3 w-5 text-center"></i> Support
+            </div>
+            <div onclick="changeModule('audit')" id="nav-audit" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-shoe-prints mr-3 w-5 text-center"></i> Audit Logs
+            </div>
+            <div onclick="changeModule('database')" id="nav-database" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-database mr-3 w-5 text-center"></i> DB Tools
             </div>
         </nav>
-        <div class="p-4 border-t border-white/5 mt-auto">
+
+        <div class="p-4 border-t border-white/5 mt-auto bg-black/20">
             <div class="glass p-4 rounded-2xl flex items-center space-x-3">
                 <div class="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-black font-bold">H</div>
-                <div><p class="text-xs font-bold text-white">Himanshu</p><p class="text-[10px] text-slate-500">Root Access</p></div>
+                <div>
+                    <p class="text-xs font-bold text-white">Himanshu</p>
+                    <p class="text-[10px] text-slate-500 uppercase font-black">Senior Engineer</p>
+                </div>
             </div>
         </div>
     </aside>
 
     <!-- MAIN -->
     <div class="flex-1 flex flex-col min-w-0">
-        <header class="h-20 border-b border-white/5 flex items-center justify-between px-10 glass shrink-0">
-            <h1 class="text-sm font-bold text-white uppercase tracking-widest" id="modTitle">Command Dashboard</h1>
+        <header class="h-20 border-b border-white/5 flex items-center justify-between px-10 glass shrink-0 relative z-40">
+            <div class="flex items-center space-x-4">
+                <div class="w-1 h-6 bg-orange-500 rounded-full"></div>
+                <h1 class="text-sm font-black text-white uppercase tracking-widest" id="modTitle">Command Dashboard</h1>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="flex items-center space-x-2">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                    <span class="text-[10px] font-black text-emerald-500 uppercase">System Latency: 24ms</span>
+                </div>
+                <div class="h-8 w-px bg-white/5"></div>
+                <button class="text-slate-400 hover:text-white transition"><i class="fas fa-bell"></i></button>
+                <button class="text-slate-400 hover:text-white transition"><i class="fas fa-gear"></i></button>
+            </div>
         </header>
         <main class="flex-1 overflow-y-auto p-10 relative" id="mainContent"></main>
     </div>
@@ -77,242 +124,27 @@
     <div id="actionModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] hidden items-center justify-center p-10">
         <div id="modalContent" class="glass w-full max-w-6xl max-h-full overflow-hidden rounded-[3rem] flex flex-col animate-fade">
             <div class="p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
-                <div id="modalHeaderTitle"></div>
+                <div id="modalHeaderTitle" class="flex-1"></div>
                 <button onclick="closeModal()" class="w-12 h-12 glass rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition"><i class="fas fa-times"></i></button>
             </div>
             <div id="modalBody" class="flex-1 overflow-y-auto p-10"></div>
         </div>
     </div>
 
-    <script>
-        const socket = io();
-        const mainContent = document.getElementById('mainContent');
-        const actionModal = document.getElementById('actionModal');
-        const modalBody = document.getElementById('modalBody');
-        const modalHeaderTitle = document.getElementById('modalHeaderTitle');
-
-        async function init() { await changeModule('dashboard'); }
-
-        async function changeModule(mod) {
-            document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-            document.getElementById('nav-' + mod).classList.add('active');
-            mainContent.innerHTML = '<div class="flex justify-center items-center h-full"><div class="custom-loader"></div></div>';
-            if(mod === 'dashboard') await loadDashboard();
-            if(mod === 'users') await loadUsers();
-            if(mod === 'verifications') await loadVerifications();
-            if(mod === 'policies') await loadPolicies();
-            if(mod === 'messages') await loadSupportMessages();
-            if(mod === 'reports') await loadReports();
-        }
-
-        async function loadDashboard() {
-            document.getElementById('modTitle').innerText = "Command Dashboard";
-            const r = await fetch('/api/admin/stats');
-            const res = await r.json();
-            const s = res.stats;
-            mainContent.innerHTML = `
-                <div class="grid grid-cols-4 gap-6 animate-fade">
-                    <div class="glass p-8 rounded-[2rem]"><p class="text-[10px] font-black text-slate-500 uppercase mb-2">Population</p><h2 class="text-4xl font-black text-white">${s.totalUsers}</h2></div>
-                    <div class="glass p-8 rounded-[2rem]"><p class="text-[10px] font-black text-slate-500 uppercase mb-2">Live Now</p><h2 class="text-4xl font-black text-emerald-500">${s.onlineUsers}</h2></div>
-                    <div class="glass p-8 rounded-[2rem]"><p class="text-[10px] font-black text-slate-500 uppercase mb-2">Premium</p><h2 class="text-4xl font-black text-orange-500">${s.premiumUsers}</h2></div>
-                    <div class="glass p-8 rounded-[2rem]"><p class="text-[10px] font-black text-slate-500 uppercase mb-2">Pending Reports</p><h2 class="text-4xl font-black text-red-500">${s.pendingReports}</h2></div>
-                </div>
-            `;
-        }
-
-        async function loadUsers() {
-            document.getElementById('modTitle').innerText = "User Management";
-            mainContent.innerHTML = `
-                <div class="glass rounded-[2.5rem] overflow-hidden animate-fade">
-                    <table class="w-full text-left">
-                        <thead class="bg-white/5 border-b border-white/5 text-[10px] font-black uppercase text-slate-500">
-                            <tr><th class="p-6">User Identity</th><th class="p-6">Location</th><th class="p-6">Status</th><th class="p-6">Account Status</th><th class="p-6 text-right">Action</th></tr>
-                        </thead>
-                        <tbody id="userListBody" class="divide-y divide-white/5"></tbody>
-                    </table>
-                </div>
-            `;
-            const r = await fetch('/api/admin/users');
-            const users = await r.json();
-            document.getElementById('userListBody').innerHTML = users.map(u => `
-                <tr class="hover:bg-white/[0.01]">
-                    <td class="p-6"><div class="flex items-center space-x-3"><div class="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center text-black font-black">${u.name?u.name[0]:'?'}</div><div><p class="text-sm font-bold text-white">${u.name||'Incognito'}</p><p class="text-[10px] text-slate-500">${u.phone}</p></div></div></td>
-                    <td class="p-6 text-xs font-bold text-slate-400">${u.city||'Global'}</td>
-                    <td class="p-6"><div class="flex items-center space-x-2"><div class="w-2 h-2 rounded-full ${u.isOnline?'bg-emerald-500':'bg-slate-700'}"></div><span class="text-[10px] font-black uppercase ${u.isOnline?'text-emerald-500':'text-slate-500'}">${u.isOnline?'Online':'Offline'}</span></div></td>
-                    <td class="p-6"><span class="px-3 py-1 rounded-full text-[9px] font-black uppercase ${u.accountStatus==='Active'?'bg-emerald-500/10 text-emerald-500':'bg-red-500/10 text-red-500'}">${u.accountStatus||'Active'}</span></td>
-                    <td class="p-6 text-right"><button onclick="openUserControl('${u.phone}')" class="px-6 py-2 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase transition hover:scale-105">Manage</button></td>
-                </tr>
-            `).join('');
-        }
-
-        async function loadReports() {
-            document.getElementById('modTitle').innerText = "Security Incidents";
-            const r = await fetch('/api/admin/reports');
-            const reports = await r.json();
-            mainContent.innerHTML = `
-                <div class="glass rounded-[2.5rem] overflow-hidden animate-fade">
-                    <table class="w-full text-left">
-                        <thead class="bg-white/5 border-b border-white/5 text-[10px] font-black uppercase text-slate-500">
-                            <tr><th class="p-6">Target Subject</th><th class="p-6">Type</th><th class="p-6">Reason Category</th><th class="p-6">Reporter</th><th class="p-6 text-right">Action</th></tr>
-                        </thead>
-                        <tbody class="divide-y divide-white/5">
-                            ${reports.map(rep => `
-                                <tr class="hover:bg-white/[0.01]">
-                                    <td class="p-6"><p class="text-sm font-bold text-white">${rep.reportedPhone}</p></td>
-                                    <td class="p-6"><span class="px-3 py-1 bg-orange-500/10 text-orange-500 text-[8px] font-black rounded-full uppercase">${rep.reportType || 'PROFILE'}</span></td>
-                                    <td class="p-6"><span class="px-3 py-1 bg-red-500/10 text-red-500 text-[9px] font-black rounded-full uppercase">${rep.category}</span></td>
-                                    <td class="p-6 text-xs text-slate-400">${rep.reporterPhone}</td>
-                                    <td class="p-6 text-right"><button onclick="openUserControl('${rep.reportedPhone}')" class="px-4 py-2 glass rounded-xl text-[9px] font-black uppercase hover:bg-white/10">Analyze Subject</button></td>
-                                </tr>
-                            `).join('') || '<tr><td colspan="5" class="p-20 text-center opacity-20">No active incidents</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        }
-
-        async function loadVerifications() {
-            document.getElementById('modTitle').innerText = "Identity Verification Center";
-            const r = await fetch('/api/admin/verification/requests');
-            const reqs = await r.json();
-            mainContent.innerHTML = `
-                <div class="grid grid-cols-3 gap-6 animate-fade">
-                    ${reqs.map(req => `
-                        <div class="glass p-6 rounded-[2rem] flex flex-col space-y-4">
-                            <div class="flex justify-between items-start">
-                                <div><p class="text-xs font-bold text-white">${req.userPhone}</p><p class="text-[10px] text-slate-500 uppercase">${new Date(req.submittedAt).toLocaleString()}</p></div>
-                                <span class="px-2 py-1 bg-blue-500/10 text-blue-500 text-[8px] font-black rounded-full uppercase">PENDING</span>
-                            </div>
-                            <div class="flex-1 rounded-2xl overflow-hidden border border-white/5 bg-black/20">
-                                <img src="${req.selfieUrl}" class="w-full h-64 object-cover" alt="Selfie">
-                            </div>
-                            <div class="flex space-x-2">
-                                <button onclick="approveRequest('${req.userPhone}')" class="flex-1 py-3 bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition">Approve & Verify</button>
-                                <button onclick="openUserControl('${req.userPhone}')" class="px-4 py-3 glass rounded-xl text-white hover:bg-white/10 transition"><i class="fas fa-user"></i></button>
-                            </div>
-                        </div>
-                    `).join('') || '<div class="col-span-3 py-20 text-center glass rounded-[3rem] opacity-30 font-black uppercase tracking-widest">No pending identity requests</div>'}
-                </div>
-            `;
-        }
-
-        async function approveRequest(phone) {
-            if(!confirm("Approve verification for " + phone + "?")) return;
-            const r = await fetch('/api/admin/verification/approve/' + phone, { method: 'POST' });
-            if(r.ok) {
-                alert("Identity Verified Successfully");
-                loadVerifications();
-            }
-        }
-
-        async function openUserControl(phone) {
-            actionModal.classList.remove('hidden'); actionModal.classList.add('flex');
-            modalBody.innerHTML = '<div class="flex justify-center p-20"><div class="custom-loader"></div></div>';
-            const r = await fetch('/api/admin/user/' + phone + '/full');
-            const data = await r.json();
-            const u = data.user;
-            const sub = data.subscription;
-
-            modalHeaderTitle.innerHTML = `<div class="flex items-center space-x-4"><div class="w-12 h-12 rounded-2xl bg-orange-500 flex items-center justify-center text-black font-black text-xl">${u.name?u.name[0]:'?'}</div><div><h2 class="text-xl font-black text-white uppercase">${u.name||'Anonymous'}</h2><p class="text-xs text-orange-500 font-bold">${u.phone}</p></div></div>`;
-
-            modalBody.innerHTML = `
-                <div class="grid grid-cols-12 gap-10">
-                    <div class="col-span-4 space-y-6">
-                        <div class="glass p-8 rounded-[2.5rem] space-y-4">
-                            <h4 class="text-[10px] font-black text-slate-500 uppercase border-b border-white/5 pb-4">Account Status Control</h4>
-                            <select id="statusSelect" class="w-full glass p-4 rounded-2xl text-xs font-bold bg-white/5 text-white outline-none">
-                                <option value="Active" ${u.accountStatus==='Active'?'selected':''}>ACTIVE</option>
-                                <option value="Deactivated" ${u.accountStatus==='Deactivated'?'selected':''}>DEACTIVATED (Chat Block)</option>
-                                <option value="Suspended" ${u.accountStatus==='Suspended'?'selected':''}>SUSPENDED (Login Block)</option>
-                            </select>
-                            <button onclick="updateAccountStatus('${u.phone}')" class="w-full py-4 bg-orange-500 text-black rounded-2xl text-[10px] font-black uppercase transition hover:scale-105">Update Status</button>
-                        </div>
-                        <div class="glass p-8 rounded-[2.5rem] space-y-4 max-h-[300px] overflow-y-auto">
-                            <h4 class="text-[10px] font-black text-slate-500 uppercase mb-4">Security Incident Log (${data.reportsAgainst.length})</h4>
-                            ${data.reportsAgainst.map(rep => `
-                                <div class="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl mb-2 relative overflow-hidden">
-                                    <div class="absolute top-2 right-4 text-[7px] font-black text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full uppercase">${rep.reportType || 'PROFILE REPORT'}</div>
-                                    <p class="text-[10px] font-black text-white uppercase">BY: ${rep.reporterName}</p>
-                                    <p class="text-[9px] text-red-500 font-black uppercase mt-1">REASON: ${rep.category}</p>
-                                    <p class="text-[10px] text-slate-400 mt-2 italic">"${rep.description||'No details'}"</p>
-                                    <p class="text-[7px] opacity-30 mt-2">${new Date(rep.timestamp).toLocaleString()}</p>
-                                </div>
-                            `).join('') || '<p class="text-center text-[10px] opacity-20 py-10">No security logs</p>'}
-                        </div>
-                    </div>
-                    <div class="col-span-8 space-y-6 flex flex-col">
-                        <div class="flex space-x-3 shrink-0">
-                            <button onclick="loadUserInbox('${u.phone}')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-inbox mr-2"></i> Inbox</button>
-                            <button onclick="toggleVerify('${u.phone}', ${!u.isVerified})" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:text-blue-400 text-blue-400/50"><i class="fas fa-check-circle mr-2"></i> ${u.isVerified?'Unverify':'Verify Identity'}</button>
-                            <button onclick="confirmAction('${u.phone}', 'clear')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase text-red-400/50 hover:text-red-400"><i class="fas fa-broom mr-2"></i> Clear Chat History</button>
-                            <button onclick="confirmAction('${u.phone}', 'delete')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase bg-red-600/10 text-red-600 hover:bg-red-600 hover:text-white"><i class="fas fa-trash-alt mr-2"></i> Delete Forever</button>
-                        </div>
-                        <div id="userControlDynamic" class="flex-1 glass rounded-[2.5rem] p-10 min-h-[400px] overflow-y-auto">
-                            <div class="flex flex-col items-center justify-center h-full opacity-10"><i class="fas fa-fingerprint text-6xl mb-6"></i><p class="text-xs font-black uppercase">System Logs Area</p></div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        async function updateAccountStatus(phone) {
-            const status = document.getElementById('statusSelect').value;
-            if(!confirm(`WARNING: Change account status to ${status.toUpperCase()}?`)) return;
-            await fetch(`/api/admin/user/${phone}/update`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ accountStatus: status }) });
-            alert("Status Updated Successfully");
-            openUserControl(phone);
-        }
-
-        async function loadUserInbox(phone) {
-            const area = document.getElementById('userControlDynamic');
-            area.innerHTML = '<div class="flex justify-center py-20"><div class="custom-loader"></div></div>';
-            const r = await fetch('/api/admin/inbox/' + phone);
-            const chats = await r.json();
-            area.innerHTML = `<h3 class="text-xs font-black uppercase mb-6">Conversations with others</h3><div class="grid grid-cols-2 gap-4">${chats.map(c => `<div onclick="loadFullChat('${phone}', '${c.phone}')" class="p-5 bg-white/5 rounded-3xl border border-white/5 hover:border-orange-500 cursor-pointer group"><div class="flex items-center space-x-2 mb-2"><div class="w-2 h-2 rounded-full ${c.isOnline?'bg-emerald-500':'bg-slate-700'}"></div><p class="text-[10px] font-black uppercase text-white group-hover:text-orange-500">${c.name}</p></div><p class="text-[10px] text-slate-500 truncate italic">"${c.lastMsg}"</p></div>`).join('') || '<p class="col-span-2 text-center py-20 opacity-20">Empty Inbox</p>'}</div>`;
-        }
-
-        async function loadFullChat(p1, p2) {
-            const area = document.getElementById('userControlDynamic');
-            area.innerHTML = '<div class="flex justify-center py-20"><div class="custom-loader"></div></div>';
-            const r = await fetch(`/api/admin/chat-history/${p1}/${p2}`);
-            const logs = await r.json();
-            area.innerHTML = `<div class="flex justify-between items-center mb-6 border-b border-white/5 pb-4"><p class="text-[10px] font-black uppercase">Logs: ${p1} ↔ ${p2}</p><button onclick="loadUserInbox('${p1}')" class="text-orange-500 text-[10px] font-black uppercase">Back</button></div><div class="space-y-4">${logs.map(l => `<div class="flex ${l.senderPhone===p1?'justify-end':'justify-start'}"><div class="max-w-[80%] p-4 rounded-2xl text-xs font-semibold ${l.senderPhone===p1?'bg-orange-500 text-black rounded-tr-none shadow-lg shadow-orange-500/10':'bg-white/5 text-slate-300 rounded-tl-none'}">${l.message}<p class="text-[8px] mt-2 opacity-30 font-black uppercase">${new Date(l.timestamp).toLocaleTimeString()}</p></div></div>`).join('')}</div>`;
-            area.scrollTop = area.scrollHeight;
-        }
-
-        async function toggleVerify(phone, status) {
-            await fetch(`/api/admin/user/${phone}/update`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ isVerified: status }) });
-            openUserControl(phone);
-        }
-
-        async function confirmAction(phone, type) {
-            const msg = type === 'delete' ? "DANGER: PERMANENTLY WIPE this account and all history?" : "Confirm CLEAR ALL messages for this user?";
-            if(confirm(msg)) {
-                const url = type === 'delete' ? `/api/admin/user/${phone}/delete-account` : `/api/admin/user/${phone}/clear-chat`;
-                await fetch(url, { method: 'DELETE' });
-                if(type === 'delete') { closeModal(); loadUsers(); } else { alert("History Cleared"); openUserControl(phone); }
-            }
-        }
-
-        async function loadPolicies() {
-            const r = await fetch('/api/admin/policies'); const data = await r.json();
-            const types = [{ id: 'privacy_policy', name: 'Privacy Policy' }, { id: 'terms_conditions', name: 'Terms & Conditions' }, { id: 'refund_policy', name: 'Refund Policy' }, { id: 'about_us', name: 'About Us' }];
-            mainContent.innerHTML = `<div class="max-w-4xl glass p-10 rounded-[3rem] space-y-8 animate-fade">${types.map(t => { const p = data.policies.find(x => x.type === t.id); return `<div><label class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">${t.name}</label><div class="flex space-x-4"><input type="text" id="url-${t.id}" value="${p?p.url:''}" class="flex-1 glass p-4 rounded-2xl outline-none text-sm"><button onclick="savePolicy('${t.id}')" class="px-8 py-4 bg-orange-500 text-black rounded-2xl text-[10px] font-black uppercase">Update</button></div></div>`; }).join('')}</div>`;
-        }
-
-        async function savePolicy(type) {
-            const url = document.getElementById(`url-${type}`).value;
-            await fetch('/api/admin/policy/update', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ type, url }) });
-            alert("Policy Updated");
-        }
-
-        async function loadSupportMessages() {
-            const r = await fetch('/api/admin/messages'); const messages = await r.json();
-            mainContent.innerHTML = `<div class="glass rounded-[2.5rem] overflow-hidden"><table class="w-full text-left"><thead class="bg-white/5 border-b border-white/5 text-[10px] font-black uppercase text-slate-500"><tr><th class="p-6">User</th><th class="p-6">Status</th><th class="p-6 text-right">Action</th></tr></thead><tbody class="divide-y divide-white/5">${messages.map(m => `<tr class="hover:bg-white/[0.01]"><td class="p-6 font-bold text-white text-xs">${m.name}</td><td class="p-6"><span class="px-3 py-1 rounded-full text-[9px] font-black uppercase ${m.status==='Resolved'?'text-emerald-500':'text-red-500'}">${m.status}</span></td><td class="p-6 text-right"><button onclick="viewSupportMessage('${m._id}')" class="px-4 py-2 glass rounded-xl text-[9px] font-black uppercase">View</button></td></tr>`).join('')}</tbody></table></div>`;
-        }
-
-        function closeModal() { actionModal.classList.add('hidden'); }
-        init();
-    </script>
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/components/ui.js"></script>
+    <script src="js/modules/dashboard.js"></script>
+    <script src="js/modules/users.js"></script>
+    <script src="js/modules/reports.js"></script>
+    <script src="js/modules/verifications.js"></script>
+    <script src="js/modules/settings.js"></script>
+    <script src="js/modules/monitoring.js"></script>
+    <script src="js/modules/analytics.js"></script>
+    <script src="js/modules/flags.js"></script>
+    <script src="js/modules/audit.js"></script>
+    <script src="js/modules/monetization.js"></script>
+    <script src="js/modules/placeholders.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>

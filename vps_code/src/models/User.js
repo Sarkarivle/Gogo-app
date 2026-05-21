@@ -24,8 +24,20 @@ const UserSchema = new mongoose.Schema({
 
     // Status & Moderation
     isPremium: { type: Boolean, default: false },
-    premiumExpiry: Date,
+    premiumExpiry: { type: Date },
+    premiumPlan: { type: String }, // e.g., 'Monthly', 'Yearly'
     isVerified: { type: Boolean, default: false }, // Blue tick status
+
+    // Payment Tracking
+    paymentHistory: [{
+        orderId: String,
+        paymentId: String,
+        amount: Number,
+        currency: String,
+        status: String,
+        plan: String,
+        timestamp: { type: Date, default: Date.now }
+    }],
     accountStatus: {
         type: String,
         enum: ['Active', 'Deactivated', 'Suspended', 'Banned'],
