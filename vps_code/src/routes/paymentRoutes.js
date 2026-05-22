@@ -4,6 +4,14 @@ const PaymentController = require('../controllers/PaymentController');
 
 router.post('/create-order', PaymentController.createOrder);
 router.post('/verify-payment', PaymentController.verifyPayment);
-router.post('/webhook', PaymentController.handleWebhook);
+router.get('/settings', PaymentController.getPublicSettings);
+
+// Webhooks
+router.post('/webhook/razorpay', PaymentController.handleRazorpayWebhook);
+router.post('/webhook/phonepe', PaymentController.handlePhonePeWebhook);
+router.post('/webhook/cashfree', PaymentController.handleCashfreeWebhook);
+
+// Backward compatibility
+router.post('/webhook', PaymentController.handleRazorpayWebhook);
 
 module.exports = router;

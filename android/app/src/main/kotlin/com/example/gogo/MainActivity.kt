@@ -6,11 +6,11 @@ import android.content.IntentSender
 import androidx.annotation.NonNull
 import com.google.android.gms.auth.api.identity.GetPhoneNumberHintIntentRequest
 import com.google.android.gms.auth.api.identity.Identity
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.gogo.app/phone_hint"
     private var pendingResult: MethodChannel.Result? = null
     private val REQUEST_CODE_PHONE_HINT = 1001

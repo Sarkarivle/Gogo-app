@@ -28,6 +28,7 @@ class _InboxScreenState extends State<InboxScreen> {
   Map<String, dynamic>? _currentUser;
   StreamSubscription? _socketEventSub;
   Position? _myPos;
+  Timer? _inboxUpdateDebounce;
 
   // Filter States
   String _selectedDistance = 'Any';
@@ -57,6 +58,7 @@ class _InboxScreenState extends State<InboxScreen> {
   void dispose() {
     _scrollController.dispose();
     _socketEventSub?.cancel();
+    _inboxUpdateDebounce?.cancel();
     super.dispose();
   }
 
@@ -90,11 +92,12 @@ class _InboxScreenState extends State<InboxScreen> {
     });
   }
 
-  // Optimize: Instead of re-fetching everything, update locally or just fetch the first page
+  // Optimize: Debounce inbox refresh to avoid spamming API on rapid messages
   void _handleInboxUpdate(dynamic data) {
-    // For simplicity and correctness, we fetch the first page to get updated order and counts
-    // but we avoid doing it too frequently (debouncing could be added)
-    _fetchInbox();
+    if (_inboxUpdateDebounce?.isActive ?? false) return;
+    _inboxUpdateDebounce = Timer(const Duration(seconds: 3), () {
+      if (mounted) _fetchInbox();
+    });
   }
 
   Future<void> _fetchInbox({bool loadMore = false}) async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,10 +21,38 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
   bool _isBlockedByMe = false;
   bool _amIBlocked = false;
 
+  StreamSubscription? _socketEventSub;
+
   @override
   void initState() {
     super.initState();
     _checkBlockStatus();
+    _listenToSocket();
+  }
+
+  void _listenToSocket() {
+    _socketEventSub = SocketService().eventStream.listen((event) {
+      if (!mounted) return;
+      if (event['event'] == 'moderation_state_updated') {
+        final data = event['data'];
+        final prefs = SharedPreferences.getInstance();
+        prefs.then((p) {
+          final myPhone = jsonDecode(p.getString('user_data') ?? '{}')['phone'];
+          if (data['roomId'].contains(myPhone) && data['roomId'].contains(widget.phone)) {
+            setState(() {
+              _isBlockedByMe = data['isBlocked'] == true && data['blockerPhone'] == myPhone;
+              _amIBlocked = data['isBlocked'] == true && data['blockerPhone'] == widget.phone;
+            });
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _socketEventSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkBlockStatus() async {
@@ -33,18 +62,13 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
       if (userData == null) return;
       final myPhone = jsonDecode(userData)['phone'];
       
-      // Check if I blocked them
-      final res1 = await ApiService.get('/api/chat/check-block/$myPhone/${widget.phone}');
-      final data1 = jsonDecode(res1.body);
+      final res = await ApiService.get('/api/chat/check-block/$myPhone/${widget.phone}');
+      final data = jsonDecode(res.body);
       
-      // Check if they blocked me
-      final res2 = await ApiService.get('/api/chat/check-block/${widget.phone}/$myPhone');
-      final data2 = jsonDecode(res2.body);
-
       if (mounted) {
         setState(() {
-          _isBlockedByMe = data1['isBlocked'] ?? false;
-          _amIBlocked = data2['isBlocked'] ?? false;
+          _isBlockedByMe = (data['isBlocked'] ?? false) && data['blockerPhone'] == myPhone;
+          _amIBlocked = (data['isBlocked'] ?? false) && data['blockerPhone'] == widget.phone;
         });
       }
     } catch (e) {
@@ -187,8 +211,8 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
       }
 
       if (mounted) {
+        // Local state update will also be reinforced by socket listener
         setState(() => _isBlockedByMe = true);
-        _showSuccessDialog();
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Action failed')));
@@ -197,76 +221,26 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
     }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-        child: Padding(
-          padding: const EdgeInsets.all(30),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle, color: Color(0xFFFFC107), size: 60),
-              const SizedBox(height: 24),
-              const Text('User blocked', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              const Text('This user will no longer be able to message you.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white54, fontSize: 13)),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context, true); // Close Settings and signal refresh
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-                child: const Text('OK', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _handleUnblock() async {
     final prefs = await SharedPreferences.getInstance();
     final myPhone = jsonDecode(prefs.getString('user_data') ?? '{}')['phone'];
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Unblock User?', style: TextStyle(color: Colors.white)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() => _isActionInProgress = true);
-              try {
-                // Realtime Unblock via Socket
-                SocketService().emit('unblock_user', {
-                  'blockerPhone': myPhone,
-                  'blockedPhone': widget.phone,
-                });
+    setState(() => _isActionInProgress = true);
+    try {
+      // Realtime Unblock via Socket
+      SocketService().emit('unblock_user', {
+        'blockerPhone': myPhone,
+        'blockedPhone': widget.phone,
+      });
 
-                if (mounted) {
-                  setState(() => _isBlockedByMe = false);
-                  Navigator.pop(context, true); // Redirect back to chat with refresh signal
-                }
-              } catch (e) {
-                debugPrint('Unblock error: $e');
-              } finally {
-                if (mounted) setState(() => _isActionInProgress = false);
-              }
-            }, 
-            child: const Text('UNBLOCK', style: TextStyle(color: Colors.orangeAccent))
-          ),
-        ],
-      ),
-    );
+      if (mounted) {
+        setState(() => _isBlockedByMe = false);
+      }
+    } catch (e) {
+      debugPrint('Unblock error: $e');
+    } finally {
+      if (mounted) setState(() => _isActionInProgress = false);
+    }
   }
 
   @override
@@ -299,14 +273,20 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                 trailing: Text(_notificationsOn ? 'On' : 'Off', style: const TextStyle(color: Colors.white54, fontSize: 14)),
                 onTap: () => setState(() => _notificationsOn = !_notificationsOn)
               ),
+              _buildSettingTile(Icons.star_border_rounded, 'Save as Favourites', onTap: () {}),
               
               if (_amIBlocked)
                 const Padding(
                   padding: EdgeInsets.all(20),
-                  child: Text('You are blocked by this user', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                )
-              else if (!_isBlockedByMe) ...[
-                _buildSettingTile(Icons.star_border_rounded, 'Save as Favourites', onTap: () {}),
+                  child: Center(
+                    child: Text(
+                      'You are blocked by this user', 
+                      style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)
+                    ),
+                  ),
+                ),
+              
+              if (!_isBlockedByMe) ...[
                 _buildSettingTile(Icons.block_flipped, 'Block', color: Colors.redAccent, onTap: () => _showBlockUI(withReport: false)),
                 _buildSettingTile(Icons.report_gmailerrorred_rounded, 'Report & Block', color: Colors.redAccent, isLast: true, onTap: () => _showBlockUI(withReport: true)),
               ] else ...[

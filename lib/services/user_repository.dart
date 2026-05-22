@@ -10,7 +10,14 @@ class UserRepository {
   factory UserRepository() => _instance;
   UserRepository._internal();
 
-  Future<void> updateLocation(String phone) async {
+  int _lastLocationUpdateTime = 0;
+
+  Future<void> updateLocation(String phone, {bool force = false}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // Throttle updates: only once every 5 minutes unless forced
+    if (!force && (now - _lastLocationUpdateTime < 300000)) return;
+    _lastLocationUpdateTime = now;
+
     try {
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {

@@ -135,8 +135,17 @@ exports.unblockUser = async (req, res) => {
 exports.checkBlock = async (req, res) => {
     try {
         const { p1, p2 } = req.params;
-        const blockRecord = await Block.findOne({ blockerPhone: p1, blockedPhone: p2 });
-        res.json({ success: true, isBlocked: !!blockRecord, blockerPhone: blockRecord ? blockRecord.blockerPhone : null });
+        const blockRecord = await Block.findOne({
+            $or: [
+                { blockerPhone: p1, blockedPhone: p2 },
+                { blockerPhone: p2, blockedPhone: p1 }
+            ]
+        });
+        res.json({
+            success: true,
+            isBlocked: !!blockRecord,
+            blockerPhone: blockRecord ? blockRecord.blockerPhone : null
+        });
     } catch (e) {
         res.status(500).json({ success: false });
     }

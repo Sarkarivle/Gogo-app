@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../services/api_service.dart';
 import 'payment_screen.dart';
 import 'profile_setup_screen.dart';
 import '../home_screen.dart';
@@ -15,11 +17,53 @@ class TrialOnboardingScreen extends StatefulWidget {
 class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
   String currentArea = "आस-पास";
   bool hasUsedTrial = false;
+  Map<String, String> policyUrls = {};
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _fetchPolicies();
+  }
+
+  Future<void> _fetchPolicies() async {
+    try {
+      final response = await ApiService.get('/api/user/policies');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          final List policies = data['policies'];
+          setState(() {
+            for (var p in policies) {
+              policyUrls[p['type']] = p['url'];
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching policies: $e');
+    }
+  }
+
+  Future<void> _launchUrl(String type) async {
+    final urlString = policyUrls[type];
+    if (urlString == null || urlString.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link not available yet')),
+        );
+      }
+      return;
+    }
+
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch link')),
+        );
+      }
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -197,9 +241,15 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                TextButton(onPressed: () {}, child: const Text("Terms & Conditions", style: TextStyle(color: Colors.white70, fontSize: 12))),
+                TextButton(
+                  onPressed: () => _launchUrl('terms_conditions'), 
+                  child: const Text("Terms & Conditions", style: TextStyle(color: Colors.white70, fontSize: 12))
+                ),
                 const Text("|", style: TextStyle(color: Colors.white70)),
-                TextButton(onPressed: () {}, child: const Text("Privacy Policy", style: TextStyle(color: Colors.white70, fontSize: 12))),
+                TextButton(
+                  onPressed: () => _launchUrl('privacy_policy'), 
+                  child: const Text("Privacy Policy", style: TextStyle(color: Colors.white70, fontSize: 12))
+                ),
               ],
             ),
             const SizedBox(height: 40),

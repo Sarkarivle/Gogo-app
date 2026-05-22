@@ -7,6 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 import 'onboarding/location_permission_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,7 +18,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   final _phoneController = TextEditingController();
   final List<TextEditingController> _otpControllers = List.generate(6, (index) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
@@ -27,18 +29,82 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showOTPView = false;
   int _resendTimerCount = 30;
   Timer? _timer;
+  Map<String, String> policyUrls = {};
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   static const _channel = MethodChannel('com.gogo.app/phone_hint');
 
   @override
+  void codeUpdated() {
+    if (code != null && code!.length == 6) {
+      debugPrint("OTP Auto-Retrieved: $code");
+      setState(() {
+        for (int i = 0; i < 6; i++) {
+          _otpControllers[i].text = code![i];
+        }
+      });
+      _verifyOTP();
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
+    _listenForSms();
     // Show phone hint as soon as screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showPhoneHint();
     });
+    _fetchPolicies();
+  }
+
+  void _listenForSms() async {
+    listenForCode();
+    // Get and print app signature for production SMS formatting
+    SmsAutoFill().getAppSignature.then((signature) {
+      debugPrint("App Signature for SMS Retriever API: $signature");
+    });
+  }
+
+  Future<void> _fetchPolicies() async {
+    try {
+      final response = await ApiService.get('/api/user/policies');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          final List policies = data['policies'];
+          setState(() {
+            for (var p in policies) {
+              policyUrls[p['type']] = p['url'];
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching policies: $e');
+    }
+  }
+
+  Future<void> _launchUrl(String type) async {
+    final urlString = policyUrls[type];
+    if (urlString == null || urlString.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link not available yet')),
+        );
+      }
+      return;
+    }
+
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch link')),
+        );
+      }
+    }
   }
 
   Future<void> _showPhoneHint() async {
@@ -70,6 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    cancel(); // Cancel SMS listener
     _phoneController.dispose();
     for (var controller in _otpControllers) controller.dispose();
     for (var node in _focusNodes) node.dispose();
@@ -118,6 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _isLoading = false;
             _showOTPView = true;
           });
+          _listenForSms(); // Start listening again when code is sent
           _startTimer();
         },
         codeAutoRetrievalTimeout: (String verId) => _verificationId = verId,
@@ -237,8 +305,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 15),
                         TextButton(onPressed: () => setState(() => _showOTPView = false), child: const Text('re-enter phone number', style: TextStyle(color: Colors.white70, decoration: TextDecoration.underline))),
                       ],
-                      const SizedBox(height: 50),
-                      _buildPolicyText(), // पॉलिसी टेक्स्ट को यहाँ कॉलम के अंदर डाला
+                      const SizedBox(height: 30),
+                      _buildPolicyText(),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
@@ -279,8 +348,15 @@ class _LoginScreenState extends State<LoginScreen> {
         child: TextField(
           controller: _otpControllers[index], focusNode: _focusNodes[index],
           keyboardType: TextInputType.number, textAlign: TextAlign.center, maxLength: 1,
-          style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-          decoration: InputDecoration(counterText: "", filled: true, fillColor: Colors.white.withOpacity(0.05), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.orangeAccent))),
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            counterText: "", 
+            contentPadding: EdgeInsets.zero,
+            filled: true, 
+            fillColor: Colors.white.withOpacity(0.05), 
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), 
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.orangeAccent))
+          ),
           onChanged: (value) {
             if (value.length == 1 && index < 5) _focusNodes[index + 1].requestFocus();
             if (value.isEmpty && index > 0) _focusNodes[index - 1].requestFocus();
@@ -299,9 +375,17 @@ class _LoginScreenState extends State<LoginScreen> {
           style: const TextStyle(color: Colors.white38, fontSize: 11, height: 1.5),
           children: [
             const TextSpan(text: "By signing in, you agree to our "),
-            TextSpan(text: "Terms of Service", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, decoration: TextDecoration.underline), recognizer: TapGestureRecognizer()..onTap = () {}),
+            TextSpan(
+              text: "Terms of Service", 
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, decoration: TextDecoration.underline), 
+              recognizer: TapGestureRecognizer()..onTap = () => _launchUrl('terms_conditions')
+            ),
             const TextSpan(text: " and\n"),
-            TextSpan(text: "Privacy Policy", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, decoration: TextDecoration.underline), recognizer: TapGestureRecognizer()..onTap = () {}),
+            TextSpan(
+              text: "Privacy Policy", 
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, decoration: TextDecoration.underline), 
+              recognizer: TapGestureRecognizer()..onTap = () => _launchUrl('privacy_policy')
+            ),
           ],
         ),
       ),

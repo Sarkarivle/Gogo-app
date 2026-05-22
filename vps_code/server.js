@@ -57,12 +57,14 @@ io.on('connection', (socket) => {
 
     socket.on('set_online', (phone) => {
         if (!phone) return;
+        socket.join(`user_${phone}`); // Personal room for global events
         connectedUsers.set(socket.id, phone);
         if (!phoneToSockets.has(phone)) phoneToSockets.set(phone, new Set());
         phoneToSockets.get(phone).add(socket.id);
 
         User.findOneAndUpdate({ phone }, { isOnline: true, lastSeen: new Date() }).then(user => {
-            if (user && !user.isOnline) io.emit('user_status_change', { phone, isOnline: true });
+            // Emit status change globally for discovery screen live updates
+            io.emit('user_status_change', { phone, isOnline: true });
         }).catch(() => {});
     });
 
@@ -77,6 +79,11 @@ io.on('connection', (socket) => {
         if (otherPhone) {
             const isOtherOnline = phoneToSockets.has(otherPhone) && phoneToSockets.get(otherPhone).size > 0;
             socket.emit('user_status_change', { phone: otherPhone, isOnline: isOtherOnline });
+
+            // Notify the other person that I am online in this room
+            if (myPhone) {
+                socket.to(roomId).emit('user_status_change', { phone: myPhone, isOnline: true });
+            }
         }
     });
 
@@ -85,6 +92,25 @@ io.on('connection', (socket) => {
             const sender = await User.findOne({ phone: data.senderPhone });
             if (!sender || !sender.isPremium) {
                 if (callback) callback({ success: false, message: "Premium required" });
+                return;
+            }
+
+            // --- AUTHORITATIVE BLOCK CHECK ---
+            const blockRecord = await Block.findOne({
+                $or: [
+                    { blockerPhone: data.senderPhone, blockedPhone: data.receiverPhone },
+                    { blockerPhone: data.receiverPhone, blockedPhone: data.senderPhone }
+                ]
+            });
+
+            if (blockRecord) {
+                console.log(`🚫 Message blocked: ${data.senderPhone} -> ${data.receiverPhone}`);
+                if (callback) callback({
+                    success: false,
+                    message: "Chat blocked",
+                    isBlocked: true,
+                    blockerPhone: blockRecord.blockerPhone
+                });
                 return;
             }
 
@@ -104,10 +130,10 @@ io.on('connection', (socket) => {
             };
 
             // --- STEP 1: INSTANT BROADCAST ---
-            // Emit to the entire room (including sender) for sync
-            io.to(roomId).emit('receive_message', responseData);
+            // Emit to the entire chat room AND receiver's personal room for inbox update
+            io.to(roomId).to(`user_${data.receiverPhone}`).emit('receive_message', responseData);
 
-            // Immediate ACK to sender to stop the "loading wheel"
+            // Immediate ACK to sender
             if (callback) callback({ success: true, messageId: tempId, localId: data.localId });
 
             // --- STEP 2: BACKGROUND TASKS ---
@@ -247,11 +273,8 @@ io.on('connection', (socket) => {
 
             io.to(roomId).emit('moderation_state_updated', syncData);
 
-            // Also send to all individual sockets of the blocked user (in case they aren't in the room)
-            const blockedUserSockets = phoneToSockets.get(blockedPhone);
-            if (blockedUserSockets) {
-                blockedUserSockets.forEach(sId => io.to(sId).emit('moderation_state_updated', syncData));
-            }
+            // Explicitly sync personal rooms as well for inbox awareness
+            io.to(`user_${blockerPhone}`).to(`user_${blockedPhone}`).emit('moderation_state_updated', syncData);
 
             io.to(roomId).emit('receive_message', systemMsg);
         } catch (e) {
@@ -283,12 +306,7 @@ io.on('connection', (socket) => {
             };
 
             io.to(roomId).emit('moderation_state_updated', syncData);
-
-            // Also send to all individual sockets of the blocked user
-            const blockedUserSockets = phoneToSockets.get(blockedPhone);
-            if (blockedUserSockets) {
-                blockedUserSockets.forEach(sId => io.to(sId).emit('moderation_state_updated', syncData));
-            }
+            io.to(`user_${blockerPhone}`).to(`user_${blockedPhone}`).emit('moderation_state_updated', syncData);
 
             io.to(roomId).emit('receive_message', systemMsg);
         } catch (e) {
@@ -307,6 +325,22 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('disconnecting', () => {
+        const phone = connectedUsers.get(socket.id);
+        if (!phone) return;
+
+        const sockets = phoneToSockets.get(phone);
+        if (sockets && sockets.size === 1) {
+            // This is the last socket for this user
+            const rooms = Array.from(socket.rooms);
+            rooms.forEach(room => {
+                if (room !== socket.id) {
+                    socket.to(room).emit('user_status_change', { phone, isOnline: false });
+                }
+            });
+        }
+    });
+
     socket.on('disconnect', () => {
         const phone = connectedUsers.get(socket.id);
         if (phone) {
@@ -317,7 +351,7 @@ io.on('connection', (socket) => {
                     phoneToSockets.delete(phone);
                     User.findOneAndUpdate({ phone }, { isOnline: false, lastSeen: new Date() }).then(() => {
                         io.emit('user_status_change', { phone, isOnline: false });
-                    });
+                    }).catch(() => {});
                 }
             }
             connectedUsers.delete(socket.id);

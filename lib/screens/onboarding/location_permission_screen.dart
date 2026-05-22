@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/api_service.dart';
 import 'trial_onboarding_screen.dart';
 
 class LocationPermissionScreen extends StatefulWidget {
@@ -14,6 +14,8 @@ class LocationPermissionScreen extends StatefulWidget {
 }
 
 class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
+  bool _isProcessing = false;
+
   @override
   void initState() {
     super.initState();
@@ -23,62 +25,98 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
   Future<void> _checkPermissionInitially() async {
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-      _navigateToNext();
+      _fetchAndNavigate();
     }
   }
 
-  Future<void> _navigateToNext() async {
-    // Get location immediately to show area name in next screen
+  Future<void> _fetchAndNavigate() async {
+    if (!mounted) return;
+    setState(() => _isProcessing = true);
+
     try {
-      Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      // Step 1: Get coordinates quickly (Medium accuracy is enough and fast)
+      Position pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 5),
+      );
+      
+      // Step 2: Get Address (Fast usually)
       String city = 'Unknown';
       String area = 'Unknown';
-      if (placemarks.isNotEmpty) {
-        Placemark place = placemarks[0];
-        area = place.subLocality ?? place.thoroughfare ?? place.name ?? 'Unknown';
-        city = place.locality ?? place.subAdministrativeArea ?? 'Unknown';
+      try {
+        List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude)
+            .timeout(const Duration(seconds: 3));
+        if (placemarks.isNotEmpty) {
+          Placemark place = placemarks[0];
+          area = place.subLocality ?? place.thoroughfare ?? place.name ?? 'Unknown';
+          city = place.locality ?? place.subAdministrativeArea ?? 'Unknown';
+        }
+      } catch (e) {
+        debugPrint("Geocoding timeout or error: $e");
       }
 
+      // Step 3: Save Locally (Mandatory)
       final prefs = await SharedPreferences.getInstance();
       final userDataStr = prefs.getString('user_data');
       if (userDataStr != null) {
         Map<String, dynamic> user = jsonDecode(userDataStr);
         user['area'] = area;
         user['city'] = city;
+        user['lat'] = pos.latitude;
+        user['lng'] = pos.longitude;
         await prefs.setString('user_data', jsonEncode(user));
         
-        // Also sync with server
-        await http.post(
-          Uri.parse('http://72.61.170.181:5000/api/user/update-location'), 
-          headers: {'Content-Type': 'application/json'}, 
-          body: jsonEncode({
-            'phone': user['phone'], 
-            'lat': pos.latitude, 
-            'lng': pos.longitude,
-            'city': city,
-            'area': area
-          })
+        // Step 4: Sync with server (Fire and forget or short timeout to keep it fast)
+        ApiService.post('/api/user/update-location', {
+          'phone': user['phone'], 
+          'lat': pos.latitude, 
+          'lng': pos.longitude,
+          'city': city,
+          'area': area
+        }).timeout(const Duration(seconds: 2)).catchError((e) => null);
+      }
+
+      // Step 5: Navigate
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => const TrialOnboardingScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            transitionDuration: const Duration(milliseconds: 500),
+          ),
         );
       }
-    } catch (e) { print(e); }
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const TrialOnboardingScreen()),
-      );
+    } catch (e) {
+      debugPrint("Location fetch error: $e");
+      // Even if location fails, we should ideally let them proceed if we want it to be "fast" 
+      // but user said "location save karna jaroori hai". 
+      // So if it fails hard, we stop processing.
+      if (mounted) setState(() => _isProcessing = false);
+      _showErrorSnackBar("Could not get location. Please try again.");
     }
   }
 
+  void _showErrorSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating)
+    );
+  }
+
   Future<void> _requestPermission() async {
+    if (_isProcessing) return;
+    
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
     
     if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-      _navigateToNext();
+      _fetchAndNavigate();
+    } else if (permission == LocationPermission.deniedForever) {
+      _showErrorSnackBar("Location permission is permanently denied. Please enable it in settings.");
     }
   }
 
@@ -86,59 +124,103 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
-      body: Padding(
-        padding: const EdgeInsets.all(30.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Spacer(),
-            Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(Icons.map_rounded, size: 100, color: Colors.white.withOpacity(0.8)),
-                  const Positioned(
-                    top: 40,
-                    child: Icon(Icons.location_on, size: 50, color: Colors.redAccent),
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF2A0D17).withOpacity(0.8),
+              const Color(0xFF0F0F0F),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40.0),
+            child: Column(
+              children: [
+                const Spacer(),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(seconds: 1),
+                  builder: (context, value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Opacity(opacity: value, child: child),
+                    );
+                  },
+                  child: Container(
+                    width: 180,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.orangeAccent.withOpacity(0.05),
+                          blurRadius: 40,
+                          spreadRadius: 10,
+                        )
+                      ],
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.location_on_rounded, size: 80, color: Colors.orangeAccent),
+                    ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
-            const Text(
-              "Enable Location",
-              style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              "You'll need to enable your location in\norder to use GoGo",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 16, height: 1.5),
-            ),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: _requestPermission,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFD700),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                 ),
-                child: const Text(
-                  "ALLOW LOCATION",
-                  style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.w900),
+                const SizedBox(height: 50),
+                const Text(
+                  "Enable Location",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 20),
+                Text(
+                  "To find amazing people near you, we need to know your location.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.5),
+                    fontSize: 16,
+                    height: 1.6,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  height: 65,
+                  child: ElevatedButton(
+                    onPressed: _isProcessing ? null : _requestPermission,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orangeAccent,
+                      foregroundColor: Colors.black,
+                      elevation: 8,
+                      shadowColor: Colors.orangeAccent.withOpacity(0.3),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      disabledBackgroundColor: Colors.orangeAccent.withOpacity(0.5),
+                    ),
+                    child: _isProcessing 
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(color: Colors.black, strokeWidth: 3),
+                        )
+                      : const Text(
+                          "Allow Access",
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1),
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 40),
+              ],
             ),
-            const SizedBox(height: 40),
-          ],
+          ),
         ),
       ),
     );

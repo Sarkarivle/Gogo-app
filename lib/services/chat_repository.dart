@@ -63,17 +63,19 @@ class ChatRepository {
     }
   }
 
-  Future<bool> checkBlockStatus(String myPhone, String otherPhone) async {
+  Future<Map<String, dynamic>> checkBlockStatus(String myPhone, String otherPhone) async {
     try {
-      final res1 = await ApiService.get('/api/chat/check-block/$myPhone/$otherPhone');
-      final res2 = await ApiService.get('/api/chat/check-block/$otherPhone/$myPhone');
-      
-      bool iBlocked = jsonDecode(res1.body)['isBlocked'] ?? false;
-      bool theyBlocked = jsonDecode(res2.body)['isBlocked'] ?? false;
-      
-      return iBlocked || theyBlocked;
+      final response = await ApiService.get('/api/chat/check-block/$myPhone/$otherPhone');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'isBlocked': data['isBlocked'] ?? false,
+          'blockerPhone': data['blockerPhone']
+        };
+      }
+      return {'isBlocked': false, 'blockerPhone': null};
     } catch (e) {
-      return false;
+      return {'isBlocked': false, 'blockerPhone': null};
     }
   }
 

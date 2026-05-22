@@ -16,8 +16,12 @@ const UserSchema = new mongoose.Schema({
     profileImages: [{ type: String }], // Array for multiple images
 
     // Location
-    lat: { type: Number, index: '2dsphere' }, // Geolocation index
+    lat: { type: Number },
     lng: { type: Number },
+    location: {
+        type: { type: String, enum: ['Point'], default: 'Point' },
+        coordinates: { type: [Number], default: [0, 0] } // [lng, lat]
+    },
     city: { type: String, index: true },
     area: String,
     lastLocationUpdate: { type: Date, default: Date.now },
@@ -81,6 +85,7 @@ const UserSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Index for search
+UserSchema.index({ location: '2dsphere' });
 UserSchema.index({ name: 'text', phone: 'text', city: 'text' });
 
 module.exports = mongoose.model('User', UserSchema);

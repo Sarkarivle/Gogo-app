@@ -83,9 +83,19 @@ exports.register = async (req, res) => {
 exports.updateLocation = async (req, res) => {
     try {
         const { phone, lat, lng, city, area } = req.body;
-        await User.findOneAndUpdate({ phone }, { lat, lng, city, area, lastSeen: new Date() });
+        const update = { lat, lng, city, area, lastSeen: new Date() };
+
+        if (lat && lng) {
+            update.location = {
+                type: 'Point',
+                coordinates: [parseFloat(lng), parseFloat(lat)]
+            };
+        }
+
+        await User.findOneAndUpdate({ phone }, { $set: update });
         res.json({ success: true });
     } catch (e) {
+        console.error("UPDATE_LOCATION_ERROR:", e);
         res.status(500).json({ success: false });
     }
 };
@@ -181,14 +191,19 @@ exports.getDiscover = async (req, res) => {
         let sort = { lastSeen: -1 };
         if (tab === 'Nearby') {
             sort = { lastSeen: -1 };
-            // If distance filter is applied on Nearby tab
+            // If distance filter is applied on Nearby tab using GeoJSON
             if (lat && lng && distance && distance !== 'Any') {
                 const maxDistKm = parseInt(distance.replace('km', ''));
                 if (!isNaN(maxDistKm)) {
-                    // Note: This is a broad filter to support separate lat/lng fields.
-                    // Accurate filtering is done on app-side, but this helps limit DB results.
-                    const latRange = maxDistKm / 111;
-                    query.lat = { $gte: parseFloat(lat) - latRange, $lte: parseFloat(lat) + latRange };
+                    query.location = {
+                        $near: {
+                            $geometry: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+                            $maxDistance: maxDistKm * 1000 // meters
+                        }
+                    };
+                    // When using $near, sort is automatically by distance.
+                    // If we want both, we might need $geoNear in aggregation, but $near is usually enough.
+                    sort = {};
                 }
             }
         } else if (tab === 'New') {

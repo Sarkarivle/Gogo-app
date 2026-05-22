@@ -1,7 +1,7 @@
 enum MessageStatus { sending, sent, delivered, seen, error }
 
 class ChatMessage {
-  final String? id;
+  String? id;
   final String? localId; // For optimistic UI
   String? text;
   String? imageUrl;

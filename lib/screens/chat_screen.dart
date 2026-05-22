@@ -18,7 +18,8 @@ import '../services/chat_repository.dart';
 import '../services/premium_service.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
-import 'onboarding/payment_screen.dart';
+import '../widgets/chat_widgets.dart';
+// import 'onboarding/payment_screen.dart';
 
 class ChatPage extends StatefulWidget {
   final String name;
@@ -264,10 +265,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Future<void> _checkBlockStatus() async {
     if (currentUser == null) return;
-    final isBlocked = await _chatRepository.checkBlockStatus(currentUser!['phone'], widget.receiverPhone);
+    final res = await _chatRepository.checkBlockStatus(currentUser!['phone'], widget.receiverPhone);
     if (mounted) {
       setState(() {
-        _isBlocked = isBlocked;
+        _isBlocked = res['isBlocked'];
+        _blockerPhone = res['blockerPhone'];
       });
     }
   }
@@ -326,9 +328,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       replyType: optimisticMsg.replyType,
       ack: (ack) {
         if (mounted && ack != null) {
-          if (ack['success'] == false) {
-            setState(() => optimisticMsg.status = MessageStatus.error);
-          }
+          setState(() {
+            if (ack['success'] == true) {
+               if (ack['messageId'] != null) optimisticMsg.id = ack['messageId'];
+               optimisticMsg.status = MessageStatus.sent;
+            } else {
+              optimisticMsg.status = MessageStatus.error;
+              if (ack['isBlocked'] == true) {
+                _isBlocked = true;
+                _blockerPhone = ack['blockerPhone'];
+              }
+            }
+          });
         }
       }
     );
@@ -485,7 +496,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             final adjustedIndex = _isLoadingMore ? index - 1 : index;
 
             if (adjustedIndex == _messages.length) {
-              return _buildTypingIndicator();
+              return const TypingIndicator();
             }
 
             final msg = _messages[adjustedIndex];
@@ -749,36 +760,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       case MessageStatus.seen: return const Icon(Icons.done_all, color: Colors.greenAccent, size: 14);
       case MessageStatus.error: return const Icon(Icons.error_outline, color: Colors.redAccent, size: 14);
     }
-  }
-
-  Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 15, top: 5), // Added padding to prevent "daba hua" look
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
-            color: Color(0xFF2A2A2A),
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomRight: Radius.circular(18),
-            ),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(radius: 3, backgroundColor: Colors.white38),
-              SizedBox(width: 4),
-              CircleAvatar(radius: 3, backgroundColor: Colors.white38),
-              SizedBox(width: 4),
-              CircleAvatar(radius: 3, backgroundColor: Colors.white38),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildInputArea() {
@@ -1305,53 +1286,6 @@ class _BlinkingDotRedState extends State<BlinkingDotRed> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     return FadeTransition(opacity: _controller, child: Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)));
-  }
-}
-
-
-class AudioPlayerWidget extends StatefulWidget {
-  final String url; final bool isMe;
-  const AudioPlayerWidget({super.key, required this.url, required this.isMe});
-  @override
-  State<AudioPlayerWidget> createState() => _AudioPlayerWidgetState();
-}
-
-class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
-  final AudioPlayer _player = AudioPlayer(); 
-  bool _isPlaying = false; 
-  Duration _duration = Duration.zero; 
-  Duration _position = Duration.zero;
-
-  @override
-  void initState() { 
-    super.initState(); 
-    _player.onDurationChanged.listen((d) => setState(() => _duration = d)); 
-    _player.onPositionChanged.listen((p) => setState(() => _position = p)); 
-    _player.onPlayerComplete.listen((_) => setState(() => _isPlaying = false)); 
-  }
-
-  @override
-  void dispose() { _player.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: widget.isMe ? Colors.black : Colors.orangeAccent, size: 32),
-          onPressed: () async {
-            if (_isPlaying) { await _player.pause(); setState(() => _isPlaying = false); }
-            else { await _player.play(UrlSource(widget.url)); setState(() => _isPlaying = true); }
-          }
-        ),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(width: 100, height: 3, color: Colors.white24, child: FractionallySizedBox(alignment: Alignment.centerLeft, widthFactor: _duration.inSeconds > 0 ? _position.inSeconds / _duration.inSeconds : 0, child: Container(color: widget.isMe ? Colors.black : Colors.orangeAccent))),
-          const SizedBox(height: 4),
-          Text('${_position.inSeconds}s / ${_duration.inSeconds}s', style: TextStyle(color: widget.isMe ? Colors.black54 : Colors.white54, fontSize: 10)),
-        ])
-      ],
-    );
   }
 }
 

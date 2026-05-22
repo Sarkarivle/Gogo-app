@@ -70,28 +70,24 @@ class ProfileCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Fixed height container for online status to prevent shifting
-            SizedBox(
-              height: 20,
-              child: isOnline 
-                ? const Row(
-                    children: [
-                      BlinkingDot(),
-                      SizedBox(width: 6),
-                      Text(
-                        'Online Now',
-                        style: TextStyle(
-                          color: Color(0xFF00C853),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  )
-                : const SizedBox.shrink(),
-            ),
-            const SizedBox(height: 6),
+            if (isOnline) ...[
+              const Row(
+                children: [
+                  BlinkingDot(),
+                  SizedBox(width: 6),
+                  Text(
+                    'Online Now',
+                    style: TextStyle(
+                      color: Color(0xFF00C853),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
             Row(children: [
               const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
               const SizedBox(width: 4),
@@ -104,7 +100,7 @@ class ProfileCard extends StatelessWidget {
                 ),
               )
             ]),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
