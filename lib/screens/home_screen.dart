@@ -23,7 +23,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _selectedIndex = 0;
-  Key _inboxKey = UniqueKey();
+  final GlobalKey<InboxScreenState> _inboxKey = GlobalKey<InboxScreenState>();
   late TabController _tabController;
   List<dynamic> _profiles = [];
   bool _isLoadingProfiles = false;
@@ -76,6 +76,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _resetAndFetch({bool forceLoading = false}) {
+    // Scroll to top first
+    if (_scrollController.hasClients && _scrollController.offset > 0) {
+      _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+
     final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
     
     // Clear relevant cache when filters change to ensure fresh data
@@ -476,11 +481,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
         onTap: (i) { 
-          if (i == 1) {
-            _inboxKey = UniqueKey(); // Force refresh every time Inbox is clicked
+          if (i == _selectedIndex) {
+            // Already on this tab - Refresh it
+            if (i == 0) {
+              _resetAndFetch(); // Match Tab Refresh
+            } else if (i == 1) {
+              _inboxKey.currentState?.refresh(); // Inbox Tab Refresh
+            }
+          } else {
+            // Switching to a new tab
+            setState(() => _selectedIndex = i);
+            _fetchUnreadCount();
+            
+            // If switching TO Inbox, we also want it to refresh immediately
+            if (i == 1) {
+              Future.delayed(const Duration(milliseconds: 100), () {
+                _inboxKey.currentState?.refresh();
+              });
+            }
           }
-          setState(() => _selectedIndex = i); 
-          _fetchUnreadCount(); 
         },
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.explore_outlined, size: 28), activeIcon: Icon(Icons.explore, size: 28), label: 'Match'),

@@ -241,8 +241,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             _messages.insertAll(0, newMsgs);
             _currentHistoryPage++;
           } else {
+            // Preserve failed local messages
+            final failedMsgs = _messages.where((m) => m.status == MessageStatus.error).toList();
             _messages.clear();
             _messages.addAll(newMsgs);
+            
+            // Re-add failed messages if they are not already there
+            for (var fm in failedMsgs) {
+              if (!_messages.any((m) => m.localId == fm.localId)) {
+                _messages.add(fm);
+              }
+            }
+            // Sort by timestamp to preserve order
+            _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
             _currentHistoryPage = 1;
           }
           _hasMoreHistory = newMsgs.length >= 30;
@@ -315,8 +326,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _messageController.clear();
     });
     _scrollToBottom();
-
-    if (_isBlocked) return;
 
     _chatRepository.sendMessage(
       senderPhone: currentUser!['phone'],
@@ -424,6 +433,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
+
   PreferredSizeWidget _buildHeader() {
     return AppBar(
       backgroundColor: const Color(0xFF2A0D17),
@@ -488,10 +498,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          itemCount: _messages.length + (isTyping ? 1 : 0) + (_isLoadingMore ? 1 : 0),
+          itemCount: (_messages.isEmpty ? 1 : 0) + _messages.length + (isTyping ? 1 : 0) + (_isLoadingMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (_isLoadingMore && index == 0) {
               return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent)));
+            }
+
+            // Show Safety Warning if chat is empty
+            if (_messages.isEmpty && index == 0) {
+              return _buildSafetyWarning();
             }
             
             final adjustedIndex = _isLoadingMore ? index - 1 : index;
@@ -505,6 +520,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
             return Column(
               children: [
+                if (showDateHeader && adjustedIndex == 0 && _messages.isNotEmpty) _buildSafetyWarning(),
                 if (showDateHeader) _buildDateHeader(msg.timestamp),
                 _buildMessageBubble(msg),
               ],
@@ -512,6 +528,51 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           },
         );
       }
+    );
+  }
+
+  Widget _buildSafetyWarning() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 24, horizontal: 30),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.orangeAccent.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.orangeAccent.withOpacity(0.1), width: 1),
+        ),
+        child: const Column(
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.security_rounded, color: Colors.orangeAccent, size: 14),
+                SizedBox(width: 8),
+                Text(
+                  "Keep your community safe",
+                  style: TextStyle(
+                    color: Colors.orangeAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 6),
+            Text(
+              "If any user asks for money, please report them immediately using the safety tools.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -759,7 +820,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       case MessageStatus.sent: return const Icon(Icons.done, color: Colors.white38, size: 14);
       case MessageStatus.delivered: return const Icon(Icons.done_all, color: Colors.white38, size: 14);
       case MessageStatus.seen: return const Icon(Icons.done_all, color: Colors.greenAccent, size: 14);
-      case MessageStatus.error: return const Icon(Icons.error_outline, color: Colors.redAccent, size: 14);
+      case MessageStatus.error: 
+        return const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("Failed", style: TextStyle(color: Colors.redAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+            SizedBox(width: 4),
+            Icon(Icons.error_outline, color: Colors.redAccent, size: 14),
+          ],
+        );
     }
   }
 
@@ -769,12 +838,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       color: const Color(0xFF1A1A1A),
       child: Column(
         children: [
+          if (_isBlocked)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                _blockerPhone == currentUser?['phone'] ? "You blocked this user" : "This user has blocked you",
+                style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
           if (_replyingToMessage != null) _buildReplyInputBar(),
           Row(
             children: [
               GestureDetector(
                 onTap: () => _showMediaPopup(),
-                child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 28)),
+                child: Container(
+                  padding: const EdgeInsets.all(8), 
+                  decoration: BoxDecoration(
+                    color: Colors.orangeAccent.withOpacity(0.1), 
+                    shape: BoxShape.circle
+                  ), 
+                  child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 28)
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -788,7 +872,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     onChanged: (val) => _handleTypingStatus(),
                     onSubmitted: (_) => _sendMessage(),
                     style: const TextStyle(color: Colors.white, fontSize: 15),
-                    decoration: const InputDecoration(hintText: 'Type message...', hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none),
+                    decoration: const InputDecoration(
+                      hintText: 'Type message...', 
+                      hintStyle: TextStyle(color: Colors.white24), 
+                      border: InputBorder.none
+                    ),
                   ),
                 ),
               ),
@@ -823,8 +911,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildSendOrMicButton() {
     bool hasText = _messageController.text.trim().isNotEmpty;
     return GestureDetector(
-      onLongPress: hasText ? null : () => _showVoiceRecorderModal(),
-      onTap: hasText ? _sendMessage : () => _showVoiceRecorderModal(),
+      onTap: hasText ? _sendMessage : () => _handleMicClick(),
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
@@ -833,9 +920,32 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  void _handleTypingStatus() {
-    if (_isBlocked) return; // Don't send socket event if blocked
+  void _handleMicClick() async {
+    var status = await Permission.microphone.status;
+    if (status.isDenied) {
+      status = await Permission.microphone.request();
+    }
     
+    if (status.isGranted) {
+      _showVoiceRecorderModal();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone permission is required for voice messages')),
+      );
+    }
+  }
+
+  void _showVoiceRecorderModal() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isDismissible: true,
+      builder: (_) => VoiceRecorderModal(onSend: (path) => _uploadMedia(File(path), 'audio'))
+    );
+  }
+
+  void _handleTypingStatus() {
     SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 2), () {
@@ -853,23 +963,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       builder: (_) => MediaSelectionModal(
         currentUserPhone: currentUser!['phone'],
         onMediaSelected: (file, type, {String? url}) async {
-          if (_isBlocked) {
-             final localId = DateTime.now().millisecondsSinceEpoch.toString();
-             setState(() {
-                _messages.add(ChatMessage(
-                  localId: localId,
-                  text: type == 'image' ? '📷 Image' : '🎵 Voice Message',
-                  imageUrl: url,
-                  isMe: true,
-                  timestamp: DateTime.now(),
-                  status: MessageStatus.error,
-                  type: type,
-                ));
-             });
-             _scrollToBottom();
-             return;
-          }
-
           if (url != null) {
             final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => MediaPreviewPage(imageUrl: url)));
             if (result != null) {
@@ -892,16 +985,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  void _showVoiceRecorderModal() {
-    HapticFeedback.heavyImpact();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isDismissible: true,
-      enableDrag: false,
-      builder: (_) => VoiceRecorderModal(onSend: (path) => _uploadMedia(File(path), 'audio'))
-    );
-  }
 
   void _showContextMenu(ChatMessage msg) {
     if (msg.type == 'block_event') return;
@@ -1123,14 +1206,21 @@ class VoiceRecorderModal extends StatefulWidget {
   State<VoiceRecorderModal> createState() => _VoiceRecorderModalState();
 }
 
-class _VoiceRecorderModalState extends State<VoiceRecorderModal> {
+class _VoiceRecorderModalState extends State<VoiceRecorderModal> with SingleTickerProviderStateMixin {
   final AudioRecorder _recorder = AudioRecorder();
+  late AnimationController _pulseController;
   bool _isRecording = false;
   int _seconds = 0;
   Timer? _timer;
-  bool _isCancelled = false;
-  double _dragX = 0;
-  final double _cancelThreshold = -100.0; // Left swipe threshold to cancel
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+  }
 
   void _startTimer() {
     _timer?.cancel();
@@ -1146,19 +1236,25 @@ class _VoiceRecorderModalState extends State<VoiceRecorderModal> {
   void dispose() {
     _recorder.dispose();
     _timer?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
-  Future<void> _start() async {
+  Future<void> _toggleRecording() async {
+    if (_isRecording) {
+      // Logic for manual stop without sending could be added, 
+      // but the user wants "send button" flow.
+      return;
+    }
+
     if (await Permission.microphone.request().isGranted) {
       final dir = await getApplicationDocumentsDirectory();
       final p = '${dir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: p);
       _startTimer();
+      _pulseController.repeat();
       setState(() {
         _isRecording = true;
-        _isCancelled = false;
-        _dragX = 0;
       });
       HapticFeedback.mediumImpact();
     }
@@ -1167,14 +1263,9 @@ class _VoiceRecorderModalState extends State<VoiceRecorderModal> {
   Future<void> _stopAndSend() async {
     final path = await _recorder.stop();
     _stopTimer();
-    setState(() => _isRecording = false);
-
-    if (!_isCancelled && path != null) {
-      final duration = _seconds;
-      if (duration < 1) {
-        // Too short
-        return;
-      }
+    _pulseController.stop();
+    
+    if (path != null && _seconds > 0) {
       widget.onSend(path);
       Navigator.pop(context);
       HapticFeedback.lightImpact();
@@ -1186,82 +1277,121 @@ class _VoiceRecorderModalState extends State<VoiceRecorderModal> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).padding.bottom + 30),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E).withOpacity(0.95),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, spreadRadius: 5)
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(10))),
+          const SizedBox(height: 30),
+          
+          // Timer Display
+          Text(
+            '${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}',
+            style: TextStyle(
+              color: _isRecording ? Colors.orangeAccent : Colors.white24, 
+              fontSize: 42, 
+              fontWeight: FontWeight.w900,
+              fontFeatures: const [FontFeature.tabularFigures()]
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _isRecording ? 'RECORDING LIVE' : 'READY TO RECORD',
+            style: TextStyle(
+              color: _isRecording ? Colors.redAccent : Colors.white24,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 2
+            ),
+          ),
+          
+          const SizedBox(height: 50),
+          
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              if (_isRecording) const BlinkingDotRed(),
-              const SizedBox(width: 8),
-              Text(
-                '${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}',
-                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              // Cancel Button
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 30),
               ),
-            ],
-          ),
-          const SizedBox(height: 40),
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              if (_isRecording)
-                Positioned(
-                  left: 0,
-                  right: 80,
-                  child: Opacity(
-                    opacity: (1 - (_dragX.abs() / _cancelThreshold.abs())).clamp(0.0, 1.0),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.arrow_back_ios, color: Colors.white24, size: 16),
-                        Text(' Slide to cancel', style: TextStyle(color: Colors.white38)),
-                      ],
-                    ),
-                  ),
-                ),
+
+              // Main Action Button (Record / Pulse)
               GestureDetector(
-                onLongPressStart: (_) => _start(),
-                onLongPressEnd: (_) => _stopAndSend(),
-                onLongPressMoveUpdate: (details) {
-                  setState(() {
-                    _dragX = details.localPosition.dx;
-                    if (_dragX < _cancelThreshold) {
-                      _isCancelled = true;
-                    } else {
-                      _isCancelled = false;
-                    }
-                  });
-                },
-                child: Transform.scale(
-                  scale: _isRecording ? 1.2 : 1.0,
-                  child: CircleAvatar(
-                    radius: 40,
-                    backgroundColor: _isCancelled 
-                        ? Colors.red.withOpacity(0.5) 
-                        : (_isRecording ? Colors.red : Colors.orangeAccent),
-                    child: Icon(
-                      _isCancelled ? Icons.delete_outline : (_isRecording ? Icons.mic : Icons.mic_none),
-                      color: Colors.black,
-                      size: 35,
+                onTap: _toggleRecording,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    if (_isRecording)
+                      ScaleTransition(
+                        scale: Tween(begin: 1.0, end: 1.5).animate(
+                          CurvedAnimation(parent: _pulseController, curve: Curves.easeOut),
+                        ),
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.red.withOpacity(0.2),
+                          ),
+                        ),
+                      ),
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: _isRecording 
+                              ? [Colors.red, Colors.redAccent] 
+                              : [Colors.orangeAccent, Colors.orange],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_isRecording ? Colors.red : Colors.orange).withOpacity(0.3),
+                            blurRadius: 15,
+                            spreadRadius: 2
+                          )
+                        ]
+                      ),
+                      child: Icon(
+                        _isRecording ? Icons.mic : Icons.mic_none_rounded,
+                        color: Colors.black,
+                        size: 35,
+                      ),
                     ),
+                  ],
+                ),
+              ),
+
+              // Send Button (Visible only when recording)
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: _isRecording ? 1.0 : 0.0,
+                child: IgnorePointer(
+                  ignoring: !_isRecording,
+                  child: IconButton(
+                    onPressed: _stopAndSend,
+                    icon: const Icon(Icons.send_rounded, color: Colors.orangeAccent, size: 35),
                   ),
                 ),
               ),
             ],
           ),
+          
           const SizedBox(height: 30),
           Text(
-            _isCancelled ? 'Release to cancel' : 'Hold to record, release to send',
-            style: TextStyle(
-              color: _isCancelled ? Colors.redAccent : Colors.white38,
-              fontSize: 14,
-              fontWeight: _isCancelled ? FontWeight.bold : FontWeight.normal,
-            ),
+            _isRecording ? 'Tap the send icon to finish' : 'Tap the mic to start recording',
+            style: const TextStyle(color: Colors.white38, fontSize: 13),
           ),
         ],
       ),

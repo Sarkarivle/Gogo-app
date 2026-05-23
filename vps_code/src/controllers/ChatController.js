@@ -2,6 +2,7 @@ const Message = require('../models/Message');
 const User = require('../models/User');
 const Block = require('../models/Block');
 const RecentPhoto = require('../models/RecentPhoto');
+const ConversationMetadata = require('../models/ConversationMetadata');
 const path = require('path');
 const fs = require('fs');
 
@@ -16,16 +17,16 @@ exports.getInbox = async (req, res) => {
             return res.status(403).json({ success: false, message: "account deactivate" });
         }
 
-        const blocks = await Block.find({ $or: [{ blockerPhone: phone }, { blockedPhone: phone }] });
-        const blockedPhones = blocks.map(b => b.blockerPhone === phone ? b.blockedPhone : b.blockerPhone);
+        // Fetch all metadata for this user to apply filters (muted, hidden, favourites)
+        const allMetadata = await ConversationMetadata.find({ phone });
+        const metaMap = {};
+        allMetadata.forEach(m => metaMap[m.partnerPhone] = m);
 
-        // Find unique conversation partners using aggregation for efficiency
+        // Find unique conversation partners using aggregation
         const conversations = await Message.aggregate([
             {
                 $match: {
-                    $or: [{ senderPhone: phone }, { receiverPhone: phone }],
-                    senderPhone: { $nin: blockedPhones },
-                    receiverPhone: { $nin: blockedPhones }
+                    $or: [{ senderPhone: phone }, { receiverPhone: phone }]
                 }
             },
             { $sort: { timestamp: -1 } },
@@ -40,29 +41,62 @@ exports.getInbox = async (req, res) => {
                     },
                     lastMsg: { $first: "$$ROOT" }
                 }
-            },
-            { $sort: { "lastMsg.timestamp": -1 } },
-            { $skip: skip },
-            { $limit: parseInt(limit) }
+            }
         ]);
+
+        // Filter out hidden conversations (unless a newer message exists)
+        const visibleConversations = conversations.filter(c => {
+            const meta = metaMap[c._id];
+            if (!meta) return true;
+            if (meta.isHidden) {
+                // Only keep if the last message is newer than when it was hidden/cleared
+                return meta.lastClearedAt ? new Date(c.lastMsg.timestamp) > new Date(meta.lastClearedAt) : false;
+            }
+            return true;
+        });
+
+        const sortedVisible = visibleConversations.sort((a, b) => {
+            const metaA = metaMap[a._id];
+            const metaB = metaMap[b._id];
+            // Favourites on top
+            if (metaA?.isFavourite && !metaB?.isFavourite) return -1;
+            if (!metaA?.isFavourite && metaB?.isFavourite) return 1;
+            return new Date(b.lastMsg.timestamp) - new Date(a.lastMsg.timestamp);
+        });
+
+        const pagedConversations = sortedVisible.slice(skip, skip + parseInt(limit));
 
         const unreadCount = await Message.countDocuments({ receiverPhone: phone, isOpened: false });
 
-        const partnerPhones = conversations.map(c => c._id);
+        const partnerPhones = pagedConversations.map(c => c._id);
         const partnerUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name lat lng position city area isOnline isVerified');
         const userMap = {};
         partnerUsers.forEach(u => userMap[u.phone] = u);
 
-        const chats = await Promise.all(conversations.map(async (conv) => {
+        // Fetch block status for all partners
+        const blocks = await Block.find({
+            $or: [
+                { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
+                { blockerPhone: { $in: partnerPhones }, blockedPhone: phone }
+            ]
+        });
+
+        const chats = await Promise.all(pagedConversations.map(async (conv) => {
             const m = conv.lastMsg;
             const other = conv._id;
             const otherUser = userMap[other] || {};
+            const meta = metaMap[other] || {};
 
             const partnerUnread = await Message.countDocuments({
                 senderPhone: other,
                 receiverPhone: phone,
                 isOpened: false
             });
+
+            const blockInfo = blocks.find(b =>
+                (b.blockerPhone === phone && b.blockedPhone === other) ||
+                (b.blockerPhone === other && b.blockedPhone === phone)
+            );
 
             return {
                 phone: other,
@@ -78,6 +112,10 @@ exports.getInbox = async (req, res) => {
                 unread: partnerUnread,
                 isOnline: otherUser.isOnline || false,
                 isVerified: otherUser.isVerified || false,
+                isMuted: meta.isMuted || false,
+                isFavourite: meta.isFavourite || false,
+                isBlocked: !!blockInfo,
+                iBlocked: blockInfo?.blockerPhone === phone
             };
         }));
 
@@ -85,6 +123,29 @@ exports.getInbox = async (req, res) => {
     } catch (e) {
         console.error("GET_INBOX_ERROR:", e);
         res.status(500).json({ totalUnread: 0, chats: [] });
+    }
+};
+
+exports.updateMetadata = async (req, res) => {
+    try {
+        const { phone, partnerPhone, isMuted, isFavourite, isHidden } = req.body;
+        const update = {};
+        if (isMuted !== undefined) update.isMuted = isMuted;
+        if (isFavourite !== undefined) update.isFavourite = isFavourite;
+        if (isHidden !== undefined) {
+            update.isHidden = isHidden;
+            if (isHidden) update.lastClearedAt = new Date();
+        }
+
+        const meta = await ConversationMetadata.findOneAndUpdate(
+            { phone, partnerPhone },
+            update,
+            { upsert: true, new: true }
+        );
+
+        res.json({ success: true, meta });
+    } catch (e) {
+        res.status(500).json({ success: false });
     }
 };
 

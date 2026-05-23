@@ -79,6 +79,22 @@ class ChatRepository {
     }
   }
 
+  void blockUser({required String blockerPhone, required String blockedPhone, String reason = "No reason", bool isReported = false}) {
+    SocketService().emit('block_user', {
+      'blockerPhone': blockerPhone,
+      'blockedPhone': blockedPhone,
+      'reason': reason,
+      'isReported': isReported
+    });
+  }
+
+  void unblockUser({required String blockerPhone, required String blockedPhone}) {
+    SocketService().emit('unblock_user', {
+      'blockerPhone': blockerPhone,
+      'blockedPhone': blockedPhone
+    });
+  }
+
   Future<String?> uploadMedia(File file, String phone, String type) async {
     try {
       var response = await ApiService.multipart('/api/chat/upload', file.path, 'image', {'phone': phone});
@@ -159,6 +175,28 @@ class ChatRepository {
       'myPhone': myPhone,
       'otherPhone': otherPhone
     });
+  }
+
+  Future<bool> updateConversationMetadata({
+    required String myPhone,
+    required String otherPhone,
+    bool? isMuted,
+    bool? isFavourite,
+    bool? isHidden,
+  }) async {
+    try {
+      final response = await ApiService.post('/api/chat/update-metadata', {
+        'phone': myPhone,
+        'partnerPhone': otherPhone,
+        if (isMuted != null) 'isMuted': isMuted,
+        if (isFavourite != null) 'isFavourite': isFavourite,
+        if (isHidden != null) 'isHidden': isHidden,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint("Update metadata error: $e");
+      return false;
+    }
   }
 
   Future<List<dynamic>> getRecentPhotos(String phone) async {

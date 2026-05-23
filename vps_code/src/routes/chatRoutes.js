@@ -22,6 +22,7 @@ router.get('/check-block/:p1/:p2', ChatController.checkBlock);
 router.post('/block', ChatController.blockUser);
 router.post('/unblock', ChatController.unblockUser);
 router.post('/mark-seen', ChatController.markSeen);
+router.post('/update-metadata', ChatController.updateMetadata);
 router.post('/upload', upload.single('image'), ChatController.handleFileUpload);
 router.get('/recent-photos/:phone', ChatController.getRecentPhotos);
 router.post('/delete-recent-photo', ChatController.deleteRecentPhotoByUrl);

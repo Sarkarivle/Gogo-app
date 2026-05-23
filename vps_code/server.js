@@ -199,18 +199,46 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('typing', (data) => {
-        const roomId = [data.myPhone, data.otherPhone].sort().join('_');
-        socket.to(roomId).emit('display_typing', { phone: data.myPhone });
+    socket.on('typing', async (data) => {
+        try {
+            const blockRecord = await Block.findOne({
+                $or: [
+                    { blockerPhone: data.myPhone, blockedPhone: data.otherPhone },
+                    { blockerPhone: data.otherPhone, blockedPhone: data.myPhone }
+                ]
+            });
+            if (blockRecord) return;
+
+            const roomId = [data.myPhone, data.otherPhone].sort().join('_');
+            socket.to(roomId).emit('display_typing', { phone: data.myPhone });
+        } catch (e) {}
     });
 
-    socket.on('stop_typing', (data) => {
-        const roomId = [data.myPhone, data.otherPhone].sort().join('_');
-        socket.to(roomId).emit('hide_typing', { phone: data.myPhone });
+    socket.on('stop_typing', async (data) => {
+        try {
+            const blockRecord = await Block.findOne({
+                $or: [
+                    { blockerPhone: data.myPhone, blockedPhone: data.otherPhone },
+                    { blockerPhone: data.otherPhone, blockedPhone: data.myPhone }
+                ]
+            });
+            if (blockRecord) return;
+
+            const roomId = [data.myPhone, data.otherPhone].sort().join('_');
+            socket.to(roomId).emit('hide_typing', { phone: data.myPhone });
+        } catch (e) {}
     });
 
     socket.on('mark_opened', async (data) => {
         try {
+            const blockRecord = await Block.findOne({
+                $or: [
+                    { blockerPhone: data.myPhone, blockedPhone: data.otherPhone },
+                    { blockerPhone: data.otherPhone, blockedPhone: data.myPhone }
+                ]
+            });
+            if (blockRecord) return;
+
             const message = await Message.findById(data.messageId);
             if (!message) return;
 
@@ -260,6 +288,14 @@ io.on('connection', (socket) => {
 
     socket.on('mark_chat_seen', async (data) => {
         try {
+            const blockRecord = await Block.findOne({
+                $or: [
+                    { blockerPhone: data.myPhone, blockedPhone: data.otherPhone },
+                    { blockerPhone: data.otherPhone, blockedPhone: data.myPhone }
+                ]
+            });
+            if (blockRecord) return;
+
             const roomId = [data.myPhone, data.otherPhone].sort().join('_');
             // Do not auto-open view-once messages when just viewing the chat
             await Message.updateMany(
@@ -300,6 +336,7 @@ io.on('connection', (socket) => {
 
             // Explicitly sync personal rooms as well for inbox awareness
             io.to(`user_${blockerPhone}`).to(`user_${blockedPhone}`).emit('moderation_state_updated', syncData);
+            io.to(`user_${blockerPhone}`).to(`user_${blockedPhone}`).emit('receive_message', systemMsg);
 
             io.to(roomId).emit('receive_message', systemMsg);
         } catch (e) {
@@ -332,6 +369,7 @@ io.on('connection', (socket) => {
 
             io.to(roomId).emit('moderation_state_updated', syncData);
             io.to(`user_${blockerPhone}`).to(`user_${blockedPhone}`).emit('moderation_state_updated', syncData);
+            io.to(`user_${blockerPhone}`).to(`user_${blockedPhone}`).emit('receive_message', systemMsg);
 
             io.to(roomId).emit('receive_message', systemMsg);
         } catch (e) {
