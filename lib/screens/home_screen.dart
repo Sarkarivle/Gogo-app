@@ -140,19 +140,41 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _updateLocationAndProfiles() async {
-    if (currentUser != null) {
-      await _userRepository.updateLocation(currentUser!['phone']);
-      // After location update, refresh current user and profiles
-      currentUser = await _userRepository.getCurrentUser();
-      if (mounted) setState(() {});
+    if (currentUser != null && mounted) {
+      try {
+        await _userRepository.updateLocation(currentUser!['phone']);
+        // After location update, refresh current user and profiles
+        final updatedUser = await _userRepository.getCurrentUser();
+        if (mounted && updatedUser != null) {
+          setState(() {
+            currentUser = updatedUser;
+          });
+        }
+      } catch (e) {
+        debugPrint("Location update error: $e");
+      }
     }
     
     try {
-      _lastKnownPosition = await Geolocator.getLastKnownPosition() ?? 
-                           await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
-    } catch (_) {}
+      Position? position;
+      // Use a timeout for location to prevent infinite waiting
+      position = await Geolocator.getLastKnownPosition().timeout(const Duration(seconds: 2), onTimeout: () => null);
+      if (position == null) {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 5),
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _lastKnownPosition = position;
+        });
+      }
+    } catch (e) {
+      debugPrint("Geolocation fetch error: $e");
+    }
     
-    _fetchProfiles();
+    if (mounted) _fetchProfiles();
   }
 
   void _listenToSocketEvents() {
@@ -166,11 +188,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _fetchUnreadCount() async {
-    if (currentUser == null) return;
+    if (currentUser == null || !mounted) return;
     
     // Simple debounce to prevent multiple rapid API calls
     if (_unreadDebounce?.isActive ?? false) return;
     _unreadDebounce = Timer(const Duration(seconds: 2), () async {
+      if (!mounted) return;
       try {
         final data = await _chatRepository.getInbox(currentUser!['phone'], limit: 1);
         if (mounted) {
@@ -229,16 +252,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           // Calculate distance for all profiles if position is known
           if (_lastKnownPosition != null) {
             for (var p in processedProfiles) {
-              if (p['lat'] != null && p['lng'] != null) {
-                double d = Geolocator.distanceBetween(
-                  _lastKnownPosition!.latitude, 
-                  _lastKnownPosition!.longitude, 
-                  p['lat'], 
-                  p['lng']
-                ) / 1000;
-                p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
-              } else {
-                p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
+              try {
+                if (p['lat'] != null && p['lng'] != null) {
+                  double lat = double.tryParse(p['lat'].toString()) ?? 0.0;
+                  double lng = double.tryParse(p['lng'].toString()) ?? 0.0;
+                  
+                  if (lat != 0.0 && lng != 0.0) {
+                    double d = Geolocator.distanceBetween(
+                      _lastKnownPosition!.latitude, 
+                      _lastKnownPosition!.longitude, 
+                      lat, 
+                      lng
+                    ) / 1000;
+                    p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
+                  } else {
+                    p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
+                  }
+                } else {
+                  p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
+                }
+              } catch (e) {
+                p['calculated_dist'] = "Any";
               }
             }
           }

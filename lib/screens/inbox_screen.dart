@@ -110,7 +110,7 @@ class InboxScreenState extends State<InboxScreen> {
   }
 
   Future<void> _fetchInbox({bool loadMore = false}) async {
-    if (_currentUser == null) return;
+    if (_currentUser == null || !mounted) return;
     
     if (loadMore) {
       if (_isLoadingMore) return;
@@ -127,18 +127,31 @@ class InboxScreenState extends State<InboxScreen> {
         limit: 20
       );
       
+      if (!mounted) return;
+      
       List<dynamic> fetchedChats = data['chats'] ?? [];
 
       if (_myPos != null) {
         for (var chat in fetchedChats) {
-          if (chat['lat'] != null && chat['lng'] != null) {
-            double dist = Geolocator.distanceBetween(
-                _myPos!.latitude, _myPos!.longitude, 
-                chat['lat'], chat['lng']) / 1000;
-            chat['calculated_dist'] = dist;
-            chat['dist_str'] = "${dist.toStringAsFixed(2)} km";
-          } else {
-            chat['dist_str'] = "Unknown";
+          try {
+            if (chat['lat'] != null && chat['lng'] != null) {
+              double lat = double.tryParse(chat['lat'].toString()) ?? 0.0;
+              double lng = double.tryParse(chat['lng'].toString()) ?? 0.0;
+              
+              if (lat != 0.0 && lng != 0.0) {
+                double dist = Geolocator.distanceBetween(
+                    _myPos!.latitude, _myPos!.longitude, 
+                    lat, lng) / 1000;
+                chat['calculated_dist'] = dist;
+                chat['dist_str'] = "${dist.toStringAsFixed(1)} km";
+              } else {
+                chat['dist_str'] = "Unknown";
+              }
+            } else {
+              chat['dist_str'] = "Unknown";
+            }
+          } catch (e) {
+            chat['dist_str'] = "Any";
           }
         }
       }

@@ -63,26 +63,30 @@ class ProfileRepository {
       final response = await http.get(uri).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          final List<dynamic> users = data['users'] ?? [];
-          
-          // Secure profile images
-          for (var u in users) {
-            if (u['profileImages'] != null) {
-              u['profileImages'] = (u['profileImages'] as List)
-                .map((img) => ApiService.getSecureUrl(img))
-                .toList();
+        try {
+          final data = jsonDecode(response.body);
+          if (data['success'] == true) {
+            final List<dynamic> users = data['users'] ?? [];
+            
+            // Secure profile images with defensive parsing
+            for (var u in users) {
+              if (u is Map && u['profileImages'] != null && u['profileImages'] is List) {
+                u['profileImages'] = (u['profileImages'] as List)
+                  .map((img) => ApiService.getSecureUrl(img.toString()))
+                  .toList();
+              }
             }
+            
+            if (page == 1) {
+              // Update cache for the first page
+              _cache[tab] = List.from(users);
+              _lastFetchTime[tab] = now;
+            }
+            
+            return users;
           }
-          
-          if (page == 1) {
-            // Update cache for the first page
-            _cache[tab] = List.from(users);
-            _lastFetchTime[tab] = now;
-          }
-          
-          return users;
+        } catch (parseErr) {
+          print('Discovery JSON Parse Error: $parseErr');
         }
       }
       return [];

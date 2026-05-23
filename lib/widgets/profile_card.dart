@@ -36,10 +36,13 @@ class ProfileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Determine the best location name to show before distance
     String locName = "";
-    if (area != null && area.isNotEmpty && area != "Unknown") {
-      locName = area;
-    } else if (city != null && city.isNotEmpty && city != "Unknown") {
-      locName = city;
+    final String safeArea = area.toString();
+    final String safeCity = city.toString();
+
+    if (safeArea.isNotEmpty && safeArea != "Unknown" && safeArea != "null") {
+      locName = safeArea;
+    } else if (safeCity.isNotEmpty && safeCity != "Unknown" && safeCity != "null") {
+      locName = safeCity;
     }
 
     String locationDisplay = locName.isNotEmpty ? "$locName, $distance" : distance;
