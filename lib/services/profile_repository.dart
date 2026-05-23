@@ -3,15 +3,24 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class ProfileRepository {
+  // Production-grade cache: tab -> List of profiles
   static final Map<String, List<dynamic>> _cache = {};
-  static final Map<String, int> _cachePage = {};
+  
+  // Track last fetch timestamp to avoid duplicate simultaneous requests
+  static final Map<String, int> _lastFetchTime = {};
+  
+  // Cache TTL: 5 minutes for feed profiles
+  static const int _cacheTTL = 5 * 60 * 1000;
 
-  static List<dynamic>? getCachedProfiles(String tab) => _cache[tab];
+  static List<dynamic>? getCachedProfiles(String tab) {
+    // Basic cache retrieval
+    return _cache[tab];
+  }
 
   static Future<List<dynamic>> getDiscoverProfiles({
     required String myPhone,
     int page = 1,
-    int limit = 20,
+    int limit = 10,
     String tab = 'Nearby',
     String? distance,
     String? age,
@@ -22,6 +31,19 @@ class ProfileRepository {
     double? lng,
   }) async {
     try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      
+      // If requesting first page, check if we have a fresh cache
+      if (page == 1 && _cache.containsKey(tab)) {
+        final lastFetch = _lastFetchTime[tab] ?? 0;
+        if (now - lastFetch < _cacheTTL && _cache[tab]!.isNotEmpty) {
+          // Return cached data for page 1 if it's fresh enough
+          // We still might want to trigger a background refresh in some architectures,
+          // but for simple caching, this is effective.
+          return _cache[tab]!;
+        }
+      }
+
       final queryParams = {
         'phone': myPhone,
         'page': page.toString(),
@@ -37,29 +59,33 @@ class ProfileRepository {
       };
 
       final uri = Uri.parse('${ApiService.baseUrl}/api/user/discover').replace(queryParameters: queryParams);
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           final List<dynamic> users = data['users'] ?? [];
           
-          // Only cache page 1 for quick next-time render
-          if (page == 1 && users.isNotEmpty) {
-            _cache[tab] = users;
+          if (page == 1) {
+            // Update cache for the first page
+            _cache[tab] = List.from(users);
+            _lastFetchTime[tab] = now;
           }
+          
           return users;
         }
       }
       return [];
     } catch (e) {
-      print('Error in getDiscoverProfiles: $e');
+      print('Professional ProfileRepository Error: $e');
       return [];
     }
   }
 
   static void clearCache() {
     _cache.clear();
-    _cachePage.clear();
+    _lastFetchTime.clear();
   }
 }
+

@@ -170,7 +170,12 @@ exports.markSeen = async (req, res) => {
 exports.handleFileUpload = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: "Upload failed" });
-        const fileUrl = `http://72.61.170.181:5000/uploads/${req.file.filename}`;
+
+        // Dynamically build URL based on the request host (works for local and VPS)
+        const protocol = req.protocol;
+        const host = req.get('host');
+        const fileUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+
         const phone = req.body.phone;
         if (phone) {
             const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });

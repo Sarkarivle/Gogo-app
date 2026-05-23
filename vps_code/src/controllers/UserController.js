@@ -37,19 +37,30 @@ exports.getProfile = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
+    const { phone } = req.body;
+    console.log(`[LOGIN_INVOKED] Phone: ${phone}`);
     try {
-        const user = await User.findOne({ phone: req.body.phone });
+        console.log(`[DB_LOOKUP] Searching for user: ${phone}`);
+        const user = await User.findOne({ phone });
+
         if (user) {
-            if (user.isBanned) return res.status(403).json({ success: false, message: "Account banned: " + user.banReason });
+            console.log(`[DB_FOUND] User ID: ${user._id}`);
+            if (user.isBanned) {
+                console.warn(`[AUTH_BLOCKED] User ${phone} is banned. Reason: ${user.banReason}`);
+                return res.status(403).json({ success: false, message: "Account banned: " + user.banReason });
+            }
             user.lastSeen = new Date();
             user.isOnline = true;
             await user.save();
+            console.log(`[AUTH_SUCCESS] User ${phone} logged in.`);
             res.json({ success: true, user });
         } else {
+            console.log(`[DB_MISS] User ${phone} not found.`);
             res.json({ success: false });
         }
     } catch (e) {
-        res.status(500).json({ success: false });
+        console.error(`[LOGIN_FATAL] Error for ${phone}:`, e);
+        res.status(500).json({ success: false, error: "Internal Server Error" });
     }
 };
 
@@ -71,11 +82,22 @@ exports.reportUser = async (req, res) => {
 };
 
 exports.register = async (req, res) => {
+    const { phone } = req.body;
+    console.log(`[REGISTER_INVOKED] Data:`, JSON.stringify(req.body));
     try {
+        // Double check existence
+        const existing = await User.findOne({ phone });
+        if (existing) {
+            console.log(`[REGISTER_CONFLICT] User ${phone} already exists. Returning profile.`);
+            return res.json({ success: true, user: existing });
+        }
+
         const newUser = new User(req.body);
         const savedUser = await newUser.save();
+        console.log(`[REGISTER_SUCCESS] Created user ${phone} with ID: ${savedUser._id}`);
         res.json({ success: true, user: savedUser });
     } catch (e) {
+        console.error(`[REGISTER_FATAL] Error for ${phone}:`, e);
         res.status(500).json({ success: false, message: e.message });
     }
 };
@@ -150,7 +172,7 @@ exports.getDiscover = async (req, res) => {
         const {
             phone,
             page = 1,
-            limit = 20,
+            limit = 10, // Requirement says load ONLY first 10
             tab = 'Nearby',
             distance,
             age,
@@ -161,84 +183,148 @@ exports.getDiscover = async (req, res) => {
             lng
         } = req.query;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
+        const skip = (pageNum - 1) * limitNum;
 
-        // Basic query: Don't show self and don't show explicitly banned users
-        const query = {
+        // Base query: exclude self and banned users
+        let baseQuery = {
             phone: { $ne: phone },
             isBanned: { $ne: true }
         };
 
-        // Filters - Only apply if they are not 'Any'
-        if (isOnlineOnly === 'true') query.isOnline = true;
-        if (havePlace && havePlace !== 'Any') query.havePlace = havePlace;
+        // Apply shared filters
+        if (isOnlineOnly === 'true' || tab === 'Online') {
+            baseQuery.isOnline = true;
+        }
+
+        if (havePlace && havePlace !== 'Any') {
+            baseQuery.havePlace = havePlace;
+        }
 
         if (position && position !== 'Any') {
-            // If "Top, Ver" is passed, we check for both.
-            // If any other specific position is passed, we check that.
-            // We also handle cases where position might be empty in DB.
             const searchTerms = position.split(',').map(p => p.trim()).filter(p => p.length > 0);
-            query.$or = searchTerms.map(term => ({ position: { $regex: term, $options: 'i' } }));
+            baseQuery.$or = searchTerms.map(term => ({ position: { $regex: term, $options: 'i' } }));
         }
 
         if (age && age !== 'Any') {
-            if (age === '18-25') query.age = { $gte: 18, $lte: 25 };
-            else if (age === '26-35') query.age = { $gte: 26, $lte: 35 };
-            else if (age === '36-45') query.age = { $gte: 36, $lte: 45 };
-            else if (age === '46+') query.age = { $gte: 46 };
+            if (age === '18-25') baseQuery.age = { $gte: 18, $lte: 25 };
+            else if (age === '26-35') baseQuery.age = { $gte: 26, $lte: 35 };
+            else if (age === '36-45') baseQuery.age = { $gte: 36, $lte: 45 };
+            else if (age === '46+') baseQuery.age = { $gte: 46 };
         }
 
         let sort = { lastSeen: -1 };
-        if (tab === 'Nearby') {
-            sort = { lastSeen: -1 };
-            // If distance filter is applied on Nearby tab using GeoJSON
-            if (lat && lng && distance && distance !== 'Any') {
-                const maxDistKm = parseInt(distance.replace('km', ''));
-                if (!isNaN(maxDistKm)) {
-                    query.location = {
-                        $near: {
-                            $geometry: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
-                            $maxDistance: maxDistKm * 1000 // meters
-                        }
-                    };
-                    // When using $near, sort is automatically by distance.
-                    // If we want both, we might need $geoNear in aggregation, but $near is usually enough.
-                    sort = {};
+        let finalQuery = { ...baseQuery };
+
+        // Handle tabs and geo-filtering
+        if (tab === 'Nearby' && lat && lng) {
+            const userLat = parseFloat(lat);
+            const userLng = parseFloat(lng);
+
+            // Determine search radiuses to try for smart expansion
+            let radii = [20, 100, 500];
+
+            if (distance && distance !== 'Any') {
+                const requestedDist = parseInt(distance.replace('km', ''));
+                if (!isNaN(requestedDist)) {
+                    // Include user requested distance, then expand if needed
+                    radii = [requestedDist, 20, 100, 500];
+                    // Sort and filter to ensure we always try larger or equal to requested
+                    radii = radii.filter(r => r >= requestedDist).sort((a, b) => a - b);
+                    // Remove duplicates
+                    radii = [...new Set(radii)];
                 }
             }
+
+            let users = [];
+            let currentRadiusUsed = 0;
+
+            // If it's page 1, we try expanding if empty to prevent "dead app" feeling
+            if (pageNum === 1) {
+                for (const radius of radii) {
+                    currentRadiusUsed = radius;
+                    const geoQuery = {
+                        ...baseQuery,
+                        location: {
+                            $near: {
+                                $geometry: { type: "Point", coordinates: [userLng, userLat] },
+                                $maxDistance: radius * 1000 // meters
+                            }
+                        }
+                    };
+
+                    users = await User.find(geoQuery)
+                        .limit(limitNum)
+                        .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                        .lean();
+
+                    if (users.length > 0) break;
+                }
+            } else {
+                // For subsequent pages, use the largest radius in our strategy
+                // to ensure we can paginate through the expanded set.
+                const searchRadius = radii[radii.length - 1];
+
+                const geoQuery = {
+                    ...baseQuery,
+                    location: {
+                        $near: {
+                            $geometry: { type: "Point", coordinates: [userLng, userLat] },
+                            $maxDistance: searchRadius * 1000
+                        }
+                    }
+                };
+
+                users = await User.find(geoQuery)
+                    .skip(skip)
+                    .limit(limitNum)
+                    .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                    .lean();
+            }
+
+
+            // Fallback: If still empty on page 1, show any active users regardless of distance
+            if (users.length === 0 && pageNum === 1) {
+                users = await User.find(baseQuery)
+                    .sort({ lastSeen: -1 })
+                    .limit(limitNum)
+                    .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                    .lean();
+            }
+
+            return res.json({
+                success: true,
+                page: pageNum,
+                users: users || [],
+                radiusUsed: pageNum === 1 ? currentRadiusUsed : null
+            });
+
         } else if (tab === 'New') {
             sort = { createdAt: -1 };
         } else if (tab === 'Popular') {
             sort = { isPremium: -1, lastSeen: -1 };
         } else if (tab === 'Online') {
-            query.isOnline = true;
+            baseQuery.isOnline = true;
             sort = { lastSeen: -1 };
         }
 
-        const users = await User.find(query)
+        const users = await User.find(baseQuery)
             .sort(sort)
             .skip(skip)
-            .limit(parseInt(limit))
+            .limit(limitNum)
             .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
             .lean();
 
-        // Fallback: If no users found with strict filters on page 1, return active users
-        if (users.length === 0 && parseInt(page) === 1) {
-            const fallbackUsers = await User.find({ phone: { $ne: phone }, isBanned: { $ne: true } })
-                .sort({ lastSeen: -1 })
-                .limit(parseInt(limit))
-                .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
-                .lean();
-            return res.json({ success: true, page: 1, users: fallbackUsers || [] });
-        }
-
         res.json({
             success: true,
-            page: parseInt(page),
+            page: pageNum,
             users: users || []
         });
+
     } catch (e) {
         console.error("GET_DISCOVER_ERROR:", e);
-        res.status(500).json({ success: false, users: [] });
+        res.status(500).json({ success: false, users: [], error: e.message });
     }
 };
+

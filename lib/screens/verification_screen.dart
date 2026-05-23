@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class VerificationPage extends StatefulWidget {
   const VerificationPage({super.key});
@@ -34,7 +35,7 @@ class _VerificationPageState extends State<VerificationPage> {
       final user = jsonDecode(prefs.getString('user_data')!);
       
       // Upload image
-      var request = http.MultipartRequest('POST', Uri.parse('http://72.61.170.181:5000/api/chat/upload'));
+      var request = http.MultipartRequest('POST', Uri.parse('${ApiService.baseUrl}/api/chat/upload'));
       request.files.add(await http.MultipartFile.fromPath('image', _image!.path));
       var res = await request.send();
       
@@ -45,7 +46,7 @@ class _VerificationPageState extends State<VerificationPage> {
 
         // Submit verification request
         final response = await http.post(
-          Uri.parse('http://72.61.170.181:5000/api/user/verify-request'),
+          Uri.parse('${ApiService.baseUrl}/api/user/verify-request'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'phone': user['phone'],

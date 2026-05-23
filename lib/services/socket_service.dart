@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'api_service.dart';
 import 'premium_service.dart';
 
 class SocketService with WidgetsBindingObserver {
@@ -47,7 +48,7 @@ class SocketService with WidgetsBindingObserver {
 
   void _connectSocket() {
     _socket?.dispose();
-    _socket = IO.io('http://72.61.170.181:5000', <String, dynamic>{
+    _socket = IO.io(ApiService.baseUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
       'reconnection': true,

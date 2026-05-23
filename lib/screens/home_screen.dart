@@ -184,10 +184,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       if (_isLoadingMore || !_hasMore || _isRequestInProgress) return;
       setState(() => _isLoadingMore = true);
     } else {
-      // If a request is already in progress and it's not a "load more", 
-      // we update the timestamp to invalidate previous request's completion.
       _lastRequestTimestamp = requestTimestamp;
-      
       if (_profiles.isEmpty) {
         setState(() => _isLoadingProfiles = true);
       }
@@ -197,10 +194,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     try {
       final String tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
+      const int limit = 10; // Professional small batch size
       
       final newProfiles = await ProfileRepository.getDiscoverProfiles(
         myPhone: currentUser?['phone'] ?? '',
         page: loadMore ? _currentPage + 1 : 1,
+        limit: limit,
         tab: tabName,
         distance: tabName == 'Nearby' ? _selectedDistance : null,
         age: _selectedAge,
@@ -211,9 +210,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         lng: _lastKnownPosition?.longitude,
       );
 
-      // Check if this request is still relevant (not overridden by a newer filter change)
       if (!loadMore && requestTimestamp != _lastRequestTimestamp) {
-        debugPrint("Skipping outdated discovery response");
         return;
       }
 
@@ -224,10 +221,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           
           List<dynamic> processedProfiles = List.from(newProfiles);
           
+          // Calculate distance for all profiles if position is known
           if (_lastKnownPosition != null) {
             for (var p in processedProfiles) {
               if (p['lat'] != null && p['lng'] != null) {
-                double d = Geolocator.distanceBetween(_lastKnownPosition!.latitude, _lastKnownPosition!.longitude, p['lat'], p['lng']) / 1000;
+                double d = Geolocator.distanceBetween(
+                  _lastKnownPosition!.latitude, 
+                  _lastKnownPosition!.longitude, 
+                  p['lat'], 
+                  p['lng']
+                ) / 1000;
                 p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
               } else {
                 p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
@@ -239,16 +242,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             if (processedProfiles.isEmpty) {
               _hasMore = false;
             } else {
+              // Deduplicate
               final existingPhones = _profiles.map((p) => p['phone']).toSet();
               final filteredNew = processedProfiles.where((p) => !existingPhones.contains(p['phone'])).toList();
-              _profiles.addAll(filteredNew);
-              _currentPage++;
-              _hasMore = newProfiles.length >= 20;
+              
+              if (filteredNew.isEmpty && processedProfiles.isNotEmpty) {
+                // If all new profiles were already in list (shouldn't happen with proper pagination), 
+                // but we might want to still try next page or stop
+                _hasMore = false; 
+              } else {
+                _profiles.addAll(filteredNew);
+                _currentPage++;
+                _hasMore = newProfiles.length >= limit;
+              }
             }
           } else {
             _profiles = processedProfiles;
             _currentPage = 1;
-            _hasMore = newProfiles.length >= 20;
+            _hasMore = newProfiles.length >= limit;
           }
         });
       }
@@ -261,12 +272,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         });
       }
     } finally {
-      // Only reset the progress flag if this was the latest request
       if (requestTimestamp == _lastRequestTimestamp || loadMore) {
         _isRequestInProgress = false;
       }
     }
   }
+
 
   @override
   void dispose() { 

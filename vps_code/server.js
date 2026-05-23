@@ -30,6 +30,23 @@ app.set('socketio', io); // Set socket.io instance to app for global access
 
 app.use(cors());
 app.use(express.json());
+
+// --- DEEP PRODUCTION LOGGER ---
+app.use((req, res, next) => {
+    const start = Date.now();
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[${new Date().toISOString()}] [REQ_${requestId}] ${req.method} ${req.url}`);
+    if (Object.keys(req.body).length) {
+        console.log(`[REQ_${requestId}] Payload:`, JSON.stringify(req.body));
+    }
+
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`[REQ_${requestId}] Completed ${res.statusCode} in ${duration}ms`);
+    });
+    next();
+});
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -359,4 +376,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(5000, '0.0.0.0', () => console.log(`🚀 Realtime Server on 5000`));
+server.listen(80, '0.0.0.0', () => console.log(`🚀 Realtime Server on 80`));

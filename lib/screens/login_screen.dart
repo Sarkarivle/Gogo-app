@@ -233,7 +233,11 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
         else _showSnackBar('Registration failed. Please try later.');
       }
     } catch (e) {
-      _showSnackBar('Connection failed. Please check your internet.');
+      String errorMsg = e.toString();
+      if (errorMsg.contains('Exception: ')) {
+        errorMsg = errorMsg.split('Exception: ').last;
+      }
+      _showSnackBar(errorMsg);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

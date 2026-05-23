@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'api_service.dart';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -81,7 +82,7 @@ class NotificationService {
       if (userData != null) {
         final user = jsonDecode(userData);
         await http.post(
-          Uri.parse('http://72.61.170.181:5000/api/user/update-fcm'),
+          Uri.parse('${ApiService.baseUrl}/api/user/update-fcm'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'phone': user['phone'],
