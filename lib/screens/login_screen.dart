@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 import 'onboarding/location_permission_screen.dart';
+import '../services/user_repository.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,6 +52,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   @override
   void initState() {
     super.initState();
+    UserRepository().trackEvent('login_page_open');
     _listenForSms();
     // Show phone hint as soon as screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -207,7 +209,9 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
         smsCode: otp,
       );
       await _auth.signInWithCredential(credential);
-      _handleBackendLogin(_phoneController.text.trim());
+      final String phone = _phoneController.text.trim();
+      UserRepository().trackEvent('otp_verified', customId: phone);
+      _handleBackendLogin(phone);
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('Invalid OTP');

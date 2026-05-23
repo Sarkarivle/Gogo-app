@@ -4,6 +4,8 @@ const PhonePeProvider = require('./PhonePeProvider');
 const CashfreeProvider = require('./CashfreeProvider');
 const PaymentTransaction = require('../../models/PaymentTransaction');
 const User = require('../../models/User');
+const analyticsService = require('../analyticsService');
+const revenueService = require('../revenueService');
 
 class PaymentService {
     static async getProvider() {
@@ -118,6 +120,13 @@ class PaymentService {
                 { new: true }
             );
 
+            analyticsService.trackPremiumUpgrade(transaction.userPhone);
+            revenueService.trackPaymentEvent('payment_success', {
+                userPhone: phone,
+                amount: transaction.amount,
+                gateway: transaction.gateway
+            });
+
             return { success: true, user: updatedUser };
         }
 
@@ -189,6 +198,13 @@ class PaymentService {
                     }
                 }
             );
+
+            analyticsService.trackPremiumUpgrade(transaction.userPhone);
+            revenueService.trackPaymentEvent('payment_success', {
+                userPhone: transaction.userPhone,
+                amount: transaction.amount,
+                gateway: transaction.gateway
+            });
         }
 
         return { success: true };

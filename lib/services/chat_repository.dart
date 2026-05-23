@@ -165,7 +165,12 @@ class ChatRepository {
     try {
       final res = await ApiService.get('/api/chat/recent-photos/$phone');
       if (res.statusCode == 200) {
-        return jsonDecode(res.body)['photos'] ?? [];
+        final List<dynamic> photos = jsonDecode(res.body)['photos'] ?? [];
+        // Secure URLs
+        for (var p in photos) {
+          p['imageUrl'] = ApiService.getSecureUrl(p['imageUrl']);
+        }
+        return photos;
       }
       return [];
     } catch (e) {
@@ -176,9 +181,12 @@ class ChatRepository {
 
   Future<bool> deleteRecentPhoto(String phone, String imageUrl) async {
     try {
+      // Strip token before sending to delete API to match DB record
+      final String cleanUrl = imageUrl.split('?')[0];
+      
       final response = await ApiService.post('/api/chat/delete-recent-photo', {
         'phone': phone,
-        'imageUrl': imageUrl
+        'imageUrl': cleanUrl
       });
       return response.statusCode == 200;
     } catch (e) {

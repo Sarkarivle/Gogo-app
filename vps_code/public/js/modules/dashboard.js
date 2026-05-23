@@ -75,3 +75,33 @@ async function loadDashboard() {
         mainContent.innerHTML = `<div class="p-20 text-center text-red-500 font-bold uppercase tracking-widest">Failed to synchronize dashboard metrics</div>`;
     }
 }
+
+function updateDashboardRealtime(data) {
+    // Dynamically update "Live Now" card
+    const liveNowVal = document.querySelector('[data-card-id="live-now"] h2');
+    if (liveNowVal) {
+        const current = parseInt(liveNowVal.innerText.replace(/,/g, ''));
+        if (current !== data.onlineUsers) {
+            animateValue(liveNowVal, current, data.onlineUsers, 1000);
+        }
+    }
+
+    // Update total messages if available
+    if (data.totalMessages) {
+        const msgVal = document.querySelector('.pt-6.border-t .text-2xl');
+        if (msgVal) msgVal.innerText = data.totalMessages.toLocaleString();
+    }
+}
+
+function animateValue(obj, start, end, duration) {
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        obj.innerHTML = Math.floor(progress * (end - start) + start).toLocaleString();
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        }
+    };
+    window.requestAnimationFrame(step);
+}

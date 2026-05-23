@@ -14,6 +14,8 @@ const Block = require('./src/models/Block');
 
 // Services
 const notificationService = require('./src/services/notificationService');
+const analyticsService = require('./src/services/analyticsService');
+const revenueService = require('./src/services/revenueService');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +27,8 @@ const io = new Server(server, {
 });
 
 connectDB();
+analyticsService.init(io);
+revenueService.init(io);
 
 app.set('socketio', io); // Set socket.io instance to app for global access
 
@@ -47,7 +51,9 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Secure Media Proxy (Replacing public /uploads access)
+app.get('/api/media/:filename', require('./src/controllers/ChatController').serveSecureMedia);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Health Check / Home Route
@@ -71,6 +77,7 @@ const phoneToSockets = new Map(); // phone -> Set of socket.ids
 
 io.on('connection', (socket) => {
     console.log(`⚡ Connected: ${socket.id}`);
+    analyticsService.trackEvent('connection');
 
     socket.on('set_online', (phone) => {
         if (!phone) return;
@@ -149,6 +156,7 @@ io.on('connection', (socket) => {
             // --- STEP 1: INSTANT BROADCAST ---
             // Emit to the entire chat room AND receiver's personal room for inbox update
             io.to(roomId).to(`user_${data.receiverPhone}`).emit('receive_message', responseData);
+            analyticsService.trackMessage();
 
             // Immediate ACK to sender
             if (callback) callback({ success: true, messageId: tempId, localId: data.localId });
@@ -359,6 +367,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        analyticsService.trackEvent('disconnect');
         const phone = connectedUsers.get(socket.id);
         if (phone) {
             const sockets = phoneToSockets.get(phone);

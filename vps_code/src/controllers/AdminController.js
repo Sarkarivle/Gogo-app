@@ -7,6 +7,8 @@ const VerificationRequest = require('../models/VerificationRequest');
 const AdminLog = require('../models/AdminLog');
 const FeatureFlag = require('../models/FeatureFlag');
 const Config = require('../models/Config');
+const analyticsService = require('../services/analyticsService');
+const revenueService = require('../services/revenueService');
 
 // Get Dynamic Config (e.g., Razorpay keys)
 exports.getConfig = async (req, res) => {
@@ -30,24 +32,17 @@ exports.updateConfig = async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
+exports.getAdmins = async (req, res) => {
+    try {
+        const admins = await require('../models/Admin').find({}, 'username role');
+        res.json(admins);
+    } catch (e) { res.status(500).json([]); }
+};
+
 // 1. Dashboard Analytics
 exports.getStats = async (req, res) => {
     try {
-        const totalUsers = await User.countDocuments();
-        const premiumUsers = await User.countDocuments({ isPremium: true });
-        const onlineUsers = await User.countDocuments({ isOnline: true });
-        const reportsCount = await Report.countDocuments({ status: 'Pending' });
-
-        const dailyGrowth = [];
-        for(let i=6; i>=0; i--) {
-            const start = new Date(); start.setHours(0,0,0,0); start.setDate(start.getDate() - i);
-            const end = new Date(); end.setHours(23,59,59,999); end.setDate(end.getDate() - i);
-            const count = await User.countDocuments({ createdAt: { $gte: start, $lte: end } });
-            dailyGrowth.push({ date: start.toLocaleDateString('en-US', { weekday: 'short' }), count });
-        }
-
-        const maleCount = await User.countDocuments({ gender: 'Male' });
-        const femaleCount = await User.countDocuments({ gender: 'Female' });
+        const stats = await analyticsService.getDashboardStats();
 
         // Server Health Metrics
         const os = require('os');
@@ -61,14 +56,7 @@ exports.getStats = async (req, res) => {
         res.json({
             success: true,
             stats: {
-                totalUsers,
-                premiumUsers,
-                onlineUsers,
-                totalMessages: await Message.countDocuments(),
-                pendingReports: reportsCount,
-                systemStatus: 'ONLINE',
-                dailyGrowth,
-                genderRatio: { male: maleCount, female: femaleCount },
+                ...stats,
                 serverHealth
             }
         });
@@ -110,12 +98,16 @@ exports.getUserFullProfile = async (req, res) => {
         const blockedBy = await Block.find({ blockedPhone: phone }).sort({ timestamp: -1 });
         const subscription = await Subscription.findOne({ userPhone: phone });
 
+        // Fetch detailed payment history for this specific user
+        const payments = await revenueService.getPaymentHistory({ userPhone: phone }, 1, 50);
+
         res.json({
             success: true,
             user,
             reportsAgainst: reportsWithNames,
             blockedBy,
-            subscription: subscription || { status: 'None' }
+            subscription: subscription || { status: 'None' },
+            paymentHistory: payments.history || []
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -127,10 +119,65 @@ exports.updateUserStatus = async (req, res) => {
         const { phone } = req.params;
         const updateData = req.body;
         const user = await User.findOneAndUpdate({ phone }, updateData, { new: true });
+
+        // --- REALTIME SYNC TO APP ---
+        const io = req.app.get('socketio');
+        if (io) {
+            // Emit to the specific user's personal room
+            io.to(`user_${phone}`).emit('profile_sync_required', {
+                type: 'STATUS_UPDATE',
+                isPremium: user.isPremium,
+                isVerified: user.isVerified,
+                accountStatus: user.accountStatus,
+                isShadowBanned: user.isShadowBanned,
+                fullUser: user // Send full object for complete sync
+            });
+
+            // If account is suspended or banned, force logout or block UI
+            if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned') {
+                io.to(`user_${phone}`).emit('force_action', { action: 'LOGOUT', reason: 'Account suspended by moderator' });
+            }
+        }
+
         res.json({ success: true, user });
     } catch (error) {
         res.status(500).json({ success: false });
     }
+};
+
+exports.addAdminNote = async (req, res) => {
+    try {
+        const { phone } = req.params;
+        const { note, adminName } = req.body;
+        const user = await User.findOneAndUpdate(
+            { phone },
+            { $push: { adminNotes: { note, adminName, timestamp: new Date() } } },
+            { new: true }
+        );
+        res.json({ success: true, user });
+    } catch (e) { res.status(500).json({ success: false }); }
+};
+
+exports.sendDirectNotification = async (req, res) => {
+    try {
+        const { phone } = req.params;
+        const { title, message } = req.body;
+
+        // --- REALTIME SOCKET EMIT (Immediate Action) ---
+        const io = req.app.get('socketio');
+        if (io) {
+            io.to(`user_${phone}`).emit('admin_alert', { title, message });
+        }
+
+        // Fallback to FCM for background delivery
+        const user = await User.findOne({ phone }, 'fcmToken');
+        if (user && user.fcmToken) {
+            await notificationService.sendPushNotification(user.fcmToken, title, message, { type: 'admin_direct' });
+            await AdminLog.create({ action: 'Direct Notification', target: phone, details: `Title: ${title}, Msg: ${message}` });
+        }
+
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.clearUserChat = async (req, res) => {
@@ -236,26 +283,20 @@ exports.getChatHistory = async (req, res) => {
 // 6. Monitoring & Analytics
 exports.getMonitoringData = async (req, res) => {
     try {
-        const onlineUsers = await User.countDocuments({ isOnline: true });
+        const stats = await analyticsService.getDashboardStats();
         res.json({
-            activeSockets: onlineUsers,
-            onlineUsers,
-            reconnects24h: 154,
-            eventThroughput: '1.2k/min'
+            activeSockets: analyticsService.io ? analyticsService.io.engine.clientsCount : 0,
+            onlineUsers: stats.onlineUsers,
+            reconnects24h: analyticsService.metrics.reconnects24h,
+            eventThroughput: `${(analyticsService.metrics.eventThroughput / 60).toFixed(1)}/sec`
         });
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.getAnalytics = async (req, res) => {
     try {
-        const total = await User.countDocuments();
-        const activeToday = await User.countDocuments({ lastSeen: { $gte: new Date(new Date().setHours(0,0,0,0)) } });
-        res.json({
-            dau: activeToday,
-            mau: total * 0.4,
-            retention: '68%',
-            avgSession: '14.5m'
-        });
+        const stats = await analyticsService.getDashboardStats();
+        res.json(stats);
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
@@ -285,6 +326,113 @@ exports.toggleFeatureFlag = async (req, res) => {
 exports.broadcastNotification = async (req, res) => {
     try {
         await AdminLog.create({ action: 'Broadcast', details: req.body.message });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
+};
+
+// 8. Monetization
+exports.getMonetizationStats = async (req, res) => {
+    try {
+        const stats = await revenueService.getFinancialMetrics();
+        res.json({ success: true, stats });
+    } catch (e) { res.status(500).json({ success: false }); }
+};
+
+exports.getPaymentHistory = async (req, res) => {
+    try {
+        const { page = 1, limit = 20, search } = req.query;
+        let query = {};
+        if (search) {
+            query.$or = [
+                { userPhone: { $regex: search, $options: 'i' } },
+                { orderId: { $regex: search, $options: 'i' } }
+            ];
+        }
+        const history = await revenueService.getPaymentHistory(query, parseInt(page), parseInt(limit));
+        res.json({ success: true, ...history });
+    } catch (e) { res.status(500).json({ success: false }); }
+};
+
+// 9. Media Management & Moderation
+exports.getAllMedia = async (req, res) => {
+    try {
+        const { filter = 'all', reportedOnly = 'false' } = req.query;
+        const MASTER_SECRET = 'GOGO_SECURE_ACCESS_2024_PROD';
+
+        let reportedPhones = [];
+        if (reportedOnly === 'true') {
+            const reports = await Report.find({ status: 'Pending' }, 'reportedPhone');
+            reportedPhones = reports.map(r => r.reportedPhone);
+        }
+
+        const userQuery = {};
+        if (reportedOnly === 'true') userQuery.phone = { $in: reportedPhones };
+        if (filter === 'Chat') userQuery.phone = { $in: [] }; // Don't fetch users if chat only
+
+        const msgQuery = { type: 'image' };
+        if (reportedOnly === 'true') {
+            msgQuery.$or = [
+                { senderPhone: { $in: reportedPhones } },
+                { receiverPhone: { $in: reportedPhones } }
+            ];
+        }
+        if (filter === 'Profile') msgQuery.type = 'none'; // Don't fetch msgs if profile only
+
+        const [users, messages] = await Promise.all([
+            filter !== 'Chat' ? User.find({ ...userQuery, profileImages: { $exists: true, $not: { $size: 0 } } }, 'phone profileImages name') : [],
+            filter !== 'Profile' ? Message.find(msgQuery, 'senderPhone imageUrl timestamp').sort({ timestamp: -1 }).limit(100) : []
+        ]);
+
+        let allMedia = [];
+        users.forEach(u => {
+            u.profileImages.forEach(img => {
+                allMedia.push({
+                    url: `${img}?token=${MASTER_SECRET}`,
+                    owner: u.phone,
+                    ownerName: u.name,
+                    type: 'Profile',
+                    timestamp: u.updatedAt || new Date()
+                });
+            });
+        });
+
+        messages.forEach(m => {
+            if (m.imageUrl) {
+                allMedia.push({
+                    url: `${m.imageUrl}?token=${MASTER_SECRET}`,
+                    owner: m.senderPhone,
+                    type: 'Chat',
+                    timestamp: m.timestamp
+                });
+            }
+        });
+
+        allMedia.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        res.json({ success: true, media: allMedia });
+    } catch (e) { res.status(500).json({ success: false }); }
+};
+
+exports.deleteMedia = async (req, res) => {
+    try {
+        const { url, type, owner } = req.body;
+        const fs = require('fs');
+        const path = require('path');
+
+        // 1. Delete from File System
+        try {
+            const fileName = url.split('/').pop();
+            const filePath = path.join(__dirname, '../../uploads', fileName);
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (fErr) { console.error("File delete error:", fErr); }
+
+        // 2. Remove from Database
+        if (type === 'Profile') {
+            await User.findOneAndUpdate({ phone: owner }, { $pull: { profileImages: url } });
+        } else if (type === 'Chat') {
+            await Message.findOneAndUpdate({ imageUrl: url }, { $set: { message: "[Deleted by Admin]", imageUrl: null, type: 'text' } });
+        }
+
+        await AdminLog.create({ action: 'Delete Media', target: owner, details: `Deleted ${type} image: ${url}` });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };

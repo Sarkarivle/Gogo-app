@@ -3,6 +3,10 @@ const API = {
         const res = await fetch('/api/admin/stats');
         return await res.json();
     },
+    async getAdmins() {
+        const res = await fetch('/api/admin/admins');
+        return await res.json();
+    },
     async getUsers(search = '') {
         const res = await fetch(`/api/admin/users${search ? '?search=' + encodeURIComponent(search) : ''}`);
         return await res.json();
@@ -25,6 +29,22 @@ const API = {
     },
     async deleteAccount(phone) {
         const res = await fetch(`/api/admin/user/${phone}/delete-account`, { method: 'DELETE' });
+        return await res.json();
+    },
+    async addAdminUserNote(phone, data) {
+        const res = await fetch(`/api/admin/user/${phone}/note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    },
+    async sendDirectUserNotify(phone, data) {
+        const res = await fetch(`/api/admin/user/${phone}/notify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
         return await res.json();
     },
     async getReports() {
@@ -59,8 +79,50 @@ const API = {
         });
         return await res.json();
     },
-    async getSupportMessages() {
-        const res = await fetch('/api/admin/messages');
+    async getSupportMessages(filters = {}) {
+        const query = new URLSearchParams(filters).toString();
+        const res = await fetch(`/api/admin/messages?${query}`);
+        return await res.json();
+    },
+    async getTicketDetail(id) {
+        const res = await fetch(`/api/admin/message/${id}`);
+        return await res.json();
+    },
+    async updateTicket(id, data) {
+        const res = await fetch(`/api/admin/message/${id}/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    },
+    async assignTicket(id, data) {
+        const res = await fetch(`/api/admin/message/${id}/assign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    },
+    async addTicketNote(id, data) {
+        const res = await fetch(`/api/admin/message/${id}/note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    },
+    async getAuditLogs() {
+        const res = await fetch('/api/admin/audit-logs');
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data.logs || []);
+    },
+    async getMonetizationStats() {
+        const res = await fetch('/api/admin/monetization/stats');
+        return await res.json();
+    },
+    async getPaymentHistory(page = 1) {
+        const res = await fetch(`/api/admin/monetization/history?page=${page}`);
         return await res.json();
     },
     async broadcastNotification(message) {

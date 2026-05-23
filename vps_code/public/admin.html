@@ -18,6 +18,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .animate-fade { animation: fadeIn 0.3s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shrink { from { width: 100%; } to { width: 0%; } }
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
         select option { background: #12151f; color: white; }
@@ -72,9 +73,6 @@
             <div onclick="changeModule('notifications')" id="nav-notifications" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
                 <i class="fas fa-bullhorn mr-3 w-5 text-center"></i> Campaigns
             </div>
-            <div onclick="changeModule('flags')" id="nav-flags" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
-                <i class="fas fa-toggle-on mr-3 w-5 text-center"></i> Features
-            </div>
             <div onclick="changeModule('policies')" id="nav-policies" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
                 <i class="fas fa-file-contract mr-3 w-5 text-center"></i> Policies
             </div>
@@ -120,6 +118,9 @@
         <main class="flex-1 overflow-y-auto p-10 relative" id="mainContent"></main>
     </div>
 
+    <!-- TOAST CONTAINER -->
+    <div id="toastContainer" class="fixed bottom-10 right-10 z-[200] space-y-4"></div>
+
     <!-- ACTION MODAL -->
     <div id="actionModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] hidden items-center justify-center p-10">
         <div id="modalContent" class="glass w-full max-w-6xl max-h-full overflow-hidden rounded-[3rem] flex flex-col animate-fade">
@@ -141,9 +142,9 @@
     <script src="js/modules/settings.js"></script>
     <script src="js/modules/monitoring.js"></script>
     <script src="js/modules/analytics.js"></script>
-    <script src="js/modules/flags.js"></script>
     <script src="js/modules/audit.js"></script>
     <script src="js/modules/monetization.js"></script>
+    <script src="js/modules/media.js"></script>
     <script src="js/modules/trial_offer.js"></script>
     <script src="js/modules/placeholders.js"></script>
     <script src="js/app.js"></script>

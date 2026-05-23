@@ -16,6 +16,7 @@ import '../models/chat_message.dart';
 import '../services/socket_service.dart';
 import '../services/chat_repository.dart';
 import '../services/premium_service.dart';
+import '../services/api_service.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
 import '../widgets/chat_widgets.dart';
@@ -589,12 +590,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildBubbleContent(ChatMessage msg) {
-    if (msg.type == 'image' || msg.imageUrl != null) {
+    if (msg.type == 'image' || (msg.imageUrl != null && msg.imageUrl!.isNotEmpty)) {
       if (msg.isViewOnce) {
         return _buildViewOnceImage(msg);
       }
       return _buildImageContent(msg);
-    } else if (msg.type == 'audio') {
+    } else if (msg.type == 'audio' && msg.audioUrl != null && msg.audioUrl!.isNotEmpty) {
       return AudioPlayerWidget(url: msg.audioUrl!, isMe: msg.isMe);
     }
     return Text(msg.text ?? '', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontSize: 15, height: 1.3));
@@ -602,11 +603,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Widget _buildImageContent(ChatMessage msg) {
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(imageUrl: msg.imageUrl!))),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(imageUrl: ApiService.getSecureUrl(msg.imageUrl)))),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: CachedNetworkImage(
-          imageUrl: msg.imageUrl!,
+          imageUrl: ApiService.getSecureUrl(msg.imageUrl),
           width: 200,
           height: 200,
           fit: BoxFit.cover,
@@ -682,7 +683,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return GestureDetector(
       onTap: () async {
         await Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageViewer(
-          imageUrl: msg.imageUrl!,
+          imageUrl: ApiService.getSecureUrl(msg.imageUrl),
           isViewOnce: true,
         )));
         
@@ -706,7 +707,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                   child: CachedNetworkImage(
-                    imageUrl: msg.imageUrl!,
+                    imageUrl: ApiService.getSecureUrl(msg.imageUrl),
                     width: 150,
                     height: 150,
                     fit: BoxFit.cover,
@@ -1076,7 +1077,7 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
           onTap: () { if (!_isEditMode) { Navigator.pop(context); widget.onMediaSelected(File(''), 'image', url: p['imageUrl']); } },
           child: Container(
             width: 80, height: 100, margin: const EdgeInsets.only(right: 10),
-            child: ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: p['imageUrl'], fit: BoxFit.cover)),
+            child: ClipRRect(borderRadius: BorderRadius.circular(12), child: CachedNetworkImage(imageUrl: ApiService.getSecureUrl(p['imageUrl']), fit: BoxFit.cover)),
           ),
         ),
         if (_isEditMode) Positioned(
@@ -1305,7 +1306,7 @@ class FullScreenImageViewer extends StatelessWidget {
       body: Center(
         child: InteractiveViewer(
           child: CachedNetworkImage(
-            imageUrl: imageUrl, 
+            imageUrl: ApiService.getSecureUrl(imageUrl),
             placeholder: (_, __) => const CircularProgressIndicator(color: Colors.orangeAccent)
           )
         )
@@ -1331,7 +1332,7 @@ class MediaPreviewPage extends StatelessWidget {
                 child: file != null 
                   ? Image.file(file!) 
                   : CachedNetworkImage(
-                      imageUrl: imageUrl!, 
+                      imageUrl: ApiService.getSecureUrl(imageUrl),
                       placeholder: (_, __) => const CircularProgressIndicator(color: Colors.orangeAccent)
                     )
               )

@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Report = require('../models/Report');
 const VerificationRequest = require('../models/VerificationRequest');
+const analyticsService = require('../services/analyticsService');
 
 exports.submitVerification = async (req, res) => {
     try {
@@ -37,7 +38,7 @@ exports.getProfile = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-    const { phone } = req.body;
+    const { phone, deviceId, deviceModel, os, ip } = req.body;
     console.log(`[LOGIN_INVOKED] Phone: ${phone}`);
     try {
         console.log(`[DB_LOOKUP] Searching for user: ${phone}`);
@@ -45,12 +46,28 @@ exports.login = async (req, res) => {
 
         if (user) {
             console.log(`[DB_FOUND] User ID: ${user._id}`);
-            if (user.isBanned) {
-                console.warn(`[AUTH_BLOCKED] User ${phone} is banned. Reason: ${user.banReason}`);
-                return res.status(403).json({ success: false, message: "Account banned: " + user.banReason });
+            if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned' || user.isBanned) {
+                console.warn(`[AUTH_BLOCKED] User ${phone} is blocked.`);
+                return res.status(403).json({ success: false, message: "Account blocked by moderator" });
             }
+
+            // Update Security Tracking
             user.lastSeen = new Date();
             user.isOnline = true;
+            if (deviceId) user.deviceId = deviceId;
+            if (ip) user.ipAddress = ip;
+
+            // Add to device history
+            if (deviceId) {
+                const deviceExists = user.deviceHistory.find(d => d.deviceId === deviceId);
+                if (deviceExists) {
+                    deviceExists.lastUsed = new Date();
+                    deviceExists.ip = ip || deviceExists.ip;
+                } else {
+                    user.deviceHistory.push({ deviceId, model: deviceModel, os, ip, lastUsed: new Date() });
+                }
+            }
+
             await user.save();
             console.log(`[AUTH_SUCCESS] User ${phone} logged in.`);
             res.json({ success: true, user });
@@ -144,6 +161,10 @@ exports.updateProfile = async (req, res) => {
 
         if (!updatedUser) {
             return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        if (updateData.hasCompletedOnboarding === true) {
+            analyticsService.trackEvent('onboarding_completed', phone);
         }
 
         res.json({ success: true, user: updatedUser });
@@ -325,6 +346,18 @@ exports.getDiscover = async (req, res) => {
     } catch (e) {
         console.error("GET_DISCOVER_ERROR:", e);
         res.status(500).json({ success: false, users: [], error: e.message });
+    }
+};
+
+exports.trackEvent = async (req, res) => {
+    try {
+        const { eventType, distinctId, metadata } = req.body;
+        if (eventType) {
+            analyticsService.trackEvent(eventType, distinctId, metadata);
+        }
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false });
     }
 };
 

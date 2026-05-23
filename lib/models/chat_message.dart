@@ -1,3 +1,5 @@
+import '../services/api_service.dart';
+
 enum MessageStatus { sending, sent, delivered, seen, error }
 
 class ChatMessage {
@@ -47,8 +49,8 @@ class ChatMessage {
     return ChatMessage(
       id: json['_id'],
       text: json['message'],
-      imageUrl: json['imageUrl'],
-      audioUrl: json['audioUrl'],
+      imageUrl: json['imageUrl'] != null ? ApiService.getSecureUrl(json['imageUrl']) : null,
+      audioUrl: json['audioUrl'] != null ? ApiService.getSecureUrl(json['audioUrl']) : null,
       type: json['type'] ?? 'text',
       isViewOnce: json['isViewOnce'] ?? false,
       isOpened: json['isOpened'] ?? false,

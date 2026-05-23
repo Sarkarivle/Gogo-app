@@ -14,6 +14,7 @@ router.post('/report', UserController.reportUser);
 router.post('/update-fcm', UserController.updateFcmToken);
 router.post('/verify-request', UserController.submitVerification);
 router.get('/discover', UserController.getDiscover);
+router.post('/track-event', UserController.trackEvent);
 
 // Contact & Policies
 router.post('/contact-us', ContactController.submitMessage);

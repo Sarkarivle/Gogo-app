@@ -49,39 +49,69 @@ async function loadMonitoring() {
             </div>
         `;
 
-        // Start mock stream
-        startEventStream();
+        // Start real event stream handler
+        window.activeEventStream = true;
     } catch (err) {
         mainContent.innerHTML = `<p class="p-20 text-center text-red-500 uppercase font-black">Error synchronizing telemetry data</p>`;
     }
 }
 
-function renderHealthBar(label, value, unit, color) {
-    return `
-        <div>
-            <div class="flex justify-between text-[10px] font-black mb-2">
-                <span class="text-slate-500 uppercase">${label}</span>
-                <span class="text-white">${value}${unit}</span>
-            </div>
-            <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                <div class="h-full ${color} transition-all duration-1000" style="width: ${value}%"></div>
-            </div>
-        </div>
-    `;
+function updateMonitoringRealtime(data) {
+    // Update top cards
+    updateCardValue('active-sockets', data.activeSockets);
+    updateCardValue('online-users', data.onlineUsers);
+    updateCardValue('reconnects-(24h)', data.reconnects24h);
+    updateCardValue('throughput', data.eventThroughput);
+
+    // Update Health Bars
+    const cpuVal = data.serverHealth.cpuUsage;
+    const ramPercent = (((data.serverHealth.totalMem - data.serverHealth.freeMem) / data.serverHealth.totalMem) * 100).toFixed(1);
+
+    updateHealthBar('CPU LOAD', cpuVal);
+    updateHealthBar('RAM USAGE', ramPercent);
+
+    // Update Uptime and Memory Free
+    const uptimeEl = document.querySelector('p:contains("Uptime") + p'); // This might need a better selector
+    // Actually let's just find by text content for now or add IDs if possible
+    // To keep it simple and safe:
+    document.querySelectorAll('.glass .grid p').forEach(p => {
+        if (p.innerText === 'UPTIME') p.nextElementSibling.innerText = `${data.serverHealth.uptime} Hours`;
+        if (p.innerText === 'MEMORY FREE') p.nextElementSibling.innerText = `${data.serverHealth.freeMem} GB`;
+    });
+}
+
+function updateCardValue(id, val) {
+    const el = document.querySelector(`[data-card-id="${id}"] h2`);
+    if (el) el.innerText = val.toLocaleString();
+}
+
+function updateHealthBar(label, value) {
+    const bars = document.querySelectorAll('.glass h3 + div > div');
+    bars.forEach(bar => {
+        const labelEl = bar.querySelector('span');
+        if (labelEl && labelEl.innerText === label) {
+            bar.querySelector('span.text-white').innerText = `${value}%`;
+            bar.querySelector('.transition-all').style.width = `${value}%`;
+        }
+    });
 }
 
 function startEventStream() {
+    // We'll hook into the real socket events instead of a mock interval
+    socket.on('receive_message', (msg) => appendStreamEvent('MSG_SENT', msg.senderPhone));
+    socket.on('user_status_change', (data) => appendStreamEvent(data.isOnline ? 'AUTH_SUCCESS' : 'DISCONNECT', data.phone));
+}
+
+function appendStreamEvent(type, phone) {
     const stream = document.getElementById('eventStream');
     if (!stream) return;
-    const events = ['AUTH_SUCCESS', 'JOIN_ROOM', 'MSG_SENT', 'TYPING', 'DISCONNECT', 'HEARTBEAT'];
-    const interval = setInterval(() => {
-        if (!document.getElementById('eventStream')) { clearInterval(interval); return; }
-        const div = document.createElement('div');
-        div.className = 'text-slate-400 animate-fade';
-        div.innerHTML = `<span class="text-[8px] opacity-30">${new Date().toLocaleTimeString()}</span> <span class="text-orange-500">[${events[Math.floor(Math.random() * events.length)]}]</span> Processed event for +91******${Math.floor(Math.random() * 9000 + 1000)}`;
-        stream.prepend(div);
-        if (stream.children.length > 50) stream.lastChild.remove();
-    }, 2000);
+
+    const div = document.createElement('div');
+    div.className = 'text-slate-400 animate-fade';
+    const obscuredPhone = phone ? phone.replace(/(\d{3})\d{4}(\d{3})/, '$1****$2') : 'Internal';
+    div.innerHTML = `<span class="text-[8px] opacity-30">${new Date().toLocaleTimeString()}</span> <span class="text-orange-500">[${type}]</span> Processed event for ${obscuredPhone}`;
+    stream.prepend(div);
+    if (stream.children.length > 50) stream.lastChild.remove();
 }
 
 async function loadServerHealth() {

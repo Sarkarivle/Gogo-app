@@ -171,10 +171,10 @@ exports.handleFileUpload = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: "Upload failed" });
 
-        // Dynamically build URL based on the request host (works for local and VPS)
+        // Dynamically build URL using the secure route /api/media/
         const protocol = req.protocol;
         const host = req.get('host');
-        const fileUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+        const fileUrl = `${protocol}://${host}/api/media/${req.file.filename}`;
 
         const phone = req.body.phone;
         if (phone) {
@@ -184,6 +184,30 @@ exports.handleFileUpload = async (req, res) => {
         res.json({ success: true, imageUrl: fileUrl });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+exports.serveSecureMedia = async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const filePath = path.join(__dirname, '../../uploads', filename);
+
+        // Professional Security Check
+        const appSecret = req.headers['x-gogo-secret'];
+        const urlToken = req.query.token;
+        const MASTER_SECRET = 'GOGO_SECURE_ACCESS_2024_PROD';
+
+        if (appSecret !== MASTER_SECRET && urlToken !== MASTER_SECRET) {
+            return res.status(403).send("Unauthorized Access: This asset belongs to GoGo Private Infrastructure.");
+        }
+
+        if (fs.existsSync(filePath)) {
+            res.sendFile(filePath);
+        } else {
+            res.status(404).send("Media not found");
+        }
+    } catch (e) {
+        res.status(500).send("Server error");
     }
 };
 
@@ -217,8 +241,16 @@ exports.deletePhoto = async (req, res) => {
 
 exports.deleteRecentPhotoByUrl = async (req, res) => {
     try {
-        const { phone, imageUrl } = req.body;
-        const photo = await RecentPhoto.findOne({ phone, imageUrl });
+        let { phone, imageUrl } = req.body;
+
+        // Clean URL: Strip token if present
+        const cleanUrl = imageUrl.split('?')[0];
+
+        // Find by either the tokenized version (unlikely in DB) or cleaned version
+        const photo = await RecentPhoto.findOne({
+            phone,
+            $or: [{ imageUrl: cleanUrl }, { imageUrl: imageUrl }]
+        });
 
         if (!photo) {
             return res.status(404).json({ success: false, message: "Photo not found in database" });
@@ -229,7 +261,8 @@ exports.deleteRecentPhotoByUrl = async (req, res) => {
 
         // 2. Delete from Server Storage
         try {
-            const fileName = imageUrl.split('/').pop();
+            // Ensure we extract only the actual filename without any query params
+            const fileName = cleanUrl.split('/').pop();
             const filePath = path.join(process.cwd(), 'uploads', fileName);
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);

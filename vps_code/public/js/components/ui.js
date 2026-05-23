@@ -8,8 +8,9 @@ const UI = {
     },
 
     card(title, value, subtext = '', colorClass = 'text-white') {
+        const id = title.toLowerCase().replace(/\s+/g, '-');
         return `
-            <div class="glass p-8 rounded-[2rem]">
+            <div class="glass p-8 rounded-[2rem]" data-card-id="${id}">
                 <p class="text-[10px] font-black text-slate-500 uppercase mb-2">${title}</p>
                 <h2 class="text-4xl font-black ${colorClass}">${value}</h2>
                 ${subtext ? `<p class="text-[10px] text-slate-500 mt-2">${subtext}</p>` : ''}

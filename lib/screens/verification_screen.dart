@@ -34,25 +34,19 @@ class _VerificationPageState extends State<VerificationPage> {
       final prefs = await SharedPreferences.getInstance();
       final user = jsonDecode(prefs.getString('user_data')!);
       
-      // Upload image
-      var request = http.MultipartRequest('POST', Uri.parse('${ApiService.baseUrl}/api/chat/upload'));
-      request.files.add(await http.MultipartFile.fromPath('image', _image!.path));
-      var res = await request.send();
+      // Upload image using protected ApiService
+      var res = await ApiService.multipart('/api/chat/upload', _image!.path, 'image', {});
       
       if (res.statusCode == 200) {
         var resBody = await http.Response.fromStream(res);
         var data = jsonDecode(resBody.body);
-        String selfieUrl = data['imageUrl'];
+        String selfieUrl = ApiService.getSecureUrl(data['imageUrl']);
 
-        // Submit verification request
-        final response = await http.post(
-          Uri.parse('${ApiService.baseUrl}/api/user/verify-request'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'phone': user['phone'],
-            'selfieUrl': selfieUrl
-          })
-        );
+        // Submit verification request using protected ApiService
+        final response = await ApiService.post('/api/user/verify-request', {
+          'phone': user['phone'],
+          'selfieUrl': selfieUrl
+        });
 
         if (response.statusCode == 200) {
           if (mounted) {

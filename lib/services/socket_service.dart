@@ -115,6 +115,24 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('chat_status_update', (data) => _eventController.add({'event': 'chat_status_update', 'data': data}));
     _socket!.on('unread_update', (data) => _eventController.add({'event': 'unread_update', 'data': data}));
 
+    // --- REALTIME ADMIN ACTIONS ---
+    _socket!.on('profile_sync_required', (data) {
+      debugPrint('🔄 Admin forced profile sync: $data');
+      _eventController.add({'event': 'profile_sync_required', 'data': data});
+    });
+
+    _socket!.on('force_action', (data) {
+      debugPrint('🚫 Admin forced action: $data');
+      if (data['action'] == 'LOGOUT') {
+        _eventController.add({'event': 'force_logout', 'data': data});
+      }
+    });
+
+    _socket!.on('admin_alert', (data) {
+      debugPrint('⚠️ Admin direct alert: $data');
+      _eventController.add({'event': 'admin_alert', 'data': data});
+    });
+
     if (_currentUserPhone != null) {
       _socket!.on('premium_update_$_currentUserPhone', (data) {
         PremiumService().updatePremiumStatus(true);

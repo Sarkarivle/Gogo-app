@@ -31,6 +31,12 @@ const UserSchema = new mongoose.Schema({
     premiumExpiry: { type: Date },
     premiumPlan: { type: String }, // e.g., 'Monthly Gold'
     isVerified: { type: Boolean, default: false }, // Blue tick status
+    isShadowBanned: { type: Boolean, default: false }, // Shadow ban status
+    adminNotes: [{
+        note: String,
+        adminName: String,
+        timestamp: { type: Date, default: Date.now }
+    }],
 
     // Advanced Subscription Management
     subscription: {
@@ -79,6 +85,13 @@ const UserSchema = new mongoose.Schema({
     ipAddress: String,
     deviceId: String,
     fcmToken: String, // For Push Notifications
+    deviceHistory: [{
+        deviceId: String,
+        model: String,
+        os: String,
+        ip: String,
+        lastUsed: { type: Date, default: Date.now }
+    }],
 
     // Timestamps
     createdAt: { type: Date, default: Date.now }

@@ -12,6 +12,7 @@ import '../home_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/premium_service.dart';
 import '../../services/payment_service.dart';
+import '../../services/user_repository.dart';
 
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
@@ -97,6 +98,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _userCity = user['city'];
         }
       });
+      UserRepository().trackEvent('trial_page_open', customId: user['phone']);
     }
   }
 
@@ -139,6 +141,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final userData = jsonDecode(userDataStr);
       final phone = userData['phone']?.toString();
       if (phone == null) throw "Phone not found";
+
+      UserRepository().trackEvent('payment_started', customId: phone);
 
       final orderData = await PaymentService.createOrder(phone);
       

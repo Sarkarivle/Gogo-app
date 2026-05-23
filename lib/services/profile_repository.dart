@@ -67,6 +67,15 @@ class ProfileRepository {
         if (data['success'] == true) {
           final List<dynamic> users = data['users'] ?? [];
           
+          // Secure profile images
+          for (var u in users) {
+            if (u['profileImages'] != null) {
+              u['profileImages'] = (u['profileImages'] as List)
+                .map((img) => ApiService.getSecureUrl(img))
+                .toList();
+            }
+          }
+          
           if (page == 1) {
             // Update cache for the first page
             _cache[tab] = List.from(users);

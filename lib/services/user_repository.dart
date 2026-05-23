@@ -69,8 +69,44 @@ class UserRepository {
     final prefs = await SharedPreferences.getInstance();
     final userDataStr = prefs.getString('user_data');
     if (userDataStr != null) {
-      return jsonDecode(userDataStr);
+      final Map<String, dynamic> userData = jsonDecode(userDataStr);
+      // Secure profile images in local storage
+      if (userData['profileImages'] != null) {
+        userData['profileImages'] = (userData['profileImages'] as List)
+          .map((img) => ApiService.getSecureUrl(img))
+          .toList();
+      }
+      return userData;
     }
     return null;
+  }
+
+  Future<String> _getDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? deviceId = prefs.getString('unique_device_id');
+    if (deviceId == null) {
+      deviceId = 'DEV_${DateTime.now().millisecondsSinceEpoch}_${(1000 + (9000 * (1.0 - (1.0 / (DateTime.now().millisecond + 1))))).toInt()}';
+      // Simple random-ish ID without extra dependencies
+      deviceId = 'DEV_${DateTime.now().microsecondsSinceEpoch}';
+      await prefs.setString('unique_device_id', deviceId);
+    }
+    return deviceId;
+  }
+
+  Future<void> trackEvent(String eventType, {String? customId}) async {
+    try {
+      final String distinctId = customId ?? await _getDeviceId();
+      await ApiService.post('/api/user/track-event', {
+        'eventType': eventType,
+        'distinctId': distinctId,
+      });
+    } catch (e) {
+      debugPrint('Track Event error: $e');
+    }
+  }
+
+  void updateLocalUser(Map<String, dynamic> userData) {
+    // This can be used to notify a ChangeNotifier or Stream if using state management
+    debugPrint('🔄 UserRepository: Internal state updated for ${userData['phone']}');
   }
 }

@@ -67,18 +67,6 @@ function renderToggle(label, active) {
     `;
 }
 
-async function loadMedia() {
-    const mainContent = document.getElementById('mainContent');
-    document.getElementById('modTitle').innerText = "Media Management";
-    mainContent.innerHTML = `
-        <div class="glass p-20 text-center rounded-[3rem] opacity-20 border-2 border-dashed border-white/10 animate-fade">
-            <i class="fas fa-images text-6xl mb-6"></i>
-            <h3 class="text-xl font-black uppercase">Object Storage Monitoring</h3>
-            <p class="text-sm mt-2 uppercase font-bold">Tracking AWS S3 / Local Storage Bucket usage</p>
-        </div>
-    `;
-}
-
 async function loadDatabaseTools() {
     const mainContent = document.getElementById('mainContent');
     document.getElementById('modTitle').innerText = "Database Maintenance";
