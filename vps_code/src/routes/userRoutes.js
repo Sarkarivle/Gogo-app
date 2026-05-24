@@ -3,6 +3,7 @@ const router = express.Router();
 const UserController = require('../controllers/UserController');
 const ContactController = require('../controllers/ContactController');
 const PolicyController = require('../controllers/PolicyController');
+const NewsController = require('../controllers/NewsController');
 
 router.post('/login', UserController.login);
 router.get('/profile/:phone', UserController.getProfile);
@@ -20,5 +21,8 @@ router.post('/track-event', UserController.trackEvent);
 router.post('/contact-us', ContactController.submitMessage);
 router.get('/policy/:type', PolicyController.getPolicyByType);
 router.get('/policies', PolicyController.getPolicies);
+
+// News
+router.get('/news/public', NewsController.getPublicNews);
 
 module.exports = router;

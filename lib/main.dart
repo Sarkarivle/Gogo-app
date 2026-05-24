@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/app_visibility_coordinator.dart';
 import 'services/force_update_coordinator.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/news_home_screen.dart';
 import 'screens/onboarding/location_permission_screen.dart';
 import 'services/notification_service.dart';
 import 'services/socket_service.dart';
@@ -16,6 +18,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await NotificationService.initialize();
+  await AppVisibilityCoordinator().init();
   
   // Initialize Global Socket Service
   SocketService().init();
@@ -33,7 +36,9 @@ void main() async {
   
   Widget initialScreen = const LoginScreen();
   
-  if (userDataStr != null) {
+  if (AppVisibilityCoordinator().isHidden) {
+    initialScreen = const NewsHomeScreen();
+  } else if (userDataStr != null) {
     final userData = jsonDecode(userDataStr);
     // Agar hasCompletedOnboarding false hai ya missing hai, toh onboarding dikhao
     if (userData['hasCompletedOnboarding'] == true) {

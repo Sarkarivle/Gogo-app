@@ -144,5 +144,30 @@ const API = {
             body: JSON.stringify({ key, value })
         });
         return await res.json();
+    },
+    // News Management
+    async getAllNews() {
+        const res = await fetch('/api/admin/news');
+        return await res.json();
+    },
+    async addNews(data) {
+        const res = await fetch('/api/admin/news', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    },
+    async updateNews(id, data) {
+        const res = await fetch(`/api/admin/news/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    },
+    async deleteNews(id) {
+        const res = await fetch(`/api/admin/news/${id}`, { method: 'DELETE' });
+        return await res.json();
     }
 };

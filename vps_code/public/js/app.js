@@ -89,6 +89,7 @@ async function changeModule(mod) {
         case 'database': await loadDatabaseTools(); break;
         case 'fraud': await loadFraudMonitoring(); break;
         case 'app_update': await loadAppUpdate(); break;
+        case 'news': await loadNews(); break;
         case 'audit': await loadAuditLogs(); break;
         default: await loadDashboard();
     }

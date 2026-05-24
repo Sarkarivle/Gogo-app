@@ -3,6 +3,7 @@ const router = express.Router();
 const AdminController = require('../controllers/AdminController');
 const PolicyController = require('../controllers/PolicyController');
 const ContactController = require('../controllers/ContactController');
+const NewsController = require('../controllers/NewsController');
 
 // Dashboard & Analytics
 router.get('/stats', AdminController.getStats);
@@ -61,5 +62,11 @@ router.get('/message/:id', ContactController.getTicketDetail);
 router.post('/message/:id/reply', ContactController.updateMessageStatus);
 router.post('/message/:id/assign', ContactController.assignTicket);
 router.post('/message/:id/note', ContactController.addInternalNote);
+
+// News Manager
+router.get('/news', NewsController.getAllNews);
+router.post('/news', NewsController.createNews);
+router.put('/news/:id', NewsController.updateNews);
+router.delete('/news/:id', NewsController.deleteNews);
 
 module.exports = router;

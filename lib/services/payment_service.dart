@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -115,7 +114,7 @@ class CashfreeHandler implements PaymentHandler {
           .build();
 
       var upi = CFUPIBuilder().setChannel(CFUPIChannel.INTENT).build();
-      var payment = CFUPIPaymentBuilder().setSession(session!).setUPI(upi).build();
+      var payment = CFUPIPaymentBuilder().setSession(session).setUPI(upi).build();
 
       cfPaymentGatewayService.setCallback((String id) => onSuccess({'paymentId': id}), (CFErrorResponse err, String id) => onError(err.getMessage() ?? "Failed"));
       cfPaymentGatewayService.doPayment(payment);

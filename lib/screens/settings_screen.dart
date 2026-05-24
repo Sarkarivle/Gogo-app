@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
+import '../services/app_visibility_coordinator.dart';
 import 'login_screen.dart';
 import 'premium_settings_screen.dart';
 import 'contact_us_screen.dart';
@@ -105,7 +106,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: () => _launchUrl('about_us')),
                   _buildSettingsTile(context, Icons.block_flipped, 'Blocked Users'),
                   _buildSettingsTile(context, Icons.no_accounts_outlined, 'Deactivate Account'),
-                  _buildSettingsTile(context, Icons.visibility_off_outlined, 'Hide my app'),
+                  _buildSettingsTile(context, Icons.visibility_off_outlined, 'Hide my app', 
+                    onTap: () => AppVisibilityCoordinator().toggleHideMode(context)),
                   _buildSettingsTile(context, Icons.logout_rounded, 'Logout', isLast: true, color: Colors.redAccent, onTap: () async {
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.clear();
