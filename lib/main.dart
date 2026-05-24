@@ -8,6 +8,7 @@ import 'screens/home_screen.dart';
 import 'screens/onboarding/location_permission_screen.dart';
 import 'services/notification_service.dart';
 import 'services/socket_service.dart';
+import 'services/call_service.dart';
 import 'services/user_repository.dart';
 
 void main() async {
@@ -86,6 +87,8 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> {
   }
 
   void _listenToSocketEvents() {
+    CallService().init();
+
     SocketService().eventStream.listen((event) {
       final String type = event['event'];
       final dynamic data = event['data'];

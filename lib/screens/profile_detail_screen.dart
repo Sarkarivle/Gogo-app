@@ -295,16 +295,12 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       if (!isPremium) return;
 
                       if (!mounted) return;
-                      Navigator.push(
+                      ChatPage.navigate(
                         context,
-                        MaterialPageRoute(
-                          builder: (context) => ChatPage(
-                            name: widget.name,
-                            receiverPhone: widget.phone,
-                            distance: widget.distance,
-                            position: widget.position,
-                          ),
-                        ),
+                        name: widget.name,
+                        receiverPhone: widget.phone,
+                        distance: widget.distance,
+                        position: widget.position,
                       );
                     },
                     child: const Center(

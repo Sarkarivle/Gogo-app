@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_service.dart';
 import 'premium_service.dart';
+import 'call_service.dart';
 
 class SocketService with WidgetsBindingObserver {
   static final SocketService _instance = SocketService._internal();
@@ -115,6 +116,18 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('chat_status_update', (data) => _eventController.add({'event': 'chat_status_update', 'data': data}));
     _socket!.on('unread_update', (data) => _eventController.add({'event': 'unread_update', 'data': data}));
 
+    // --- CALL EVENTS ---
+    _socket!.on('incoming_call', (data) => _eventController.add({'event': 'incoming_call', 'data': data}));
+    _socket!.on('call_accepted', (data) => _eventController.add({'event': 'call_accepted', 'data': data}));
+    _socket!.on('call_rejected', (data) => _eventController.add({'event': 'call_rejected', 'data': data}));
+    _socket!.on('call_ended', (data) => _eventController.add({'event': 'call_ended', 'data': data}));
+    _socket!.on('call_busy', (data) => _eventController.add({'event': 'call_busy', 'data': data}));
+    _socket!.on('call_ringing', (data) => _eventController.add({'event': 'call_ringing', 'data': data}));
+    _socket!.on('call_timeout', (data) => _eventController.add({'event': 'call_timeout', 'data': data}));
+    _socket!.on('sdp_offer', (data) => _eventController.add({'event': 'sdp_offer', 'data': data}));
+    _socket!.on('sdp_answer', (data) => _eventController.add({'event': 'sdp_answer', 'data': data}));
+    _socket!.on('ice_candidate', (data) => _eventController.add({'event': 'ice_candidate', 'data': data}));
+
     // --- REALTIME ADMIN ACTIONS ---
     _socket!.on('profile_sync_required', (data) {
       debugPrint('🔄 Admin forced profile sync: $data');
@@ -174,6 +187,7 @@ class SocketService with WidgetsBindingObserver {
   }
 
   IO.Socket? get socket => _socket;
+  String? get currentUserPhone => _currentUserPhone;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {

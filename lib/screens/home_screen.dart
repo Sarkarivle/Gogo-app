@@ -1,10 +1,8 @@
 import 'dart:ui';
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../services/socket_service.dart';
 import '../services/profile_repository.dart';
 import '../services/user_repository.dart';

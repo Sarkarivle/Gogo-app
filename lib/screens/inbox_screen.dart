@@ -369,14 +369,13 @@ class InboxScreenState extends State<InboxScreen> {
     if (!isPremium) return;
 
     if (!mounted) return;
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (c) => ChatPage(
-        name: chat['name'], 
-        receiverPhone: chat['phone'], 
-        distance: chat['dist_str'] ?? '', 
-        position: chat['pos'] ?? ''
-      )
-    ));
+    await ChatPage.navigate(
+      context,
+      name: chat['name'],
+      receiverPhone: chat['phone'],
+      distance: chat['dist_str'] ?? '',
+      position: chat['pos'] ?? '',
+    );
     _fetchInbox();
   }
 

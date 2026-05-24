@@ -388,6 +388,83 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- WEBRTC SIGNALING ---
+
+    socket.on('initiate_call', (data) => {
+        const { targetPhone, isVideo, callerName, callerPhone } = data;
+        console.log(`📞 Call initiated: ${callerPhone} -> ${targetPhone} (${isVideo ? 'Video' : 'Audio'})`);
+        io.to(`user_${targetPhone}`).emit('incoming_call', {
+            callerPhone,
+            callerName,
+            isVideo
+        });
+    });
+
+    socket.on('call_ringing', (data) => {
+        const { targetPhone } = data;
+        io.to(`user_${targetPhone}`).emit('call_ringing', {});
+    });
+
+    socket.on('accept_call', (data) => {
+        const { targetPhone } = data;
+        io.to(`user_${targetPhone}`).emit('call_accepted', {});
+    });
+
+    socket.on('reject_call', (data) => {
+        const { targetPhone } = data;
+        io.to(`user_${targetPhone}`).emit('call_rejected', {});
+    });
+
+    socket.on('end_call', (data) => {
+        const { targetPhone } = data;
+        io.to(`user_${targetPhone}`).emit('call_ended', {});
+    });
+
+    socket.on('call_busy', (data) => {
+        const { targetPhone } = data;
+        io.to(`user_${targetPhone}`).emit('call_busy', {});
+    });
+
+    socket.on('sdp_offer', (data) => {
+        const { targetPhone, offer } = data;
+        io.to(`user_${targetPhone}`).emit('sdp_offer', { offer });
+    });
+
+    socket.on('sdp_answer', (data) => {
+        const { targetPhone, answer } = data;
+        io.to(`user_${targetPhone}`).emit('sdp_answer', { answer });
+    });
+
+    socket.on('ice_candidate', (data) => {
+        const { targetPhone, candidate } = data;
+        io.to(`user_${targetPhone}`).emit('ice_candidate', { candidate });
+    });
+
+    socket.on('call_state_sync', (data) => {
+        const { targetPhone, isMuted, isVideoOff } = data;
+        io.to(`user_${targetPhone}`).emit('call_state_sync', { isMuted, isVideoOff });
+    });
+
+    socket.on('log_call', async (data) => {
+        try {
+            const { senderPhone, receiverPhone, callType, duration, status } = data;
+            console.log(`📝 Log Call: ${senderPhone} -> ${receiverPhone} | ${callType} | ${duration}s | ${status}`);
+
+            const callMessage = new Message({
+                roomId: [senderPhone, receiverPhone].sort().join('_'),
+                senderPhone,
+                receiverPhone,
+                message: `${callType === 'video' ? 'Video' : 'Audio'} Call (${status})`,
+                type: 'call_log',
+                timestamp: new Date(),
+                metadata: { duration, status, callType }
+            });
+            await callMessage.save();
+        } catch (e) {
+            console.error("Log Call Error:", e);
+        }
+    });
+
     socket.on('disconnecting', () => {
         const phone = connectedUsers.get(socket.id);
         if (!phone) return;

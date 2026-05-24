@@ -7,16 +7,17 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:record/record.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../models/chat_message.dart';
 import '../services/socket_service.dart';
+import '../services/call_service.dart';
 import '../services/chat_repository.dart';
 import '../services/premium_service.dart';
 import '../services/api_service.dart';
+import '../services/permission_manager.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
 import '../widgets/chat_widgets.dart';
@@ -35,6 +36,25 @@ class ChatPage extends StatefulWidget {
     required this.distance,
     required this.position,
   });
+
+  static Future<void> navigate(BuildContext context, {
+    required String name,
+    required String receiverPhone,
+    required String distance,
+    required String position,
+  }) async {
+    await PermissionManager().handleChatEntryOnboarding(context);
+    
+    if (!context.mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => ChatPage(
+        name: name,
+        receiverPhone: receiverPhone,
+        distance: distance,
+        position: position,
+      ),
+    ));
+  }
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -479,6 +499,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       actions: [
         IconButton(
+          icon: const Icon(Icons.call_outlined, color: Colors.orangeAccent),
+          onPressed: () => _initiateCall(isVideo: false),
+        ),
+        IconButton(
+          icon: const Icon(Icons.videocam_outlined, color: Colors.orangeAccent),
+          onPressed: () => _initiateCall(isVideo: true),
+        ),
+        IconButton(
           icon: const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent),
           onPressed: () async {
             final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone)));
@@ -576,6 +604,70 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildCallLogBubble(ChatMessage msg) {
+    final metadata = msg.metadata ?? {};
+    final String status = metadata['status'] ?? 'missed';
+    final String callType = metadata['callType'] ?? 'audio';
+    final int duration = metadata['duration'] ?? 0;
+    
+    bool isMissed = status == 'missed' || status == 'no_answer' || status == 'rejected';
+    
+    IconData callIcon;
+    Color iconColor;
+    String statusText;
+
+    if (isMissed) {
+      callIcon = callType == 'video' ? Icons.missed_video_call : Icons.phone_missed;
+      iconColor = Colors.redAccent;
+      statusText = msg.isMe ? "No Answer" : "Missed Call";
+    } else {
+      callIcon = callType == 'video' ? Icons.videocam : Icons.phone;
+      iconColor = Colors.greenAccent;
+      statusText = "${_formatDuration(duration)} • ${DateFormat('h:mm a').format(msg.timestamp)}";
+    }
+
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.05)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(callIcon, color: iconColor, size: 18),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  callType == 'video' ? "Video Call" : "Audio Call",
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  statusText,
+                  style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds == 0) return "0s";
+    final int m = seconds ~/ 60;
+    final int s = seconds % 60;
+    if (m > 0) return "${m}m ${s}s";
+    return "${s}s";
+  }
+
   Widget _buildDateHeader(DateTime date) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 20),
@@ -603,6 +695,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ),
       );
+    }
+
+    if (msg.type == 'call_log') {
+      return _buildCallLogBubble(msg);
     }
 
     return Padding(
@@ -951,6 +1047,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _typingTimer = Timer(const Duration(seconds: 2), () {
       SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
     });
+  }
+
+  void _initiateCall({required bool isVideo}) async {
+    if (_isBlocked) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot call a blocked user')));
+      return;
+    }
+
+    final isPremium = await PremiumService().checkPremiumAndRedirect(context);
+    if (!isPremium) return;
+
+    // Check permissions professionally
+    final hasPermission = await PermissionManager().checkAndRequestCallPermissions(context, isVideo: isVideo);
+    if (!hasPermission) return;
+
+    if (mounted) {
+      CallService().startCall(widget.receiverPhone, widget.name, isVideo: isVideo);
+    }
   }
 
   // --- POPUPS & MODALS ---

@@ -26,6 +26,9 @@ class ChatMessage {
   final String? replyText;
   final String? replyType;
 
+  // Call metadata
+  final Map<String, dynamic>? metadata;
+
   ChatMessage({
     this.id,
     this.localId,
@@ -43,6 +46,7 @@ class ChatMessage {
     this.replyToId,
     this.replyText,
     this.replyType,
+    this.metadata,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json, String myPhone) {
@@ -64,6 +68,7 @@ class ChatMessage {
       replyToId: json['replyToId'],
       replyText: json['replyText'],
       replyType: json['replyType'],
+      metadata: json['metadata'],
     );
   }
 

@@ -54,6 +54,8 @@ dependencies:
   phonepe_payment_sdk: ^3.0.2
   flutter_cashfree_pg_sdk: ^2.1.2
   sms_autofill: ^2.3.0
+  flutter_webrtc: ^0.12.1
+
 
 dependency_overrides:
   record_linux: ^1.3.0

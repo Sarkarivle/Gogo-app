@@ -177,6 +177,23 @@ class ChatRepository {
     });
   }
 
+  void logCall({
+    required String senderPhone,
+    required String receiverPhone,
+    required String callType,
+    required int duration,
+    required String status,
+  }) {
+    SocketService().emit('log_call', {
+      'senderPhone': senderPhone,
+      'receiverPhone': receiverPhone,
+      'callType': callType,
+      'duration': duration,
+      'status': status,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<bool> updateConversationMetadata({
     required String myPhone,
     required String otherPhone,

@@ -59,16 +59,16 @@ class NotificationService {
 
   static void _navigateToChat(Map<String, dynamic> data) {
     if (data['type'] == 'chat' && data['senderPhone'] != null) {
-      MyApp.navigatorKey.currentState?.push(
-        MaterialPageRoute(
-          builder: (context) => ChatPage(
-            name: data['senderName'] ?? "User",
-            receiverPhone: data['senderPhone'],
-            distance: "Nearby",
-            position: data['senderPosition'] ?? "Member",
-          ),
-        ),
-      );
+      final context = MyApp.navigatorKey.currentContext;
+      if (context != null) {
+        ChatPage.navigate(
+          context,
+          name: data['senderName'] ?? "User",
+          receiverPhone: data['senderPhone'],
+          distance: "Nearby",
+          position: data['senderPosition'] ?? "Member",
+        );
+      }
     }
   }
 
