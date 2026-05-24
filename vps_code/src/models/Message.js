@@ -7,12 +7,14 @@ const MessageSchema = new mongoose.Schema({
     message: String,
     imageUrl: String,
     audioUrl: String,
-    type: { type: String, enum: ['text', 'image', 'video', 'audio', 'block_event', 'unblock_event'], default: 'text' },
+    type: { type: String, enum: ['text', 'image', 'video', 'audio', 'block_event', 'unblock_event', 'call_log'], default: 'text' },
     isViewOnce: { type: Boolean, default: false },
     isOpened: { type: Boolean, default: false },
     isDelivered: { type: Boolean, default: false },
     isEdited: { type: Boolean, default: false },
     isDeletedForEveryone: { type: Boolean, default: false },
+
+    metadata: mongoose.Schema.Types.Mixed,
 
     // Reply context
     replyToId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },

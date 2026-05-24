@@ -126,6 +126,7 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('sdp_offer', (data) => _eventController.add({'event': 'sdp_offer', 'data': data}));
     _socket!.on('sdp_answer', (data) => _eventController.add({'event': 'sdp_answer', 'data': data}));
     _socket!.on('ice_candidate', (data) => _eventController.add({'event': 'ice_candidate', 'data': data}));
+    _socket!.on('random_match_found', (data) => _eventController.add({'event': 'random_match_found', 'data': data}));
 
     // --- REALTIME ADMIN ACTIONS ---
     _socket!.on('profile_sync_required', (data) {

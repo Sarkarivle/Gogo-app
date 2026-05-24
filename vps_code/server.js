@@ -16,6 +16,7 @@ const Block = require('./src/models/Block');
 const notificationService = require('./src/services/notificationService');
 const analyticsService = require('./src/services/analyticsService');
 const revenueService = require('./src/services/revenueService');
+const randomMatchController = require('./src/controllers/RandomMatchController');
 
 const app = express();
 const server = http.createServer(app);
@@ -29,6 +30,11 @@ const io = new Server(server, {
 connectDB();
 analyticsService.init(io);
 revenueService.init(io);
+
+// Global Stale Queue Cleanup (Every 2 minutes)
+setInterval(() => {
+    randomMatchController.performGlobalCleanup();
+}, 120000);
 
 app.set('socketio', io); // Set socket.io instance to app for global access
 
@@ -495,6 +501,37 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- NEW RANDOM VIDEO SYSTEM (FINAL PRODUCTION PLAN) ---
+    // Separate from normal 1-to-1 calls
+
+    socket.on('random_find_partner', (data) => {
+        randomMatchController.findPartner(io, socket, data);
+    });
+
+    socket.on('random_leave_room', (data) => {
+        randomMatchController.leaveRoom(io, socket, data.userId);
+    });
+
+    socket.on('next_random_partner', (data) => {
+        randomMatchController.handleNextPartner(io, socket, data);
+    });
+
+    socket.on('random_offer', (data) => {
+        randomMatchController.handleSignaling(io, socket, data, 'offer');
+    });
+
+    socket.on('random_answer', (data) => {
+        randomMatchController.handleSignaling(io, socket, data, 'answer');
+    });
+
+    socket.on('random_candidate', (data) => {
+        randomMatchController.handleSignaling(io, socket, data, 'candidate');
+    });
+
+    socket.on('random_call_state_sync', (data) => {
+        randomMatchController.handleSignaling(io, socket, data, 'call_state_sync');
+    });
+
     socket.on('disconnecting', () => {
         const phone = connectedUsers.get(socket.id);
         if (!phone) return;
@@ -515,6 +552,9 @@ io.on('connection', (socket) => {
         analyticsService.trackEvent('disconnect');
         const phone = connectedUsers.get(socket.id);
         if (phone) {
+            // Cleanup random room on disconnect (Final Production Plan)
+            randomMatchController.leaveRoom(io, socket, phone);
+
             const sockets = phoneToSockets.get(phone);
             if (sockets) {
                 sockets.delete(socket.id);

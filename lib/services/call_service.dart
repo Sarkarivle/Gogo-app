@@ -36,13 +36,15 @@ class CallService {
   Stream<CallState> get stateStream => _stateController.stream;
 
   bool _isInitialized = false;
-  DateTime? _lastCallTime;
 
   void init() {
     if (_isInitialized) return;
     _isInitialized = true;
 
-    SocketService().eventStream.listen((event) {
+    final socket = SocketService();
+    
+    // Using a systematic approach to listeners as requested
+    socket.eventStream.listen((event) {
       final data = event['data'];
       switch (event['event']) {
         case 'incoming_call':
@@ -72,9 +74,6 @@ class CallService {
         case 'call_busy':
           _handleCallRejected(); 
           break;
-        case 'call_timeout':
-          _handleCallEnded();
-          break;
         case 'call_ringing':
           _handleCallRinging();
           break;
@@ -85,13 +84,8 @@ class CallService {
   Future<void> startCall(String remotePhone, String remoteName, {required bool isVideo}) async {
     if (_state != CallState.idle) return;
 
-    // Rapid-call prevention (5 second cooldown)
-    if (_lastCallTime != null && DateTime.now().difference(_lastCallTime!).inSeconds < 5) {
-      debugPrint("🚫 Rapid call prevented");
-      return;
-    }
-    _lastCallTime = DateTime.now();
-
+    debugPrint("[CallService] Starting Call to $remotePhone");
+    
     _updateState(CallState.ringing);
     _remotePhone = remotePhone;
     _remoteName = remoteName;
@@ -123,7 +117,6 @@ class CallService {
     if (myPhone != null) {
       final blockStatus = await ChatRepository().checkBlockStatus(myPhone, data['callerPhone']);
       if (blockStatus['isBlocked'] == true) {
-        debugPrint("🚫 Blocked user tried to call");
         SocketService().emit('call_rejected', {'targetPhone': data['callerPhone']});
         return;
       }
@@ -195,8 +188,6 @@ class CallService {
     _stopTimeoutTimer();
 
     SocketService().emit('accept_call', {'targetPhone': _remotePhone});
-    
-    // Receiver waits for Offer after accepting
   }
 
   void rejectCall() {
@@ -205,7 +196,9 @@ class CallService {
   }
 
   void endCall() {
-    SocketService().emit('end_call', {'targetPhone': _remotePhone});
+    if (_remotePhone != null) {
+      SocketService().emit('end_call', {'targetPhone': _remotePhone});
+    }
     _cleanup();
   }
 
@@ -214,18 +207,17 @@ class CallService {
     _updateState(CallState.connecting);
     _stopTimeoutTimer();
 
-    // Small delay to ensure receiver is ready to receive SDP
-    await Future.delayed(const Duration(milliseconds: 500));
-
     // Caller initiates WebRTC
     await _webrtc.initLocalStream(_isVideo);
-    await _webrtc.initializePeerConnection(_remotePhone!);
-    
-    final offer = await _webrtc.createOffer();
-    SocketService().emit('sdp_offer', {
-      'targetPhone': _remotePhone,
-      'offer': {'sdp': offer.sdp, 'type': offer.type},
-    });
+    if (_remotePhone != null) {
+      await _webrtc.initializePeerConnection(_remotePhone!);
+      
+      final offer = await _webrtc.createOffer();
+      SocketService().emit('sdp_offer', {
+        'targetPhone': _remotePhone,
+        'offer': {'sdp': offer.sdp, 'type': offer.type},
+      });
+    }
   }
 
   void _handleCallRejected() {
@@ -238,6 +230,9 @@ class CallService {
 
   void _handleSDPOffer(dynamic data) async {
     if (_state != CallState.connecting && _state != CallState.ringing) return;
+    if (_remotePhone == null) return;
+
+    _updateState(CallState.connecting);
     
     await _webrtc.initLocalStream(_isVideo);
     await _webrtc.initializePeerConnection(_remotePhone!);
@@ -266,7 +261,7 @@ class CallService {
   void _handleCallStateSync(dynamic data) {
     if (_state != CallState.connected) return;
     _remoteIsVideoOff = data['isVideoOff'] ?? false;
-    _stateController.add(_state); // Trigger UI rebuild with new peer state
+    _stateController.add(_state); 
   }
 
   void syncState({required bool isMuted, required bool isVideoOff}) {
@@ -279,6 +274,7 @@ class CallService {
   }
 
   void _handleICECandidate(dynamic data) async {
+    if (_state != CallState.connecting && _state != CallState.connected) return;
     final candidateData = data['candidate'];
     final candidate = RTCIceCandidate(
       candidateData['candidate'],
@@ -297,6 +293,7 @@ class CallService {
   }
 
   void _cleanup() {
+    debugPrint("[CallService] Cleaning up call session...");
     _stopTimeoutTimer();
     final endState = _state;
     _updateState(CallState.ended);
@@ -323,12 +320,14 @@ class CallService {
       );
     }
 
-    Future.delayed(const Duration(seconds: 1), () {
-      _webrtc.dispose();
-      _remotePhone = null;
-      _remoteName = null;
-      _startTime = null;
-      _remoteIsVideoOff = false;
+    _webrtc.dispose();
+    _remotePhone = null;
+    _remoteName = null;
+    _startTime = null;
+    _remoteIsVideoOff = false;
+    
+    // Reset to idle after a small delay to allow UI transitions
+    Future.delayed(const Duration(milliseconds: 500), () {
       _updateState(CallState.idle);
     });
   }

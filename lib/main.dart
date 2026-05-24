@@ -144,8 +144,10 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
     await prefs.remove('user_data');
     SocketService().dispose();
 
+    if (MyApp.navigatorKey.currentContext == null) return;
+
     showDialog(
-      context: context,
+      context: MyApp.navigatorKey.currentContext!,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
@@ -237,10 +239,12 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
               }
 
               // 3. Restart App Navigation to refresh all screens
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const HomeScreen()),
-                (route) => false,
-              );
+              if (MyApp.navigatorKey.currentContext != null) {
+                Navigator.of(MyApp.navigatorKey.currentContext!).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const HomeScreen()),
+                  (route) => false,
+                );
+              }
             },
             child: const Text('OK', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
           ),

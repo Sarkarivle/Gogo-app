@@ -12,6 +12,7 @@ import '../widgets/blinking_dot.dart';
 import '../widgets/home_filters.dart';
 import 'inbox_screen.dart';
 import 'my_profile_screen.dart';
+import '../randomLive/screens/random_live_intro_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,7 +20,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   int _selectedIndex = 0;
   final GlobalKey<InboxScreenState> _inboxKey = GlobalKey<InboxScreenState>();
   late TabController _tabController;
@@ -328,6 +329,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Random lifecycle handling is now encapsulated in RandomRoomService/randomLive module
+  }
+
+  @override
   void dispose() { 
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose(); 
@@ -362,7 +368,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       child: Material(
         color: Colors.transparent,
-        child: InkWell(borderRadius: BorderRadius.circular(30), onTap: () {}, child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.videocam_rounded, color: Colors.white, size: 28), SizedBox(width: 12), Text('Start Live Video', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 0.5))])),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(30), 
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+            );
+          }, 
+          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.videocam_rounded, color: Colors.white, size: 28), SizedBox(width: 12), Text('Start Live Video', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 0.5))])
+        ),
       ),
     );
   }

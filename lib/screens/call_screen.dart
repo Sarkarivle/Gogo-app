@@ -643,13 +643,13 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
 
   Widget _buildActiveCallControls() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(40),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
             decoration: BoxDecoration(
               color: Colors.black38,
               borderRadius: BorderRadius.circular(40),
@@ -704,13 +704,13 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       onTap: onTap,
       borderRadius: BorderRadius.circular(30),
       child: Container(
-        width: 50,
-        height: 50,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: isActive ? Colors.white : Colors.white.withOpacity(0.1),
         ),
-        child: Icon(icon, color: isActive ? Colors.black : Colors.white, size: 24),
+        child: Icon(icon, color: isActive ? Colors.black : Colors.white, size: 20),
       ),
     );
   }
@@ -719,14 +719,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
     return GestureDetector(
       onTap: () => CallService().endCall(),
       child: Container(
-        width: 55,
-        height: 55,
+        width: 48,
+        height: 48,
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.redAccent,
           boxShadow: [BoxShadow(color: Colors.redAccent, blurRadius: 15, spreadRadius: -2)],
         ),
-        child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+        child: const Icon(Icons.call_end, color: Colors.white, size: 24),
       ),
     );
   }
