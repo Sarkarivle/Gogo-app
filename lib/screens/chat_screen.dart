@@ -70,6 +70,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   int _currentHistoryPage = 1;
   bool _hasMoreHistory = true;
   bool _isBlocked = false;
+  bool _isRecipientDeactivated = false;
   String? _blockerPhone;
   Map<String, dynamic>? currentUser;
   Timer? _typingTimer;
@@ -206,6 +207,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           case 'chat_status_update':
             _checkBlockStatus();
             break;
+          case 'user_deactivated':
+            if (data['phone'] == widget.receiverPhone) {
+              setState(() => _isRecipientDeactivated = true);
+            }
+            break;
+          case 'user_reactivated':
+            if (data['phone'] == widget.receiverPhone) {
+              setState(() {
+                _isRecipientDeactivated = false;
+                // Add a local system message for reactivation
+                _messages.add(ChatMessage(
+                  id: 'reactivation_${DateTime.now().millisecondsSinceEpoch}',
+                  text: '${widget.name} is active again',
+                  isMe: false,
+                  timestamp: DateTime.now(),
+                  type: 'reactivation_event'
+                ));
+              });
+              _scrollToBottom();
+            }
+            break;
         }
       });
     });
@@ -298,10 +320,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _checkBlockStatus() async {
     if (currentUser == null) return;
     final res = await _chatRepository.checkBlockStatus(currentUser!['phone'], widget.receiverPhone);
+    
+    // Also check if recipient is deactivated
+    final profileRes = await ApiService.get('/api/user/profile/${widget.receiverPhone}');
+    bool isDeactivated = false;
+    if (profileRes.statusCode == 200) {
+      final profileData = jsonDecode(profileRes.body);
+      if (profileData['success'] == true) {
+        final u = profileData['user'];
+        isDeactivated = u['isDeactivated'] == true || u['accountStatus'] == 'Deactivated';
+      }
+    }
+
     if (mounted) {
       setState(() {
         _isBlocked = res['isBlocked'];
         _blockerPhone = res['blockerPhone'];
+        _isRecipientDeactivated = isDeactivated;
       });
     }
   }
@@ -526,7 +561,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          itemCount: (_messages.isEmpty ? 1 : 0) + _messages.length + (isTyping ? 1 : 0) + (_isLoadingMore ? 1 : 0),
+          itemCount: (_messages.isEmpty ? 1 : 0) + _messages.length + (isTyping ? 1 : 0) + (_isLoadingMore ? 1 : 0) + (_isRecipientDeactivated ? 1 : 0),
           itemBuilder: (context, index) {
             if (_isLoadingMore && index == 0) {
               return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent)));
@@ -540,7 +575,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             final adjustedIndex = _isLoadingMore ? index - 1 : index;
 
             if (adjustedIndex == _messages.length) {
+              if (_isRecipientDeactivated) {
+                return _buildDeactivatedSystemBubble();
+              }
               return const TypingIndicator();
+            }
+            
+            if (adjustedIndex == _messages.length + 1 && _isRecipientDeactivated) {
+               return const TypingIndicator(); // Should not happen but for safety
             }
 
             final msg = _messages[adjustedIndex];
@@ -683,15 +725,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildMessageBubble(ChatMessage msg) {
     if (msg.isDeletedForEveryone) return const SizedBox.shrink();
 
-    if (msg.type == 'block_event' || msg.type == 'unblock_event') {
+    if (msg.type == 'block_event' || msg.type == 'unblock_event' || msg.type == 'reactivation_event') {
       return Center(
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 10),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          decoration: BoxDecoration(color: msg.type == 'block_event' ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(
+            color: msg.type == 'block_event' 
+              ? Colors.red.withOpacity(0.1) 
+              : (msg.type == 'unblock_event' || msg.type == 'reactivation_event' ? Colors.green.withOpacity(0.1) : Colors.white.withOpacity(0.05)), 
+            borderRadius: BorderRadius.circular(20)
+          ),
           child: Text(
-            msg.type == 'block_event' ? (msg.isMe ? 'You blocked ${widget.name}' : 'You were blocked') : 'Chat Unblocked',
-            style: TextStyle(color: msg.type == 'block_event' ? Colors.redAccent : Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold),
+            msg.type == 'block_event' 
+              ? (msg.isMe ? 'You blocked ${widget.name}' : 'You were blocked') 
+              : (msg.type == 'unblock_event' ? 'Chat Unblocked' : msg.text!),
+            style: TextStyle(
+              color: msg.type == 'block_event' ? Colors.redAccent : Colors.greenAccent, 
+              fontSize: 11, 
+              fontWeight: FontWeight.bold
+            ),
           ),
         ),
       );
@@ -934,11 +987,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       color: const Color(0xFF1A1A1A),
       child: Column(
         children: [
-          if (_isBlocked)
+          if (_isBlocked || _isRecipientDeactivated)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
-                _blockerPhone == currentUser?['phone'] ? "You blocked this user" : "This user has blocked you",
+                _isRecipientDeactivated 
+                  ? "User has deactivated their account" 
+                  : (_blockerPhone == currentUser?['phone'] ? "You blocked this user" : "This user has blocked you"),
                 style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
@@ -946,14 +1001,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           Row(
             children: [
               GestureDetector(
-                onTap: () => _showMediaPopup(),
+                onTap: (_isBlocked || _isRecipientDeactivated) ? null : () => _showMediaPopup(),
                 child: Container(
                   padding: const EdgeInsets.all(8), 
                   decoration: BoxDecoration(
-                    color: Colors.orangeAccent.withOpacity(0.1), 
+                    color: (_isBlocked || _isRecipientDeactivated) ? Colors.grey.withOpacity(0.1) : Colors.orangeAccent.withOpacity(0.1), 
                     shape: BoxShape.circle
                   ), 
-                  child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 28)
+                  child: Icon(Icons.add_rounded, color: (_isBlocked || _isRecipientDeactivated) ? Colors.grey : Colors.orangeAccent, size: 28)
                 ),
               ),
               const SizedBox(width: 12),
@@ -965,22 +1020,50 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(25)),
                   child: TextField(
                     controller: _messageController,
+                    enabled: !_isBlocked && !_isRecipientDeactivated,
                     onChanged: (val) => _handleTypingStatus(),
                     onSubmitted: (_) => _sendMessage(),
                     style: const TextStyle(color: Colors.white, fontSize: 15),
-                    decoration: const InputDecoration(
-                      hintText: 'Type message...', 
-                      hintStyle: TextStyle(color: Colors.white24), 
+                    decoration: InputDecoration(
+                      hintText: _isRecipientDeactivated ? 'Account Deactivated' : 'Type message...', 
+                      hintStyle: const TextStyle(color: Colors.white24), 
                       border: InputBorder.none
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
-              _buildSendOrMicButton(),
+              Opacity(
+                opacity: (_isBlocked || _isRecipientDeactivated) ? 0.5 : 1.0,
+                child: _buildSendOrMicButton(),
+              ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDeactivatedSystemBubble() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.info_outline_rounded, color: Colors.white.withOpacity(0.4), size: 14),
+            const SizedBox(width: 8),
+            Text(
+              "${widget.name} has deactivated their account",
+              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       ),
     );
   }

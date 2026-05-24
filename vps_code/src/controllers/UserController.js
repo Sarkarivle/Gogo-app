@@ -51,6 +51,16 @@ exports.login = async (req, res) => {
                 return res.status(403).json({ success: false, message: "Account blocked by moderator" });
             }
 
+            // Handle Auto-Reactivation
+            if (user.isDeactivated || user.accountStatus === 'Deactivated') {
+                console.log(`[REACTIVATION] User ${phone} reactivating.`);
+                user.isDeactivated = false;
+                user.accountStatus = 'Active';
+                user.reactivatedAt = new Date();
+
+                // Notify system/realtime if needed (will be handled by socket on set_online)
+            }
+
             // Update Security Tracking
             user.lastSeen = new Date();
             user.isOnline = true;
@@ -208,10 +218,11 @@ exports.getDiscover = async (req, res) => {
         const limitNum = parseInt(limit);
         const skip = (pageNum - 1) * limitNum;
 
-        // Base query: exclude self and banned users
+        // Base query: exclude self, banned and deactivated users
         let baseQuery = {
             phone: { $ne: phone },
-            isBanned: { $ne: true }
+            isBanned: { $ne: true },
+            isDeactivated: { $ne: true }
         };
 
         // Apply shared filters
@@ -358,6 +369,74 @@ exports.trackEvent = async (req, res) => {
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
+    }
+};
+
+exports.deactivateAccount = async (req, res) => {
+    try {
+        const { phone, reason } = req.body;
+        const user = await User.findOne({ phone });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Snapshot premium status
+        const premiumSnapshot = {
+            isPremium: user.isPremium,
+            premiumExpiry: user.premiumExpiry,
+            premiumPlan: user.premiumPlan,
+            subscriptionStatus: user.subscription?.status
+        };
+
+        user.isDeactivated = true;
+        user.accountStatus = 'Deactivated';
+        user.deactivatedAt = new Date();
+        user.deactivationReason = reason || 'User requested';
+        user.lastPremiumSnapshot = premiumSnapshot;
+        user.isOnline = false;
+
+        await user.save();
+
+        console.log(`[DEACTIVATION] User ${phone} deactivated.`);
+
+        // Realtime notification
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('user_deactivated', { phone });
+            // For active chats, we might want to emit to specific rooms,
+            // but a global emit with phone is easier for clients to filter.
+        }
+
+        res.json({ success: true, message: 'Account deactivated successfully' });
+    } catch (e) {
+        console.error("DEACTIVATE_ACCOUNT_ERROR:", e);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+exports.reactivateAccount = async (req, res) => {
+    try {
+        const { phone } = req.body;
+        const user = await User.findOne({ phone });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        user.isDeactivated = false;
+        user.accountStatus = 'Active';
+        user.reactivatedAt = new Date();
+        user.isOnline = true;
+
+        await user.save();
+
+        console.log(`[REACTIVATION] User ${phone} reactivated via manual request.`);
+
+        // Realtime notification
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('user_reactivated', { phone });
+        }
+
+        res.json({ success: true, user });
+    } catch (e) {
+        console.error("REACTIVATE_ACCOUNT_ERROR:", e);
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 

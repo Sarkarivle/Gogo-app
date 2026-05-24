@@ -109,4 +109,22 @@ class UserRepository {
     // This can be used to notify a ChangeNotifier or Stream if using state management
     debugPrint('🔄 UserRepository: Internal state updated for ${userData['phone']}');
   }
+
+  Future<bool> deactivateAccount(String phone, String reason) async {
+    try {
+      final response = await ApiService.post('/api/user/deactivate', {
+        'phone': phone,
+        'reason': reason,
+      });
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Deactivate Account error: $e');
+      return false;
+    }
+  }
 }

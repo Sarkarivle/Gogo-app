@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
+import '../services/user_repository.dart';
 import '../services/app_visibility_coordinator.dart';
 import 'login_screen.dart';
 import 'premium_settings_screen.dart';
@@ -105,7 +106,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildSettingsTile(context, Icons.info_outline_rounded, 'About Us',
                     onTap: () => _launchUrl('about_us')),
                   _buildSettingsTile(context, Icons.block_flipped, 'Blocked Users'),
-                  _buildSettingsTile(context, Icons.no_accounts_outlined, 'Deactivate Account'),
+                  _buildSettingsTile(context, Icons.no_accounts_outlined, 'Deactivate Account',
+                    onTap: () => _showDeactivateModal(context)),
                   _buildSettingsTile(context, Icons.visibility_off_outlined, 'Hide my app', 
                     onTap: () => AppVisibilityCoordinator().toggleHideMode(context)),
                   _buildSettingsTile(context, Icons.logout_rounded, 'Logout', isLast: true, color: Colors.redAccent, onTap: () async {
@@ -174,5 +176,120 @@ class _SettingsPageState extends State<SettingsPage> {
         onTap: onTap ?? () {},
       ),
     );
+  }
+
+  void _showDeactivateModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.warning_rounded, color: Colors.redAccent, size: 32),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Deactivate your account?',
+              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            _buildWarningItem('Your profile will disappear from discovery'),
+            _buildWarningItem('Nobody will see your profile in feed'),
+            _buildWarningItem('Existing chats will remain'),
+            _buildWarningItem('Your premium membership will stay safe'),
+            _buildWarningItem('You can reactivate anytime by logging in'),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: () => _handleDeactivation(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                minimumSize: const Size(double.infinity, 56),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              child: const Text('Yes, deactivate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 56)),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarningItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_outline, color: Colors.orangeAccent, size: 16),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDeactivation(BuildContext context) async {
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.orangeAccent)),
+    );
+
+    try {
+      final user = await UserRepository().getCurrentUser();
+      if (user != null) {
+        final success = await UserRepository().deactivateAccount(user['phone'], 'User requested from settings');
+        if (success) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+          if (context.mounted) {
+            Navigator.pop(context); // Close loading
+            Navigator.pushAndRemoveUntil(
+              context, 
+              MaterialPageRoute(builder: (context) => const LoginScreen()), 
+              (route) => false
+            );
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error deactivating: $e');
+    }
+
+    if (context.mounted) {
+      Navigator.pop(context); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to deactivate. Please try again.')),
+      );
+    }
   }
 }

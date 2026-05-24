@@ -27,7 +27,10 @@ async function loadUsers(search = '') {
                             ${u.name ? u.name[0] : '?'}
                         </div>
                         <div>
-                            <p class="text-sm font-bold text-white">${u.name || 'Incognito'}</p>
+                            <p class="text-sm font-bold text-white">
+                                ${u.name || 'Incognito'}
+                                ${u.isDeactivated ? '<span class="text-[9px] text-orange-500 ml-1 uppercase font-black tracking-tighter">[Deactivated]</span>' : ''}
+                            </p>
                             <p class="text-[10px] text-slate-500">${u.phone}</p>
                         </div>
                     </div>
@@ -40,7 +43,13 @@ async function loadUsers(search = '') {
                     </div>
                 </td>
                 <td class="p-6">
-                    ${UI.badge(u.accountStatus || 'Active', u.accountStatus === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}
+                    ${(() => {
+                        const status = u.accountStatus || 'Active';
+                        let colors = 'bg-emerald-500/10 text-emerald-500';
+                        if (status === 'Deactivated') colors = 'bg-orange-500/10 text-orange-500';
+                        else if (status !== 'Active') colors = 'bg-red-500/10 text-red-500';
+                        return UI.badge(status, colors);
+                    })()}
                     ${u.isPremium ? UI.badge('Premium', 'bg-orange-500/10 text-orange-500 ml-1') : ''}
                     ${u.isShadowBanned ? UI.badge('Shadow', 'bg-purple-500/10 text-purple-500 ml-1') : ''}
                 </td>
@@ -94,6 +103,13 @@ async function openUserControl(phone) {
                                 <option value="Deactivated" ${u.accountStatus === 'Deactivated' ? 'selected' : ''}>DEACTIVATED (Chat Block)</option>
                                 <option value="Suspended" ${u.accountStatus === 'Suspended' ? 'selected' : ''}>SUSPENDED (Login Block)</option>
                             </select>
+                            ${u.isDeactivated ? `
+                                <div class="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl">
+                                    <p class="text-[9px] font-black text-orange-500 uppercase">Deactivated On</p>
+                                    <p class="text-[10px] text-white font-bold">${new Date(u.deactivatedAt).toLocaleString()}</p>
+                                    <p class="text-[8px] text-slate-500 mt-1 italic">"${u.deactivationReason || 'User requested'}"</p>
+                                </div>
+                            ` : ''}
                         </div>
                         <div class="flex items-center justify-between p-4 glass rounded-2xl">
                             <span class="text-[10px] font-black text-slate-400 uppercase">Shadow Ban</span>

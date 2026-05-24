@@ -95,7 +95,7 @@ class InboxScreenState extends State<InboxScreen> {
       final eventName = event['event'];
       final data = event['data'];
 
-      if (eventName == 'receive_message' || eventName == 'unread_update' || eventName == 'message_opened' || eventName == 'moderation_state_updated') {
+      if (eventName == 'receive_message' || eventName == 'unread_update' || eventName == 'message_opened' || eventName == 'moderation_state_updated' || eventName == 'user_deactivated' || eventName == 'user_reactivated') {
         _handleInboxUpdate(data);
       }
     });
@@ -472,6 +472,7 @@ class InboxScreenState extends State<InboxScreen> {
             final bool isOnline = onlineMap[chat['phone']] ?? chat['isOnline'] ?? false;
             final bool isTyping = typingMap[chat['phone']] ?? false;
             final bool isBlocked = chat['isBlocked'] == true;
+            final bool isDeactivated = chat['accountStatus'] == 'Deactivated' || chat['isDeactivated'] == true;
 
             return ListTile(
               onTap: () => _openChat(chat),
@@ -531,14 +532,18 @@ class InboxScreenState extends State<InboxScreen> {
                       if (isBlocked) ...[
                         const Text(" • ", style: TextStyle(color: Colors.white24)),
                         Text(chat['iBlocked'] == true ? "You blocked" : "Blocked you", style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w800)),
+                      ],
+                      if (isDeactivated) ...[
+                        const Text(" • ", style: TextStyle(color: Colors.white24)),
+                        const Text("Deactivated", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.w800)),
                       ]
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isTyping ? "typing..." : (chat['msg'] ?? ''),
+                    isDeactivated ? "Account Deactivated" : (isTyping ? "typing..." : (chat['msg'] ?? '')),
                     style: TextStyle(
-                      color: isTyping ? Colors.greenAccent : Colors.white60,
+                      color: isTyping ? Colors.greenAccent : (isDeactivated ? Colors.white24 : Colors.white60),
                       fontSize: 14,
                       fontStyle: isTyping ? FontStyle.italic : FontStyle.normal,
                     ),

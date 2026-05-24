@@ -113,9 +113,23 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', async (data, callback) => {
         try {
-            const sender = await User.findOne({ phone: data.senderPhone });
+            const [sender, receiver] = await Promise.all([
+                User.findOne({ phone: data.senderPhone }, 'isPremium accountStatus isDeactivated'),
+                User.findOne({ phone: data.receiverPhone }, 'accountStatus isDeactivated')
+            ]);
+
             if (!sender || !sender.isPremium) {
                 if (callback) callback({ success: false, message: "Premium required" });
+                return;
+            }
+
+            if (sender.accountStatus === 'Deactivated' || sender.isDeactivated) {
+                if (callback) callback({ success: false, message: "Account deactivated" });
+                return;
+            }
+
+            if (receiver && (receiver.accountStatus === 'Deactivated' || receiver.isDeactivated)) {
+                if (callback) callback({ success: false, message: "Recipient has deactivated their account" });
                 return;
             }
 
@@ -390,8 +404,24 @@ io.on('connection', (socket) => {
 
     // --- WEBRTC SIGNALING ---
 
-    socket.on('initiate_call', (data) => {
+    socket.on('initiate_call', async (data) => {
         const { targetPhone, isVideo, callerName, callerPhone } = data;
+
+        const [sender, receiver] = await Promise.all([
+            User.findOne({ phone: callerPhone }, 'accountStatus isDeactivated'),
+            User.findOne({ phone: targetPhone }, 'accountStatus isDeactivated')
+        ]);
+
+        if (sender && (sender.accountStatus === 'Deactivated' || sender.isDeactivated)) {
+            socket.emit('call_error', { message: "Account deactivated" });
+            return;
+        }
+
+        if (receiver && (receiver.accountStatus === 'Deactivated' || receiver.isDeactivated)) {
+            socket.emit('call_error', { message: "Recipient has deactivated their account" });
+            return;
+        }
+
         console.log(`📞 Call initiated: ${callerPhone} -> ${targetPhone} (${isVideo ? 'Video' : 'Audio'})`);
         io.to(`user_${targetPhone}`).emit('incoming_call', {
             callerPhone,

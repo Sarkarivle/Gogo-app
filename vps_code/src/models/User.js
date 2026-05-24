@@ -77,6 +77,16 @@ const UserSchema = new mongoose.Schema({
     },
     isBanned: { type: Boolean, default: false },
     banReason: String,
+    isDeactivated: { type: Boolean, default: false },
+    deactivatedAt: { type: Date },
+    reactivatedAt: { type: Date },
+    deactivationReason: String,
+    lastPremiumSnapshot: {
+        isPremium: Boolean,
+        premiumExpiry: Date,
+        premiumPlan: String,
+        subscriptionStatus: String
+    },
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: Date.now },
     hasCompletedOnboarding: { type: Boolean, default: false },

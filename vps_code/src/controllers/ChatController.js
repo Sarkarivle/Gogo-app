@@ -12,11 +12,6 @@ exports.getInbox = async (req, res) => {
         const { page = 1, limit = 50 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const me = await User.findOne({ phone }, 'accountStatus');
-        if (me && (me.accountStatus === 'Deactivated' || me.accountStatus === 'Suspended')) {
-            return res.status(403).json({ success: false, message: "account deactivate" });
-        }
-
         // Fetch all metadata for this user to apply filters (muted, hidden, favourites)
         const allMetadata = await ConversationMetadata.find({ phone });
         const metaMap = {};

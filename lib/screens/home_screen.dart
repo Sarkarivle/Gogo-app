@@ -181,6 +181,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       
       if (event['event'] == 'unread_update' || event['event'] == 'receive_message') {
         _fetchUnreadCount();
+      } else if (event['event'] == 'user_deactivated') {
+        final phone = event['data']['phone'];
+        if (mounted) {
+          setState(() {
+            _profiles.removeWhere((p) => p['phone'] == phone);
+          });
+        }
+      } else if (event['event'] == 'user_reactivated') {
+        // We don't necessarily need to add them back instantly 
+        // as they'll show up on next refresh/pagination, 
+        // but it could be done if we wanted.
       }
     });
   }

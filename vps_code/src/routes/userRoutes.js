@@ -16,6 +16,8 @@ router.post('/update-fcm', UserController.updateFcmToken);
 router.post('/verify-request', UserController.submitVerification);
 router.get('/discover', UserController.getDiscover);
 router.post('/track-event', UserController.trackEvent);
+router.post('/deactivate', UserController.deactivateAccount);
+router.post('/reactivate', UserController.reactivateAccount);
 
 // Contact & Policies
 router.post('/contact-us', ContactController.submitMessage);
