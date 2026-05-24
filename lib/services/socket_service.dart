@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_service.dart';
 import 'premium_service.dart';
-import 'call_service.dart';
 
 class SocketService with WidgetsBindingObserver {
   static final SocketService _instance = SocketService._internal();

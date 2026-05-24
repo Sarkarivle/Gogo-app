@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -73,7 +74,7 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
           'lng': pos.longitude,
           'city': city,
           'area': area
-        }).timeout(const Duration(seconds: 2)).catchError((e) => null);
+        }).timeout(const Duration(seconds: 2)).catchError((e) => http.Response('Error', 500));
       }
 
       // Step 5: Navigate

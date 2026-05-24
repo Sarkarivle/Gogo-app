@@ -6,7 +6,6 @@ import 'package:confetti/confetti.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:http/http.dart' as http;
 import 'profile_setup_screen.dart';
 import '../home_screen.dart';
 import '../../services/api_service.dart';

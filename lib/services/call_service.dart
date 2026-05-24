@@ -25,6 +25,8 @@ class CallService {
   String? _remoteName;
   bool _isVideo = false;
   bool _isOutgoing = false;
+  bool _remoteIsVideoOff = false;
+  bool get remoteIsVideoOff => _remoteIsVideoOff;
   DateTime? _startTime;
   Timer? _callTimeoutTimer;
 
@@ -63,9 +65,6 @@ class CallService {
           break;
         case 'ice_candidate':
           _handleICECandidate(data);
-          break;
-        case 'call_state_sync':
-          _handleCallStateSync(data);
           break;
         case 'call_state_sync':
           _handleCallStateSync(data);
@@ -266,7 +265,8 @@ class CallService {
 
   void _handleCallStateSync(dynamic data) {
     if (_state != CallState.connected) return;
-    _stateController.add(_state); // Trigger UI rebuild with new peer state if needed
+    _remoteIsVideoOff = data['isVideoOff'] ?? false;
+    _stateController.add(_state); // Trigger UI rebuild with new peer state
   }
 
   void syncState({required bool isMuted, required bool isVideoOff}) {
@@ -328,6 +328,7 @@ class CallService {
       _remotePhone = null;
       _remoteName = null;
       _startTime = null;
+      _remoteIsVideoOff = false;
       _updateState(CallState.idle);
     });
   }

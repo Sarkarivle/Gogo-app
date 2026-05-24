@@ -5,7 +5,6 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import '../services/premium_service.dart';
 import 'chat_screen.dart';
-import 'onboarding/payment_screen.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   final String name;
@@ -149,7 +148,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       final myData = jsonDecode(prefs.getString('user_data') ?? '{}');
       final myPhone = myData['phone'];
 
-      final response = await ApiService.post('/api/user/report', {
+      await ApiService.post('/api/user/report', {
         'reporterPhone': myPhone,
         'reportedPhone': widget.phone,
         'category': category,
@@ -168,9 +167,9 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   @override
   Widget build(BuildContext context) {
     String locName = "";
-    if (widget.area != null && widget.area.isNotEmpty && widget.area != "Unknown") {
+    if (widget.area.isNotEmpty && widget.area != "Unknown") {
       locName = widget.area;
-    } else if (widget.city != null && widget.city.isNotEmpty && widget.city != "Unknown") {
+    } else if (widget.city.isNotEmpty && widget.city != "Unknown") {
       locName = widget.city;
     }
 

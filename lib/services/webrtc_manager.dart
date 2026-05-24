@@ -15,6 +15,9 @@ class WebRTCManager {
   final _remoteStreamController = StreamController<MediaStream?>.broadcast();
   Stream<MediaStream?> get remoteStreamStream => _remoteStreamController.stream;
 
+  final _localStreamController = StreamController<MediaStream?>.broadcast();
+  Stream<MediaStream?> get localStreamStream => _localStreamController.stream;
+
   List<RTCIceCandidate> _remoteIceCandidates = [];
   bool _remoteDescriptionSet = false;
 
@@ -23,7 +26,8 @@ class WebRTCManager {
       {'urls': 'stun:stun.l.google.com:19302'},
       {'urls': 'stun:stun1.l.google.com:19302'},
       {'urls': 'stun:stun2.l.google.com:19302'},
-    ]
+    ],
+    'sdpSemantics': 'unified-plan',
   };
 
   final Map<String, dynamic> _config = {
@@ -38,36 +42,64 @@ class WebRTCManager {
 
   Future<void> initLocalStream(bool isVideo) async {
     final Map<String, dynamic> mediaConstraints = {
-      'audio': true,
+      'audio': {
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+      },
       'video': isVideo ? {
         'facingMode': 'user',
-        'width': {'min': 640},
-        'height': {'min': 480},
-        'frameRate': {'min': 30},
+        'width': {'ideal': 1280},
+        'height': {'ideal': 720},
+        'frameRate': {'ideal': 30, 'max': 30},
       } : false,
     };
 
     try {
+      if (_localStream != null) {
+        // Optimization: if we already have a stream and just need to enable/disable tracks, 
+        // don't recreate the whole stream to prevent flickering.
+        final videoTracks = _localStream!.getVideoTracks();
+        if (isVideo && videoTracks.isNotEmpty) {
+           videoTracks[0].enabled = true;
+           return;
+        } else if (!isVideo && videoTracks.isNotEmpty) {
+           videoTracks[0].enabled = false;
+           // We might still want to keep the stream alive
+        }
+        
+        // If we really need a new stream (e.g. switching from audio-only to video)
+        // only then we proceed to dispose.
+        if (isVideo && videoTracks.isEmpty) {
+           _localStream!.getTracks().forEach((track) => track.stop());
+           await _localStream!.dispose();
+           _localStream = null;
+        } else {
+          return; // Already have what we need
+        }
+      }
+
       _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      _localStreamController.add(_localStream);
     } catch (e) {
       debugPrint("Error getting user media: $e");
     }
   }
 
   Future<void> initializePeerConnection(String targetPhone) async {
+    if (_peerConnection != null) return;
+    
     _peerConnection = await createPeerConnection(_iceServers, _config);
 
     _peerConnection!.onIceCandidate = (candidate) {
-      if (candidate != null) {
-        SocketService().emit('ice_candidate', {
-          'targetPhone': targetPhone,
-          'candidate': {
-            'candidate': candidate.candidate,
-            'sdpMid': candidate.sdpMid,
-            'sdpMLineIndex': candidate.sdpMLineIndex,
-          },
-        });
-      }
+      SocketService().emit('ice_candidate', {
+        'targetPhone': targetPhone,
+        'candidate': {
+          'candidate': candidate.candidate,
+          'sdpMid': candidate.sdpMid,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        },
+      });
     };
 
     _peerConnection!.onTrack = (event) {
@@ -84,6 +116,26 @@ class WebRTCManager {
     _localStream?.getTracks().forEach((track) {
       _peerConnection!.addTrack(track, _localStream!);
     });
+
+    // Apply bitrate constraints after a short delay to ensure tracks are added
+    Future.delayed(const Duration(milliseconds: 500), () => _setBitrate());
+  }
+
+  void _setBitrate() async {
+    if (_peerConnection == null) return;
+    
+    final senders = await _peerConnection!.getSenders();
+    for (var sender in senders) {
+      final track = sender.track;
+      if (track != null && track.kind == 'video') {
+        final parameters = sender.parameters;
+        if (parameters.encodings != null && parameters.encodings!.isNotEmpty) {
+          parameters.encodings![0].maxBitrate = 1500 * 1000; // 1.5 Mbps for 720p
+          await sender.setParameters(parameters);
+          debugPrint("✅ Video bitrate capped at 1.5Mbps for stability");
+        }
+      }
+    }
   }
 
   Future<RTCSessionDescription> createOffer() async {
@@ -139,6 +191,7 @@ class WebRTCManager {
   void dispose() {
     _localStream?.getTracks().forEach((track) => track.stop());
     _localStream?.dispose();
+    _localStreamController.add(null);
     _peerConnection?.close();
     _peerConnection?.dispose();
     _remoteStreamController.add(null);

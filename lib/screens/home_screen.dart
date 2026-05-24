@@ -421,15 +421,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _showFilterDialog(String title, List<String> options, String currentValue, Function(String) onSelect) {
-    // Moved to FilterDialog.show
-  }
-
-  Widget _buildFilterChip(String label, bool drop, {bool isLive = false, VoidCallback? onTap}) {
-    // Moved to HomeFilterChip
-    return Container();
-  }
-
   Widget _buildProfileGrid() {
     return RefreshIndicator(
       onRefresh: () async => _resetAndFetch(),

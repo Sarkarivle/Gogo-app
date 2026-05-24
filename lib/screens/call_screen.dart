@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math';
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -26,117 +28,307 @@ class CallScreen extends StatefulWidget {
   State<CallScreen> createState() => _CallScreenState();
 }
 
-class _CallScreenState extends State<CallScreen> {
+class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
   bool _isMuted = false;
   bool _isVideoOff = false;
   bool _isSpeakerOn = true;
   Timer? _timer;
-  int _seconds = 0;
+  final ValueNotifier<int> _callDuration = ValueNotifier<int>(0);
+  late final String _displayId;
+
+  late AnimationController _pulseController;
+  StreamSubscription? _stateSubscription;
+  StreamSubscription? _remoteStreamSubscription;
+  StreamSubscription? _localStreamSubscription;
 
   @override
   void initState() {
     super.initState();
+    _displayId = (1000000 + Random().nextInt(8999999)).toString();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+
     _initRenderers();
-    CallService().stateStream.listen((state) {
+    WidgetsBinding.instance.addObserver(this);
+    
+    _stateSubscription = CallService().stateStream.listen((state) {
       if (state == CallState.ended) {
         if (mounted) Navigator.pop(context);
       }
       if (state == CallState.connected) {
         _startTimer();
-        if (mounted) setState(() {});
       }
+      
+      // Update UI only when state changes significantly
+      if (mounted) setState(() {});
     });
   }
 
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _seconds++;
-        });
-      }
+      _callDuration.value++;
     });
   }
 
   Future<void> _initRenderers() async {
-    await _localRenderer.initialize();
-    await _remoteRenderer.initialize();
-    
-    WebRTCManager().remoteStreamStream.listen((stream) {
-      if (mounted) {
-        _remoteRenderer.srcObject = stream;
-        setState(() {});
+    try {
+      await _localRenderer.initialize();
+      await _remoteRenderer.initialize();
+      
+      _remoteStreamSubscription = WebRTCManager().remoteStreamStream.listen((stream) {
+        if (mounted) {
+          if (_remoteRenderer.srcObject?.id != stream?.id) {
+             _remoteRenderer.srcObject = stream;
+             setState(() {});
+          }
+        }
+      });
+
+      _localStreamSubscription = WebRTCManager().localStreamStream.listen((stream) {
+        if (mounted) {
+          if (_localRenderer.srcObject?.id != stream?.id) {
+            _localRenderer.srcObject = stream;
+            setState(() {});
+          }
+        }
+      });
+      
+      if (widget.isVideo) {
+        if (WebRTCManager().localStream == null) {
+          await WebRTCManager().initLocalStream(true);
+        } else {
+          _localRenderer.srcObject = WebRTCManager().localStream;
+        }
+        if (mounted) setState(() {});
       }
-    });
-    
-    if (WebRTCManager().localStream != null) {
-      _localRenderer.srcObject = WebRTCManager().localStream;
+    } catch (e) {
+      debugPrint("Renderer initialization error: $e");
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _stateSubscription?.cancel();
+    _remoteStreamSubscription?.cancel();
+    _localStreamSubscription?.cancel();
+    _pulseController.dispose();
+    _callDuration.dispose();
     _localRenderer.dispose();
     _remoteRenderer.dispose();
     super.dispose();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Re-attach stream if it was lost or ensure renderer is still working
+      if (_localRenderer.srcObject == null && WebRTCManager().localStream != null) {
+        _localRenderer.srcObject = WebRTCManager().localStream;
+      }
+      if (_remoteRenderer.srcObject == null && WebRTCManager().remoteStream != null) {
+        _remoteRenderer.srcObject = WebRTCManager().remoteStream;
+      }
+      setState(() {});
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: const Color(0xFF0A0A0A),
       body: Stack(
+        fit: StackFit.expand,
         children: [
           _buildRemoteView(),
+          _buildDarkOverlay(),
           _buildLocalView(),
-          _buildCallOverlay(),
           _buildTopBar(),
+          _buildBottomPanel(),
         ],
       ),
     );
   }
 
-  Widget _buildRemoteView() {
-    if (CallService().state != CallState.connected || !widget.isVideo) {
-      return Container(
-        color: const Color(0xFF1A1A1A),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 60,
-                backgroundColor: Colors.white10,
-                backgroundImage: widget.remotePhoto != null ? CachedNetworkImageProvider(widget.remotePhoto!) : null,
-                child: widget.remotePhoto == null ? const Icon(Icons.person, size: 60, color: Colors.white24) : null,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                widget.remoteName,
-                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              if (CallService().state == CallState.connected)
-                Text(
-                  _formatDuration(_seconds),
-                  style: const TextStyle(color: Colors.orangeAccent, fontSize: 18, fontWeight: FontWeight.bold),
-                )
-              else
-                Text(
-                  CallService().state == CallState.ringing ? (widget.isOutgoing ? 'Ringing...' : 'Incoming Call...') : 'Connecting...',
-                  style: const TextStyle(color: Colors.white54, fontSize: 16),
-                ),
+  Widget _buildDarkOverlay() {
+    if (!widget.isVideo || CallService().state != CallState.connected) return const SizedBox.shrink();
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withOpacity(0.4),
+              Colors.transparent,
+              Colors.transparent,
+              Colors.black.withOpacity(0.6),
             ],
+            stops: const [0.0, 0.2, 0.8, 1.0],
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    return RTCVideoView(_remoteRenderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover);
+  Widget _buildRemoteView() {
+    bool isRemoteVideoOff = CallService().remoteIsVideoOff;
+    bool isConnected = CallService().state == CallState.connected;
+
+    return Container(
+      color: const Color(0xFF0F0F0F),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Remote Video View
+          if (widget.isVideo && isConnected)
+            Positioned.fill(
+              child: Opacity(
+                opacity: isRemoteVideoOff ? 0 : 1,
+                child: RTCVideoView(
+                  _remoteRenderer,
+                  key: const ValueKey('remoteVideoRenderer'),
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+              ),
+            ),
+          
+          // Placeholder (shown when not connected, not video call, or camera off)
+          if (!isConnected || !widget.isVideo || isRemoteVideoOff)
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 500),
+              opacity: (!isConnected || !widget.isVideo || isRemoteVideoOff) ? 1 : 0,
+              child: _buildRemotePlaceholder(isRemoteVideoOff && isConnected),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRemotePlaceholder(bool isCameraOff) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              if (CallService().state == CallState.ringing || CallService().state == CallState.connecting)
+                AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, child) {
+                    return Container(
+                      width: 120 + (40 * _pulseController.value),
+                      height: 120 + (40 * _pulseController.value),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.orangeAccent.withOpacity(0.2 * (1 - _pulseController.value)),
+                      ),
+                    );
+                  },
+                ),
+              Hero(
+                tag: 'remoteAvatar',
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.orangeAccent.withOpacity(0.5), width: 2),
+                  ),
+                  child: CircleAvatar(
+                    radius: 60,
+                    backgroundColor: Colors.white10,
+                    backgroundImage: widget.remotePhoto != null ? CachedNetworkImageProvider(widget.remotePhoto!) : null,
+                    child: widget.remotePhoto == null ? const Icon(Icons.person, size: 60, color: Colors.white24) : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text(
+            "ID: $_displayId",
+            style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 8),
+          if (!isCameraOff) _buildCallStatusText(),
+          if (isCameraOff)
+            Padding(
+              padding: const EdgeInsets.only(top: 16.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 16),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Camera is Off",
+                      style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCallStatusText() {
+    return StreamBuilder<CallState>(
+      stream: CallService().stateStream,
+      initialData: CallService().state,
+      builder: (context, snapshot) {
+        final state = snapshot.data ?? CallState.idle;
+        String text = "";
+        Color color = Colors.white70;
+
+        switch (state) {
+          case CallState.ringing:
+            text = widget.isOutgoing ? 'Ringing...' : 'Incoming Call...';
+            color = Colors.orangeAccent;
+            break;
+          case CallState.connecting:
+            text = 'Connecting...';
+            color = Colors.blueAccent;
+            break;
+          case CallState.connected:
+            return ValueListenableBuilder<int>(
+              valueListenable: _callDuration,
+              builder: (context, seconds, _) {
+                return Text(
+                  _formatDuration(seconds),
+                  style: const TextStyle(color: Colors.greenAccent, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: 0.5),
+                );
+              },
+            );
+          case CallState.ended:
+            text = 'Call Ended';
+            color = Colors.redAccent;
+            break;
+          default:
+            text = "";
+        }
+
+        return Text(
+          text,
+          style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w500, letterSpacing: 0.5),
+        );
+      }
+    );
   }
 
   String _formatDuration(int seconds) {
@@ -150,24 +342,53 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Widget _buildLocalView() {
-    if (CallService().state != CallState.connected || !widget.isVideo || _isVideoOff) {
+    if (CallService().state == CallState.ended || CallService().state == CallState.idle || !widget.isVideo) {
       return const SizedBox.shrink();
     }
 
     return Positioned(
-      right: 20,
-      top: 100,
-      width: 120,
-      height: 180,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10)],
+      left: 20,
+      top: 110,
+      width: 110,
+      height: 160,
+      child: RepaintBoundary(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white24, width: 1.5),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 15, spreadRadius: 2),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Local Video Preview
+                RTCVideoView(
+                  _localRenderer,
+                  key: const ValueKey('localVideoRenderer'),
+                  mirror: true,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+                
+                // Local Camera Off Placeholder
+                if (_isVideoOff)
+                  Positioned.fill(child: _buildLocalCameraOffPlaceholder()),
+              ],
+            ),
+          ),
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(15),
-          child: RTCVideoView(_localRenderer, mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
-        ),
+      ),
+    );
+  }
+
+  Widget _buildLocalCameraOffPlaceholder() {
+    return Container(
+      color: const Color(0xFF1A1A1A),
+      child: const Center(
+        child: Icon(Icons.videocam_off_rounded, color: Colors.white24, size: 30),
       ),
     );
   }
@@ -175,71 +396,204 @@ class _CallScreenState extends State<CallScreen> {
   Widget _buildTopBar() {
     return Positioned(
       top: 50,
-      left: 0,
-      right: 0,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+      left: 10,
+      right: 10,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              color: Colors.black26,
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
               onPressed: () {
-                // Return to chat while keeping call active? 
-                // For now just stay as is, but we could allow minimizing.
+                // Keep navigation intact - do not pop unless specifically required by app flow
               },
             ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.white),
-              color: const Color(0xFF1E1E1E),
-              onSelected: (value) => _handleMenuAction(value),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'report',
-                  child: Row(
-                    children: [
-                      Icon(Icons.report_problem_outlined, color: Colors.redAccent, size: 20),
-                      SizedBox(width: 10),
-                      Text('Report User', style: TextStyle(color: Colors.white)),
-                    ],
+          ),
+          if (widget.isVideo && CallService().state == CallState.connected)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _callDuration,
+                    builder: (context, seconds, _) {
+                      return Text(
+                        _formatDuration(seconds),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      );
+                    },
                   ),
                 ),
-                const PopupMenuItem(
-                  value: 'block',
-                  child: Row(
-                    children: [
-                      Icon(Icons.block_flipped, color: Colors.redAccent, size: 20),
-                      SizedBox(width: 10),
-                      Text('Block User', style: TextStyle(color: Colors.white)),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
+          IconButton(
+            icon: const Icon(Icons.security_outlined, color: Colors.white),
+            onPressed: () => _showPremiumModerationSheet(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPremiumModerationSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 25),
+            const Text('Safety & Moderation', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Text('ID: $_displayId', style: const TextStyle(color: Colors.white54, fontSize: 14)),
+            const SizedBox(height: 25),
+            _buildModerationTile(
+              icon: Icons.report_gmailerrorred_rounded,
+              title: 'Report User',
+              subtitle: 'Report for harassment, scam or nudity',
+              color: Colors.orangeAccent,
+              onTap: () {
+                Navigator.pop(context);
+                _showReportOptions();
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildModerationTile(
+              icon: Icons.block_rounded,
+              title: 'Block User',
+              subtitle: 'Stop all communication with this user',
+              color: Colors.redAccent,
+              onTap: () {
+                Navigator.pop(context);
+                _confirmBlock();
+              },
+            ),
+            const SizedBox(height: 30),
+            SafeArea(top: false, child: const SizedBox(height: 15)), // Raised for ergonomic spacing
           ],
         ),
       ),
     );
   }
 
-  void _handleMenuAction(String action) async {
-    if (action == 'block') {
-      _confirmBlock();
-    } else if (action == 'report') {
-      _showReportDialog();
-    }
+  Widget _buildModerationTile({required IconData icon, required String title, required String subtitle, required Color color, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                  Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReportOptions() {
+    final reasons = ['Harassment', 'Abusive Behavior', 'Scam / Fraud', 'Inappropriate Content', 'Underage Concern', 'Other'];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 20),
+            const Text('Reason for Report', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                itemCount: reasons.length,
+                separatorBuilder: (_, __) => Divider(color: Colors.white.withOpacity(0.05)),
+                itemBuilder: (context, index) => ListTile(
+                  title: Text(reasons[index], style: const TextStyle(color: Colors.white70)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white24),
+                  onTap: () {
+                    Navigator.pop(context);
+                    final myPhone = CallService().myPhone;
+                    if (myPhone != null) {
+                      ChatRepository().blockUser(
+                        blockerPhone: myPhone, 
+                        blockedPhone: widget.remotePhone,
+                        reason: reasons[index],
+                        isReported: true,
+                      );
+                      CallService().endCall(); 
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Reported for ${reasons[index]}. We will investigate.'),
+                          backgroundColor: Colors.blueAccent,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SafeArea(top: false, child: const SizedBox(height: 15)), // Raised for ergonomic spacing
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmBlock() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: const Color(0xFF2C2C2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Block User?', style: TextStyle(color: Colors.white)),
-        content: Text('Are you sure you want to block ${widget.remoteName}? The call will end immediately.', style: const TextStyle(color: Colors.white70)),
+        content: const Text('You will no longer receive calls or messages from this user.', style: TextStyle(color: Colors.white70)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
-            TextButton(
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: Colors.white54))),
+          TextButton(
             onPressed: () {
               Navigator.pop(context);
               final myPhone = CallService().myPhone;
@@ -248,69 +602,28 @@ class _CallScreenState extends State<CallScreen> {
                 CallService().endCall(); 
               }
             },
-            child: const Text('BLOCK', style: TextStyle(color: Colors.redAccent)),
+            child: const Text('BLOCK', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
 
-  void _showReportDialog() {
-    // Reuse existing report dialog logic or push to a report screen
-    // Since I can't easily import stateful logic from another screen's private method,
-    // I will implement a quick version or better, use the existing architecture if available.
-    // For now, let's implement a professional simple version matching the app style.
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Report User', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-            _buildReportItem('Harassment'),
-            _buildReportItem('Inappropriate Content'),
-            _buildReportItem('Scam / Fraud'),
-            _buildReportItem('Other'),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReportItem(String reason) {
-    return ListTile(
-      title: Text(reason, style: const TextStyle(color: Colors.white)),
-      onTap: () {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reported for $reason. Thank you for keeping GoGo safe.')));
-      },
-    );
-  }
-
-  Widget _buildCallOverlay() {
+  Widget _buildBottomPanel() {
     return Positioned(
-      bottom: 50,
+      bottom: 60, // Moved up from 50 to avoid system navigation
       left: 0,
       right: 0,
-      child: Column(
-        children: [
-          if (CallService().state == CallState.connected && widget.isVideo)
-             Text(
-                _formatDuration(_seconds),
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 10, color: Colors.black)]),
-              ),
-          const SizedBox(height: 20),
-          if (CallService().state == CallState.ringing && !widget.isOutgoing)
-            _buildIncomingCallControls()
-          else
-            _buildActiveCallControls(),
-        ],
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            if (CallService().state == CallState.ringing && !widget.isOutgoing)
+              _buildIncomingCallControls()
+            else
+              _buildActiveCallControls(),
+          ],
+        ),
       ),
     );
   }
@@ -319,8 +632,8 @@ class _CallScreenState extends State<CallScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildCircleButton(Icons.call_end, Colors.red, () => CallService().rejectCall()),
-        _buildCircleButton(Icons.call, Colors.green, () {
+        _buildActionBtn(Icons.call_end, Colors.redAccent, "Decline", () => CallService().rejectCall()),
+        _buildActionBtn(Icons.call, Colors.greenAccent, "Accept", () {
            CallService().acceptCall();
            setState(() {});
         }),
@@ -329,62 +642,115 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Widget _buildActiveCallControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildCircleButton(
-          _isMuted ? Icons.mic_off : Icons.mic,
-          Colors.white10,
-          () {
-            setState(() => _isMuted = !_isMuted);
-            WebRTCManager().setMuted(_isMuted);
-            CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
-          },
-          iconColor: _isMuted ? Colors.redAccent : Colors.white,
-        ),
-        if (widget.isVideo)
-          _buildCircleButton(
-            _isVideoOff ? Icons.videocam_off : Icons.videocam,
-            Colors.white10,
-            () {
-              setState(() => _isVideoOff = !_isVideoOff);
-              WebRTCManager().setVideoEnabled(!_isVideoOff);
-              CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
-            },
-            iconColor: _isVideoOff ? Colors.redAccent : Colors.white,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(40),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            decoration: BoxDecoration(
+              color: Colors.black38,
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildControlIcon(
+                  _isMuted ? Icons.mic_off : Icons.mic,
+                  _isMuted,
+                  () {
+                    setState(() => _isMuted = !_isMuted);
+                    WebRTCManager().setMuted(_isMuted);
+                    CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
+                  },
+                ),
+                if (widget.isVideo)
+                  _buildControlIcon(
+                    _isVideoOff ? Icons.videocam_off : Icons.videocam,
+                    _isVideoOff,
+                    () {
+                      setState(() => _isVideoOff = !_isVideoOff);
+                      WebRTCManager().setVideoEnabled(!_isVideoOff);
+                      CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
+                    },
+                  ),
+                _buildControlIcon(
+                  _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
+                  !_isSpeakerOn,
+                  () {
+                    setState(() => _isSpeakerOn = !_isSpeakerOn);
+                  },
+                ),
+                if (widget.isVideo)
+                  _buildControlIcon(
+                    Icons.switch_camera_outlined,
+                    false,
+                    () => WebRTCManager().switchCamera(),
+                  ),
+                _buildEndCallBtn(),
+              ],
+            ),
           ),
-        _buildCircleButton(
-          Icons.call_end,
-          Colors.red,
-          () => CallService().endCall(),
         ),
-        _buildCircleButton(
-          _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
-          Colors.white10,
-          () {
-            setState(() => _isSpeakerOn = !_isSpeakerOn);
-            // Implement speaker toggle if needed, usually handled by WebRTC
-          },
-        ),
-        if (widget.isVideo)
-          _buildCircleButton(
-            Icons.switch_camera,
-            Colors.white10,
-            () => WebRTCManager().switchCamera(),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildCircleButton(IconData icon, Color bgColor, VoidCallback onTap, {Color iconColor = Colors.white}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: bgColor),
-        child: Icon(icon, color: iconColor, size: 32),
       ),
     );
   }
+
+  Widget _buildControlIcon(IconData icon, bool isActive, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(30),
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isActive ? Colors.white : Colors.white.withOpacity(0.1),
+        ),
+        child: Icon(icon, color: isActive ? Colors.black : Colors.white, size: 24),
+      ),
+    );
+  }
+
+  Widget _buildEndCallBtn() {
+    return GestureDetector(
+      onTap: () => CallService().endCall(),
+      child: Container(
+        width: 55,
+        height: 55,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.redAccent,
+          boxShadow: [BoxShadow(color: Colors.redAccent, blurRadius: 15, spreadRadius: -2)],
+        ),
+        child: const Icon(Icons.call_end, color: Colors.white, size: 28),
+      ),
+    );
+  }
+
+  Widget _buildActionBtn(IconData icon, Color color, String label, VoidCallback onTap) {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 75,
+            height: 75,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color,
+              boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 20, spreadRadius: 2)],
+            ),
+            child: Icon(icon, color: Colors.white, size: 35),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
 }
+
