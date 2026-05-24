@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/force_update_coordinator.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding/location_permission_screen.dart';
@@ -79,11 +80,35 @@ class SocketGlobalHandler extends StatefulWidget {
   State<SocketGlobalHandler> createState() => _SocketGlobalHandlerState();
 }
 
-class _SocketGlobalHandlerState extends State<SocketGlobalHandler> {
+class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _listenToSocketEvents();
+    _checkUpdate();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkUpdate();
+    }
+  }
+
+  void _checkUpdate({bool forceRefresh = false}) {
+    // We use a small delay to ensure navigatorKey has context if called immediately on start
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        ForceUpdateCoordinator().checkAndShowUpdate(context, forceRefresh: forceRefresh);
+      }
+    });
   }
 
   void _listenToSocketEvents() {
@@ -97,6 +122,8 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> {
         _handleForceLogout(data['reason'] ?? 'Account restricted by moderator');
       } else if (type == 'admin_alert') {
         _showAdminAlert(data['title'], data['message']);
+      } else if (type == 'app_config_sync') {
+        _checkUpdate(forceRefresh: true);
       } else if (type == 'profile_sync_required') {
         _handleProfileSync(data);
       }

@@ -55,6 +55,7 @@ dependencies:
   flutter_cashfree_pg_sdk: ^2.1.2
   sms_autofill: ^2.3.0
   flutter_webrtc: ^0.12.1
+  package_info_plus: ^10.1.0
 
 
 dependency_overrides:

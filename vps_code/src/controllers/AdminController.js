@@ -15,6 +15,7 @@ exports.getConfig = async (req, res) => {
     try {
         const { key } = req.params;
         const config = await Config.findOne({ key });
+        console.log(`🔍 Fetching config for key: ${key}`, config ? config.value : 'Not found');
         res.json({ success: true, config: config ? config.value : {} });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -28,6 +29,16 @@ exports.updateConfig = async (req, res) => {
             { value, updatedAt: new Date() },
             { upsert: true, new: true }
         );
+
+        // --- REALTIME NOTIFICATION FOR APP UPDATE ---
+        if (key === 'app_update_config') {
+            const io = req.app.get('socketio');
+            if (io) {
+                console.log("📢 Emitting app_config_sync to all users");
+                io.emit('app_config_sync', { key: 'app_update_config' });
+            }
+        }
+
         res.json({ success: true, message: "Configuration synchronized successfully" });
     } catch (e) { res.status(500).json({ success: false }); }
 };

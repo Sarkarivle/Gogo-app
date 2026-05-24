@@ -132,5 +132,17 @@ const API = {
             body: JSON.stringify({ message })
         });
         return await res.json();
+    },
+    async getConfig(key) {
+        const res = await fetch(`/api/admin/config/${key}`);
+        return await res.json();
+    },
+    async updateConfig(key, value) {
+        const res = await fetch('/api/admin/config/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, value })
+        });
+        return await res.json();
     }
 };
