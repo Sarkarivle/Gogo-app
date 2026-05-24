@@ -532,6 +532,10 @@ io.on('connection', (socket) => {
         randomMatchController.handleSignaling(io, socket, data, 'call_state_sync');
     });
 
+    socket.on('random_partner_blocked', (data) => {
+        randomMatchController.handleBlock(io, socket, data);
+    });
+
     socket.on('disconnecting', () => {
         const phone = connectedUsers.get(socket.id);
         if (!phone) return;

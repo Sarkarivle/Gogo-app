@@ -8,6 +8,8 @@ import 'random_rtc_service.dart';
 import '../screens/random_searching_screen.dart';
 import '../screens/random_match_screen.dart';
 import '../screens/random_video_call_screen.dart';
+import '../screens/random_live_intro_screen.dart';
+import '../../services/chat_repository.dart';
 import '../../main.dart';
 
 enum RandomRoomState { idle, searching, matched, inCall }
@@ -75,6 +77,9 @@ class RandomRoomService {
         break;
       case 'random_call_state_sync':
         remoteVideoOff.value = data['isVideoOff'] ?? false;
+        break;
+      case 'random_partner_blocked':
+        _onPartnerBlocked();
         break;
     }
   }
@@ -161,15 +166,32 @@ class RandomRoomService {
   }
 
   void _onPartnerLeft() {
+    debugPrint("[RandomRoom] Partner left. Navigating to searching...");
     _cleanupFull();
     
     final context = MyApp.navigatorKey.currentContext;
-    if (context != null) {
+    if (context != null && context.mounted) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const RandomSearchingScreen()),
       );
       startSearch(context);
+    }
+  }
+
+  void _onPartnerBlocked() {
+    debugPrint("[RandomRoom] Partner blocked me. Exiting...");
+    _cleanupFull();
+    
+    final context = MyApp.navigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Partner disconnected.")),
+      );
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+        (route) => route.isFirst,
+      );
     }
   }
 
@@ -188,15 +210,49 @@ class RandomRoomService {
   }
 
   void endCall(BuildContext context) {
+    debugPrint("[RandomRoom] End Call requested. Full Exit.");
     final userId = SocketService().currentUserPhone;
     if (userId == null) return;
 
     _cleanupFull();
     RandomSocketService().leaveRoom(userId);
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    
+    if (context.mounted) {
+       Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+        (route) => route.isFirst,
+      );
+    }
+  }
+
+  void blockAndExit(BuildContext context, {required bool isReport}) async {
+    final String? myPhone = SocketService().currentUserPhone;
+    final String? pId = partnerId;
+    final String? rId = currentRoomId;
+    
+    debugPrint("[RandomRoom] Block and Exit triggered.");
+
+    if (myPhone != null && pId != null) {
+      // 1. Backend Block Relation
+      ChatRepository().blockUser(
+        blockerPhone: myPhone,
+        blockedPhone: pId,
+        isReported: isReport,
+        reason: isReport ? "Random Call Report" : "No reason"
+      );
+      
+      // 2. Emit Socket Block Event
+      if (rId != null) {
+        RandomSocketService().emitBlock(rId, pId);
+      }
+      
+      // 3. Full Cleanup & Exit
+      endCall(context);
+    }
   }
 
   void _cleanupFull() {
+    debugPrint("[RandomRoom] Performing Full Cleanup...");
     _searchTimer?.cancel();
     _pendingOffer = null;
     RandomRtcService().dispose();

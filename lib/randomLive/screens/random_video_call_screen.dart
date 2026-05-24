@@ -4,8 +4,6 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../services/random_rtc_service.dart';
 import '../services/random_room_service.dart';
 import '../services/random_socket_service.dart';
-import '../../services/chat_repository.dart';
-import '../../services/socket_service.dart';
 
 class RandomVideoCallScreen extends StatefulWidget {
   const RandomVideoCallScreen({super.key});
@@ -20,6 +18,7 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
   bool _isMuted = false;
   bool _isVideoOff = false;
   bool _isInitialized = false;
+  bool _isProcessingAction = false; // To prevent double taps
 
   @override
   void initState() {
@@ -236,20 +235,11 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
   }
 
   void _handleModerationAction({required bool isReport}) async {
-    final String? myPhone = SocketService().currentUserPhone;
-    final String? pId = RandomRoomService().partnerId;
-    
-    if (myPhone != null && pId != null) {
-      ChatRepository().blockUser(
-        blockerPhone: myPhone,
-        blockedPhone: pId,
-        isReported: isReport,
-        reason: isReport ? "Random Call Report" : "No reason"
-      );
-      if (mounted) {
-        Navigator.pop(context);
-        RandomRoomService().nextPartner(context);
-      }
+    if (_isProcessingAction) return;
+    if (mounted) {
+      setState(() => _isProcessingAction = true);
+      Navigator.pop(context); // Close bottom sheet
+      RandomRoomService().blockAndExit(context, isReport: isReport);
     }
   }
 
@@ -277,56 +267,63 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
 
   Widget _buildBottomPanel() {
     return Positioned(
-      bottom: 40,
+      bottom: 0,
       left: 0,
       right: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Safe Community Info
-          _buildInfoChip(),
-          const SizedBox(height: 20),
-          // Next Button
-          _buildNextButton(),
-          const SizedBox(height: 35),
-          // Compact Controls
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildCompactBtn(
-                icon: _isMuted ? Icons.mic_off : Icons.mic,
-                active: _isMuted,
-                onTap: () {
-                  setState(() => _isMuted = !_isMuted);
-                  RandomRtcService().setMuted(_isMuted);
-                },
-              ),
-              _buildCompactBtn(
-                icon: _isVideoOff ? Icons.videocam_off : Icons.videocam,
-                active: _isVideoOff,
-                onTap: () {
-                  setState(() => _isVideoOff = !_isVideoOff);
-                  RandomRtcService().setVideoEnabled(!_isVideoOff);
-                  // Sync call state to remote
-                  final rId = RandomRoomService().currentRoomId;
-                  final pId = RandomRoomService().partnerId;
-                  if (rId != null && pId != null) {
-                    RandomSocketService().syncCallState(rId, pId, _isVideoOff);
-                  }
-                },
-              ),
-              _buildCompactBtn(
-                icon: Icons.call_end,
-                isEnd: true,
-                onTap: () => RandomRoomService().endCall(context),
-              ),
-              _buildCompactBtn(
-                icon: Icons.switch_camera_rounded,
-                onTap: () => RandomRtcService().switchCamera(),
-              ),
-            ],
-          ),
-        ],
+      child: SafeArea(
+        minimum: const EdgeInsets.only(bottom: 56),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Safe Community Info
+            _buildInfoChip(),
+            const SizedBox(height: 24),
+            // Next Button
+            _buildNextButton(),
+            const SizedBox(height: 32),
+            // Compact Controls
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildCompactBtn(
+                  icon: _isMuted ? Icons.mic_off : Icons.mic,
+                  active: _isMuted,
+                  onTap: () {
+                    setState(() => _isMuted = !_isMuted);
+                    RandomRtcService().setMuted(_isMuted);
+                  },
+                ),
+                _buildCompactBtn(
+                  icon: _isVideoOff ? Icons.videocam_off : Icons.videocam,
+                  active: _isVideoOff,
+                  onTap: () {
+                    setState(() => _isVideoOff = !_isVideoOff);
+                    RandomRtcService().setVideoEnabled(!_isVideoOff);
+                    // Sync call state to remote
+                    final rId = RandomRoomService().currentRoomId;
+                    final pId = RandomRoomService().partnerId;
+                    if (rId != null && pId != null) {
+                      RandomSocketService().syncCallState(rId, pId, _isVideoOff);
+                    }
+                  },
+                ),
+                _buildCompactBtn(
+                  icon: Icons.call_end,
+                  isEnd: true,
+                  onTap: () {
+                    if (_isProcessingAction) return;
+                    setState(() => _isProcessingAction = true);
+                    RandomRoomService().endCall(context);
+                  },
+                ),
+                _buildCompactBtn(
+                  icon: Icons.switch_camera_rounded,
+                  onTap: () => RandomRtcService().switchCamera(),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -354,7 +351,11 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
 
   Widget _buildNextButton() {
     return GestureDetector(
-      onTap: () => RandomRoomService().nextPartner(context),
+      onTap: () {
+        if (_isProcessingAction) return;
+        setState(() => _isProcessingAction = true);
+        RandomRoomService().nextPartner(context);
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
         decoration: BoxDecoration(

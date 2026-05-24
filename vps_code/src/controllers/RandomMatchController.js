@@ -1,5 +1,6 @@
 const RandomRoom = require('../models/RandomRoom');
 const User = require('../models/User');
+const Block = require('../models/Block');
 
 const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -14,10 +15,17 @@ exports.findPartner = async (io, socket, data) => {
             $or: [{ hostId: userId }, { guestId: userId }]
         });
 
+        // 1. Fetch Blocked Users (Both ways)
+        const blocks = await Block.find({
+            $or: [{ blockerPhone: userId }, { blockedPhone: userId }]
+        });
+        const blockedPhones = blocks.map(b => b.blockerPhone === userId ? b.blockedPhone : b.blockerPhone);
+
+        // 2. Find waiting rooms excluding blocked users
         const waitingRooms = await RandomRoom.find({
             status: 'waiting',
-            hostId: { $ne: userId }
-        }).limit(5);
+            hostId: { $ne: userId, $nin: blockedPhones }
+        }).limit(10);
 
         if (waitingRooms.length > 0) {
             const selectedRoom = getRandomItem(waitingRooms);
@@ -120,6 +128,19 @@ exports.handleSignaling = async (io, socket, data, type) => {
 
     // Emit to room (partner will receive)
     socket.to(roomId).emit(`random_${type}`, payload);
+};
+
+exports.handleBlock = async (io, socket, data) => {
+    const { roomId, targetId } = data;
+    console.log(`[RandomMatch] User blocked in room ${roomId}. Target: ${targetId}`);
+
+    // Notify target
+    socket.to(roomId).emit('random_partner_blocked', {
+        message: "You have been blocked by the partner."
+    });
+
+    // Cleanup room
+    await RandomRoom.deleteOne({ roomId });
 };
 
 exports.performGlobalCleanup = async () => {

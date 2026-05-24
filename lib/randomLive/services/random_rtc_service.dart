@@ -18,7 +18,7 @@ class RandomRtcService {
   final _localStreamController = StreamController<MediaStream?>.broadcast();
   Stream<MediaStream?> get localStreamStream => _localStreamController.stream;
 
-  List<RTCIceCandidate> _remoteIceCandidates = [];
+  final List<RTCIceCandidate> _remoteIceCandidates = [];
   bool _remoteDescriptionSet = false;
   bool isInitialized = false;
 
@@ -144,17 +144,41 @@ class RandomRtcService {
   }
 
   void dispose() {
-    _localStream?.getTracks().forEach((track) => track.stop());
-    _localStream?.dispose();
-    _localStreamController.add(null);
-    _peerConnection?.close();
-    _peerConnection?.dispose();
-    _remoteStreamController.add(null);
-    _localStream = null;
-    _remoteStream = null;
-    _peerConnection = null;
-    _remoteDescriptionSet = false;
-    _remoteIceCandidates.clear();
-    isInitialized = false;
+    debugPrint("[RTC] Full cleanup starting...");
+    try {
+      // 1. Stop local tracks
+      _localStream?.getTracks().forEach((track) {
+        track.stop();
+        debugPrint("[RTC] Stopped local track: ${track.kind}");
+      });
+      _localStream?.dispose();
+      _localStream = null;
+      _localStreamController.add(null);
+
+      // 2. Stop remote tracks (if any accessible)
+      _remoteStream?.getTracks().forEach((track) {
+        track.stop();
+        debugPrint("[RTC] Stopped remote track: ${track.kind}");
+      });
+      _remoteStream?.dispose();
+      _remoteStream = null;
+      _remoteStreamController.add(null);
+
+      // 3. Close & Dispose Peer Connection
+      if (_peerConnection != null) {
+        _peerConnection?.close();
+        _peerConnection?.dispose();
+        _peerConnection = null;
+        debugPrint("[RTC] Peer connection disposed");
+      }
+
+      // 4. Reset states
+      _remoteDescriptionSet = false;
+      _remoteIceCandidates.clear();
+      isInitialized = false;
+      
+    } catch (e) {
+      debugPrint("[RTC] Dispose Error: $e");
+    }
   }
 }

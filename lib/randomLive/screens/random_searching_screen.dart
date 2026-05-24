@@ -104,7 +104,10 @@ class RandomSearchingScreen extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 40),
                   child: TextButton(
-                    onPressed: () => RandomRoomService().endCall(context),
+                    onPressed: () {
+                      // Small delay to prevent accidental multi-clicks during transition
+                      RandomRoomService().endCall(context);
+                    },
                     child: Text(
                       "CANCEL SEARCH", 
                       style: TextStyle(

@@ -25,6 +25,7 @@ class RandomSocketService {
     socket.off('random_answer');
     socket.off('random_candidate');
     socket.off('random_call_state_sync');
+    socket.off('random_partner_blocked');
 
     socket.on('random_room_created', (data) => _eventController.add({'event': 'random_room_created', 'data': data}));
     socket.on('random_match_found', (data) => _eventController.add({'event': 'random_match_found', 'data': data}));
@@ -34,6 +35,7 @@ class RandomSocketService {
     socket.on('random_answer', (data) => _eventController.add({'event': 'random_answer', 'data': data}));
     socket.on('random_candidate', (data) => _eventController.add({'event': 'random_candidate', 'data': data}));
     socket.on('random_call_state_sync', (data) => _eventController.add({'event': 'random_call_state_sync', 'data': data}));
+    socket.on('random_partner_blocked', (data) => _eventController.add({'event': 'random_partner_blocked', 'data': data}));
   }
 
   void findPartner(String userId) {
@@ -80,6 +82,13 @@ class RandomSocketService {
     });
   }
 
+  void emitBlock(String roomId, String targetId) {
+    SocketService().emit('random_partner_blocked', {
+      'roomId': roomId,
+      'targetId': targetId
+    });
+  }
+
   void dispose() {
     final socket = SocketService().socket;
     if (socket != null) {
@@ -91,6 +100,7 @@ class RandomSocketService {
       socket.off('random_answer');
       socket.off('random_candidate');
       socket.off('random_call_state_sync');
+      socket.off('random_partner_blocked');
     }
   }
 }
