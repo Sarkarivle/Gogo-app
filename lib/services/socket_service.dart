@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_service.dart';
 import 'premium_service.dart';
 
@@ -12,7 +11,7 @@ class SocketService with WidgetsBindingObserver {
   factory SocketService() => _instance;
   SocketService._internal();
 
-  IO.Socket? _socket;
+  io.Socket? _socket;
   String? _currentUserPhone;
   String? _activeRoomId;
   
@@ -48,7 +47,7 @@ class SocketService with WidgetsBindingObserver {
 
   void _connectSocket() {
     _socket?.dispose();
-    _socket = IO.io(ApiService.baseUrl, <String, dynamic>{
+    _socket = io.io(ApiService.baseUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': true,
       'reconnection': true,
@@ -186,7 +185,7 @@ class SocketService with WidgetsBindingObserver {
     // but the next join_room will switch the room on server side if implemented that way.
   }
 
-  IO.Socket? get socket => _socket;
+  io.Socket? get socket => _socket;
   String? get currentUserPhone => _currentUserPhone;
 
   @override

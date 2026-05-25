@@ -142,7 +142,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.05)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
         ),
         clipBehavior: Clip.antiAlias,
         child: ClipRRect(
@@ -169,7 +169,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -216,7 +216,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: index == 0 ? Colors.orange : Colors.white.withOpacity(0.05),
+              color: index == 0 ? Colors.orange : Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -241,7 +241,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
         margin: const EdgeInsets.only(bottom: 20),
         height: 300,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(20),
         ),
       ),

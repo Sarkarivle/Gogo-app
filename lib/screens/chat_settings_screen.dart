@@ -103,7 +103,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
               Row(children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), shape: BoxShape.circle),
                   child: Icon(withReport ? Icons.report_gmailerrorred_rounded : Icons.block_flipped, color: Colors.red, size: 22),
                 ),
                 const SizedBox(width: 15),
@@ -136,7 +136,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                     hintText: 'Detail mein batalen',
                     hintStyle: const TextStyle(color: Colors.white10),
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.03),
+                    fillColor: Colors.white.withValues(alpha: 0.03),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: const BorderSide(color: Colors.white10)),
                   ),
                 ),
@@ -302,7 +302,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
 
   Widget _buildSettingTile(IconData icon, String title, {Color? color, Widget? trailing, bool isLast = false, VoidCallback? onTap}) {
     return Container(
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : Colors.white.withOpacity(0.05)))),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : Colors.white.withValues(alpha: 0.05)))),
       child: ListTile(
         onTap: onTap,
         leading: Icon(icon, color: color ?? Colors.orangeAccent, size: 24),

@@ -113,10 +113,10 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 24),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.95),
+                color: Colors.white.withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
-                  BoxShadow(color: Colors.black26, blurRadius: 20, spreadRadius: 5)
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.26), blurRadius: 20, spreadRadius: 5)
                 ]
               ),
               child: Column(
@@ -125,7 +125,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDAA520).withOpacity(0.1),
+                      color: const Color(0xFFDAA520).withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.workspace_premium, color: Color(0xFFDAA520), size: 40),
@@ -136,7 +136,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                     text: TextSpan(
                       style: const TextStyle(color: Colors.black, fontSize: 24, fontWeight: FontWeight.w900, height: 1.3),
                       children: [
-                        TextSpan(text: "$currentArea", style: const TextStyle(color: Color(0xFFDAA520))),
+                        TextSpan(text: currentArea, style: const TextStyle(color: Color(0xFFDAA520))),
                         const TextSpan(text: " में आपके जैसे\n"),
                         const TextSpan(text: "1000+ Handsome लड़के", style: TextStyle(color: Color(0xFFDAA520))),
                         const TextSpan(text: "\nआपका इंतज़ार कर रहे हैं!"),
@@ -176,7 +176,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                       margin: const EdgeInsets.only(top: 2),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.1),
+                        color: Colors.amber.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(15),
                       ),
                       child: const Text(

@@ -71,26 +71,135 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. Remote Fullscreen Video
-          _buildRemoteVideoView(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        _showExitConfirmation();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Remote Fullscreen Video
+            _buildRemoteVideoView(),
 
-          // 2. Dark Gradient Overlays (Top/Bottom)
-          _buildGradientOverlays(),
+            // 2. Dark Gradient Overlays (Top/Bottom)
+            _buildGradientOverlays(),
 
-          // 3. Top Menu (Block/Report)
-          _buildTopMenu(),
+            // 3. Top Menu (Block/Report)
+            _buildTopMenu(),
 
-          // 4. Local Preview (Floating)
-          _buildLocalPreview(),
+            // 4. Local Preview (Floating)
+            _buildLocalPreview(),
 
-          // 5. Bottom Controls
-          _buildBottomPanel(),
-        ],
+            // 5. Bottom Controls
+            _buildBottomPanel(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showExitConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1A),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                )
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.call_end_rounded, color: Colors.redAccent, size: 32),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "Leave Random Call?",
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "क्या आप वीडियो कॉल बंद करना चाहते हैं?",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.white10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text("Back to Call", style: TextStyle(color: Colors.white70)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [Color(0xFFFF4B2B), Color(0xFFFF416C)]),
+                          borderRadius: BorderRadius.circular(15),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.redAccent.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            if (_isProcessingAction) return;
+                            if (mounted) {
+                              setState(() => _isProcessingAction = true);
+                              Navigator.pop(context); // Close dialog
+                              RandomRoomService().endCall(this.context);
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text("Cut Call", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

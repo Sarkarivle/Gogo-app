@@ -56,7 +56,7 @@ class _VerificationPageState extends State<VerificationPage> {
         }
       }
     } catch (e) {
-      print(e);
+      debugPrint(e.toString());
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Submission failed')));
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -93,7 +93,7 @@ class _VerificationPageState extends State<VerificationPage> {
                 child: Container(
                   height: 300,
                   width: double.infinity,
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white10, style: BorderStyle.solid)),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white10, style: BorderStyle.solid)),
                   child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.camera_alt_rounded, color: Colors.white54, size: 50), SizedBox(height: 12), Text('Tap to take Selfie', style: TextStyle(color: Colors.white54))]),
                 ),
               ),

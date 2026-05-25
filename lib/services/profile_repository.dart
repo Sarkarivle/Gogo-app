@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
@@ -86,12 +87,12 @@ class ProfileRepository {
             return users;
           }
         } catch (parseErr) {
-          print('Discovery JSON Parse Error: $parseErr');
+          debugPrint('Discovery JSON Parse Error: $parseErr');
         }
       }
       return [];
     } catch (e) {
-      print('Professional ProfileRepository Error: $e');
+      debugPrint('Professional ProfileRepository Error: $e');
       return [];
     }
   }

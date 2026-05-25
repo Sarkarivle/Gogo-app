@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 
@@ -21,7 +22,23 @@ class ChatBubble extends StatelessWidget {
               bottomRight: Radius.circular(msg.isMe ? 0 : 16),
             ),
           ),
-          child: Text(msg.text ?? "", style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontWeight: FontWeight.w500)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (msg.type == 'image' || msg.imageUrl != null || msg.localFilePath != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: msg.localFilePath != null 
+                        ? Image.file(File(msg.localFilePath!), width: 200, height: 200, fit: BoxFit.cover)
+                        : (msg.imageUrl != null ? Image.network(msg.imageUrl!, width: 200, height: 200, fit: BoxFit.cover) : const SizedBox.shrink()),
+                  ),
+                ),
+              if (msg.text != null && msg.text!.isNotEmpty)
+                Text(msg.text!, style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontWeight: FontWeight.w500)),
+            ],
+          ),
         ),
         const SizedBox(height: 4),
         Row(mainAxisSize: MainAxisSize.min, children: [

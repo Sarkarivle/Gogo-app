@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -154,24 +153,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       }
     }
     
-    try {
-      Position? position;
-      // Use a timeout for location to prevent infinite waiting
-      position = await Geolocator.getLastKnownPosition().timeout(const Duration(seconds: 2), onTimeout: () => null);
-      if (position == null) {
-        position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.low,
-          timeLimit: const Duration(seconds: 5),
-        );
-      }
-      if (mounted) {
-        setState(() {
-          _lastKnownPosition = position;
-        });
-      }
-    } catch (e) {
-      debugPrint("Geolocation fetch error: $e");
-    }
+    _lastKnownPosition ??= await Geolocator.getLastKnownPosition().timeout(const Duration(seconds: 2), onTimeout: () => null);
+    _lastKnownPosition ??= await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.low,
+        timeLimit: Duration(seconds: 5),
+      ),
+    );
     
     if (mounted) _fetchProfiles();
   }
@@ -349,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     return Scaffold(
       body: Stack(
         children: [
-          Positioned(top: -100, right: -100, child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.orange.withOpacity(0.05)))),
+          Positioned(top: -100, right: -100, child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.orange.withValues(alpha: 0.05)))),
           _selectedIndex == 0 ? _buildHomeContent() : (_selectedIndex == 1 ? InboxScreen(key: _inboxKey) : const MyProfileScreen()),
           if (_selectedIndex == 0) Positioned(bottom: 30, left: 30, right: 30, child: _buildLiveButton()),
         ],
@@ -364,7 +352,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFFFF4B2B), Color(0xFFFF416C), Color(0xFF8E2DE2)], begin: Alignment.centerLeft, end: Alignment.centerRight),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [BoxShadow(color: Colors.purple.withOpacity(0.4), blurRadius: 15, offset: const Offset(0, 8))],
+        boxShadow: [BoxShadow(color: Colors.purple.withValues(alpha: 0.4), blurRadius: 15, offset: const Offset(0, 8))],
       ),
       child: Material(
         color: Colors.transparent,
@@ -485,7 +473,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   itemBuilder: (context, i) {
                     if (i >= _profiles.length) {
                       return Container(
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(20)),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(20)),
                         child: const Center(child: CircularProgressIndicator(color: Colors.orangeAccent, strokeWidth: 2)),
                       );
                     }
@@ -522,7 +510,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   Widget _buildBottomNav() {
     return Container(
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1), width: 0.5))),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.5))),
       child: BottomNavigationBar(
         backgroundColor: const Color(0xFF0F0F0F),
         selectedItemColor: Colors.orangeAccent,

@@ -35,7 +35,7 @@ class PermissionOnboardingModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.orangeAccent.withOpacity(0.1),
+              color: Colors.orangeAccent.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -64,7 +64,7 @@ class PermissionOnboardingModal extends StatelessWidget {
                     : "To start audio calls, we need access to your microphone. Your privacy and security are our top priorities."),
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               fontSize: 15,
               height: 1.5,
             ),
@@ -112,7 +112,7 @@ class PermissionOnboardingModal extends StatelessWidget {
             child: Text(
               "Not Now",
               style: TextStyle(
-                color: Colors.white.withOpacity(0.4),
+                color: Colors.white.withValues(alpha: 0.4),
                 fontSize: 14,
               ),
             ),
@@ -128,7 +128,7 @@ class PermissionOnboardingModal extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: Colors.orangeAccent, size: 24),
@@ -150,7 +150,7 @@ class PermissionOnboardingModal extends StatelessWidget {
               Text(
                 subtitle,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.4),
+                  color: Colors.white.withValues(alpha: 0.4),
                   fontSize: 12,
                 ),
               ),

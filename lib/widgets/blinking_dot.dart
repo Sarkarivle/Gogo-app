@@ -33,7 +33,7 @@ class _BlinkingDotState extends State<BlinkingDot> with SingleTickerProviderStat
         decoration: BoxDecoration(
           color: Colors.greenAccent,
           shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.greenAccent.withOpacity(0.6), blurRadius: 6, spreadRadius: 2)],
+          boxShadow: [BoxShadow(color: Colors.greenAccent.withValues(alpha: 0.6), blurRadius: 6, spreadRadius: 2)],
         ),
       ),
     );

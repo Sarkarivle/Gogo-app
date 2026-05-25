@@ -51,12 +51,17 @@ exports.getInbox = async (req, res) => {
         });
 
         const sortedVisible = visibleConversations.sort((a, b) => {
-            const metaA = metaMap[a._id];
-            const metaB = metaMap[b._id];
-            // Favourites on top
-            if (metaA?.isFavourite && !metaB?.isFavourite) return -1;
-            if (!metaA?.isFavourite && metaB?.isFavourite) return 1;
-            return new Date(b.lastMsg.timestamp) - new Date(a.lastMsg.timestamp);
+            // Priority 1: Latest message timestamp (Realtime Sort)
+            const timeA = new Date(a.lastMsg.timestamp).getTime();
+            const timeB = new Date(b.lastMsg.timestamp).getTime();
+
+            if (timeB !== timeA) {
+                return timeB - timeA;
+            }
+
+            // Priority 2: Unread messages (Optional fallback)
+            // Since timestamps are high-precision, this is mostly a safeguard
+            return 0;
         });
 
         const pagedConversations = sortedVisible.slice(skip, skip + parseInt(limit));
@@ -225,17 +230,25 @@ exports.markSeen = async (req, res) => {
 
 exports.handleFileUpload = async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ success: false, message: "Upload failed" });
+        console.log(`📂 Processing upload for phone: ${req.body.phone}`);
+        if (!req.file) {
+            console.error("❌ No file received in request");
+            return res.status(400).json({ success: false, message: "No file received" });
+        }
 
-        // Dynamically build URL using the secure route /api/media/
-        const protocol = req.protocol;
-        const host = req.get('host');
-        const fileUrl = `${protocol}://${host}/api/media/${req.file.filename}`;
+        console.log(`✅ File received: ${req.file.filename} (${req.file.size} bytes)`);
+
+        // Build relative URL to ensure client can prepend its own baseUrl
+        const fileUrl = `/api/media/${req.file.filename}`;
 
         const phone = req.body.phone;
         if (phone) {
-            const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });
-            await newRecent.save();
+            try {
+                const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });
+                await newRecent.save();
+            } catch (saveErr) {
+                console.error("⚠️ Error saving recent photo record:", saveErr);
+            }
         }
         res.json({ success: true, imageUrl: fileUrl });
     } catch (err) {

@@ -25,7 +25,11 @@ class UserRepository {
       }
       
       if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-        Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+        Position pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+          ),
+        );
         
         String city = 'Unknown';
         String area = 'Unknown';

@@ -62,7 +62,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                   Row(children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), shape: BoxShape.circle),
+                      decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), shape: BoxShape.circle),
                       child: const Icon(Icons.report_gmailerrorred_rounded, color: Colors.red, size: 20),
                     ),
                     const SizedBox(width: 12),
@@ -101,7 +101,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                     hintText: 'Detail mein batalen',
                     hintStyle: const TextStyle(color: Colors.white24),
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.05),
+                    fillColor: Colors.white.withValues(alpha: 0.05),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                   ),
                 ),
@@ -194,7 +194,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 ],
                 leading: Container(
                   margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), shape: BoxShape.circle),
                   child: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.pop(context)),
                 ),
                 flexibleSpace: FlexibleSpaceBar(
@@ -206,11 +206,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [Colors.orange.withOpacity(0.1), Colors.purple.withOpacity(0.1), const Color(0xFF0F0F0F)],
+                            colors: [Colors.orange.withValues(alpha: 0.1), Colors.purple.withValues(alpha: 0.1), const Color(0xFF0F0F0F)],
                           ),
                         ),
                       ),
-                      Center(child: Icon(Icons.person_rounded, size: 80, color: Colors.white.withOpacity(0.1))),
+                      Center(child: Icon(Icons.person_rounded, size: 80, color: Colors.white.withValues(alpha: 0.1))),
                     ],
                   ),
                 ),
@@ -237,7 +237,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                             Row(children: [
                               const Icon(Icons.location_on_rounded, color: Colors.orangeAccent, size: 18),
                               const SizedBox(width: 6),
-                              Text(locationDisplay, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16)),
+                              Text(locationDisplay, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 16)),
                             ]),
                           ]),
                           ValueListenableBuilder<Map<String, bool>>(
@@ -247,7 +247,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                               if (!isOnline) return const SizedBox.shrink();
                               return Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green.withOpacity(0.3))),
+                                decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green.withValues(alpha: 0.3))),
                                 child: const Row(children: [CircleAvatar(backgroundColor: Colors.greenAccent, radius: 4), SizedBox(width: 8), Text('Online', style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold))]),
                               );
                             }
@@ -265,7 +265,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       const SizedBox(height: 40),
                       const Text('About Me', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                       const SizedBox(height: 12),
-                      Text('Hey! मैं ${widget.name} हूँ। मैं किसी ऐसे इंसान की तलाश में हूँ जिससे मैं कनेक्ट हो सकूँ और साथ में ${widget.city.isNotEmpty ? widget.city : 'शहर'} घूम सकूँ।', style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.6), height: 1.5)),
+                      Text('Hey! मैं ${widget.name} हूँ। मैं किसी ऐसे इंसान की तलाश में हूँ जिससे मैं कनेक्ट हो सकूँ और साथ में ${widget.city.isNotEmpty ? widget.city : 'शहर'} घूम सकूँ।', style: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.6), height: 1.5)),
                       const SizedBox(height: 120),
                     ],
                   ),
@@ -283,7 +283,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF9800)]),
                   borderRadius: BorderRadius.circular(30),
-                  boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.4), blurRadius: 15, spreadRadius: 2, offset: const Offset(0, 8))],
+                  boxShadow: [BoxShadow(color: Colors.orange.withValues(alpha: 0.4), blurRadius: 15, spreadRadius: 2, offset: const Offset(0, 8))],
                 ),
                 child: Material(
                   color: Colors.transparent,
@@ -293,16 +293,17 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       final isPremium = await PremiumService().checkPremiumAndRedirect(context);
                       if (!isPremium) return;
 
-                      if (!mounted) return;
-                      ChatPage.navigate(
-                        context,
-                        name: widget.name,
-                        receiverPhone: widget.phone,
-                        distance: widget.distance,
-                        position: widget.position,
-                      );
+                      if (context.mounted) {
+                        ChatPage.navigate(
+                          context,
+                          name: widget.name,
+                          receiverPhone: widget.phone,
+                          distance: widget.distance,
+                          position: widget.position,
+                        );
+                      }
                     },
-                    child: const Center(
+                    child: Center(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -325,12 +326,12 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.1))),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
         child: Column(children: [
           Icon(icon, color: Colors.orangeAccent, size: 24),
           const SizedBox(height: 8),
           Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
-          Text(label, style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+          Text(label, style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
         ]),
       ),
     );

@@ -496,6 +496,10 @@ io.on('connection', (socket) => {
                 metadata: { duration, status, callType }
             });
             await callMessage.save();
+
+            // Emit to both users for inbox update
+            const roomId = [senderPhone, receiverPhone].sort().join('_');
+            io.to(roomId).to(`user_${senderPhone}`).to(`user_${receiverPhone}`).emit('receive_message', callMessage);
         } catch (e) {
             console.error("Log Call Error:", e);
         }

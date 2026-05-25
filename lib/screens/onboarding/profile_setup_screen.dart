@@ -213,7 +213,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               hintText: 'Nickname (not your original name)',
               hintStyle: const TextStyle(color: Colors.white24),
               filled: true,
-              fillColor: Colors.white.withOpacity(0.05),
+              fillColor: Colors.white.withValues(alpha: 0.05),
               contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
               focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: const BorderSide(color: Colors.orangeAccent, width: 1)),
@@ -280,9 +280,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             height: 60,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
+              color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: isPlaceholder ? Colors.transparent : Colors.orangeAccent.withOpacity(0.4)),
+              border: Border.all(color: isPlaceholder ? Colors.transparent : Colors.orangeAccent.withValues(alpha: 0.4)),
             ),
             child: Text(value, style: TextStyle(color: isPlaceholder ? Colors.white24 : Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
           ),
@@ -302,9 +302,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         height: 55,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orangeAccent.withOpacity(0.1) : const Color(0xFF1A1A1A),
+          color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white.withOpacity(0.05)),
+          border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white.withValues(alpha: 0.05)),
         ),
         child: Text(
           text,
@@ -325,14 +325,14 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.orangeAccent.withOpacity(0.08) : const Color(0xFF1A1A1A),
+          color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.08) : const Color(0xFF1A1A1A),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.orangeAccent.withOpacity(0.5) : Colors.white.withOpacity(0.05),
+            color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.05),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected ? [
-            BoxShadow(color: Colors.orangeAccent.withOpacity(0.1), blurRadius: 15, spreadRadius: -2)
+            BoxShadow(color: Colors.orangeAccent.withValues(alpha: 0.1), blurRadius: 15, spreadRadius: -2)
           ] : [],
         ),
         child: Row(
@@ -340,7 +340,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: isSelected ? Colors.orangeAccent.withOpacity(0.15) : Colors.white.withOpacity(0.03),
+                color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.03),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: isSelected ? Colors.orangeAccent : Colors.white38, size: 24),

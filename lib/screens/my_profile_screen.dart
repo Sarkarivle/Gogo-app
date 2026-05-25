@@ -39,7 +39,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           if (currentUser!['isVerified'] == true) 
             const Padding(padding: EdgeInsets.only(top: 4), child: Row(children: [Icon(Icons.verified, color: Colors.blueAccent, size: 20), SizedBox(width: 8), Text('Verified Profile', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))])),
           const SizedBox(height: 8),
-          Row(children: [const Icon(Icons.location_on, color: Colors.orangeAccent, size: 20), const SizedBox(width: 8), Text((currentUser!['area'] != null && currentUser!['area'] != "Unknown" && currentUser!['area'] != "") ? "${currentUser!['area']}, ${currentUser!['city'] ?? ''}" : (currentUser!['city'] ?? 'Location'), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 18))]),
+          Row(children: [const Icon(Icons.location_on, color: Colors.orangeAccent, size: 20), const SizedBox(width: 8), Text((currentUser!['area'] != null && currentUser!['area'] != "Unknown" && currentUser!['area'] != "") ? "${currentUser!['area']}, ${currentUser!['city'] ?? ''}" : (currentUser!['city'] ?? 'Location'), style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 18))]),
           const SizedBox(height: 40),
           _buildDetailRow(Icons.calendar_month, 'Age', currentUser!['age']?.toString() ?? '18'),
           _buildDetailRow(Icons.groups, 'Position', currentUser!['position'] ?? 'Any'),
@@ -48,7 +48,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.blueAccent.withOpacity(0.3))),
+              decoration: BoxDecoration(color: Colors.blueAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Row(children: [Icon(Icons.verified, color: Colors.blueAccent), SizedBox(width: 10), Text('Get Verified', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18))]),
                 const SizedBox(height: 8),

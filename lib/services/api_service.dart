@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
@@ -36,7 +37,7 @@ class ApiService {
     final url = '$baseUrl$endpoint';
     try {
       final headers = await _getHeaders();
-      print('🚀 POST: $url');
+      debugPrint('🚀 POST: $url');
       
       final response = await http.post(
         Uri.parse(url),
@@ -67,7 +68,9 @@ class ApiService {
   static Future<http.StreamedResponse> multipart(String endpoint, String filePath, String fieldName, Map<String, String> fields) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse('$baseUrl$endpoint'));
-      request.headers.addAll(await _getHeaders());
+      var headers = await _getHeaders();
+      headers.remove('Content-Type'); // Let MultipartRequest set the correct boundary
+      request.headers.addAll(headers);
       request.files.add(await http.MultipartFile.fromPath(fieldName, filePath));
       request.fields.addAll(fields);
       return await request.send().timeout(const Duration(seconds: 30));

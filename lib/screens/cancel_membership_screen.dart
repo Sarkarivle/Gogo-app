@@ -57,7 +57,7 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.orangeAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                    color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(15),
                     border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white10),
                   ),
@@ -89,7 +89,7 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(15),
                   border: Border.all(color: Colors.white10),
                 ),

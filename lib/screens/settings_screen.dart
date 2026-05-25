@@ -212,7 +212,7 @@ class _SettingsPageState extends State<SettingsPage> {
           onTap: () async {
             final prefs = await SharedPreferences.getInstance();
             await prefs.clear();
-            if (context.mounted) {
+            if (mounted) {
               Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false);
             }
           },
@@ -226,12 +226,12 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         Text(
           'V 2.6.5',
-          style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1),
         ),
         const SizedBox(height: 8),
         Text(
           'Crafted with ❤️ for our community',
-          style: TextStyle(color: Colors.white.withOpacity(0.1), fontSize: 10, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.1), fontSize: 10, fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -255,7 +255,7 @@ class _SettingsPageState extends State<SettingsPage> {
               width: 50,
               height: 5,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(2.5),
               ),
             ),
@@ -263,7 +263,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.orangeAccent.withOpacity(0.1),
+                color: Colors.orangeAccent.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 40),
@@ -277,7 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Text(
               'This will temporarily hide your profile.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
             ),
             const SizedBox(height: 32),
             _buildWarningItem('Your profile will disappear from discovery'),
@@ -301,7 +301,7 @@ class _SettingsPageState extends State<SettingsPage> {
             TextButton(
               onPressed: () => Navigator.pop(context),
               style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 56)),
-              child: Text('Maybe later', style: TextStyle(color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w700)),
+              child: Text('Maybe later', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -314,9 +314,9 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline_rounded, color: Colors.orangeAccent.withOpacity(0.5), size: 16),
+          Icon(Icons.check_circle_outline_rounded, color: Colors.orangeAccent.withValues(alpha: 0.5), size: 16),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13, fontWeight: FontWeight.w500))),
+          Expanded(child: Text(text, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13, fontWeight: FontWeight.w500))),
         ],
       ),
     );
@@ -333,11 +333,13 @@ class _SettingsPageState extends State<SettingsPage> {
       final user = await UserRepository().getCurrentUser();
       if (user != null) {
         final success = await UserRepository().deactivateAccount(user['phone'], 'User requested from settings');
+        if (!context.mounted) return;
+
         if (success) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.clear();
           if (context.mounted) {
-            Navigator.pop(context); // Close loading
+            Navigator.of(context).pop(); // Close loading
             Navigator.pushAndRemoveUntil(
               context, 
               MaterialPageRoute(builder: (context) => const LoginScreen()), 
@@ -375,9 +377,9 @@ class SettingsHeaderCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 10)),
         ],
       ),
       child: Row(
@@ -386,9 +388,9 @@ class SettingsHeaderCard extends StatelessWidget {
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              color: Colors.orangeAccent.withOpacity(0.1),
+              color: Colors.orangeAccent.withValues(alpha: 0.1),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.orangeAccent.withOpacity(0.2), width: 2),
+              border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.2), width: 2),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(32),
@@ -419,7 +421,7 @@ class SettingsHeaderCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text("Manage your account & privacy", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, fontWeight: FontWeight.w600)),
+                Text("Manage your account & privacy", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -444,18 +446,18 @@ class PremiumMembershipCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: Colors.orangeAccent.withOpacity(0.2), width: 1.5),
-        gradient: LinearGradient(
+        border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.2), width: 1.5),
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFF2A1A0A),
-            const Color(0xFF1A1A1A),
+            Color(0xFF2A1A0A),
+            Color(0xFF1A1A1A),
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.orangeAccent.withOpacity(0.05),
+            color: Colors.orangeAccent.withValues(alpha: 0.05),
             blurRadius: 20,
             spreadRadius: 2,
           ),
@@ -486,9 +488,9 @@ class PremiumMembershipCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.orangeAccent.withOpacity(0.1),
+                    color: Colors.orangeAccent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+                    border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
                   ),
                   child: const Text(
                     'ACTIVE',
@@ -505,7 +507,7 @@ class PremiumMembershipCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             isPremium ? "वैधता: $expiryDate" : "अनलिमिटेड फीचर्स का आनंद लें",
-            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
           _buildBenefitItem('Unlimited Interaction & Chat'),
@@ -525,7 +527,7 @@ class PremiumMembershipCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.orangeAccent.withOpacity(0.3),
+                    color: Colors.orangeAccent.withValues(alpha: 0.3),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -548,7 +550,7 @@ class PremiumMembershipCard extends StatelessWidget {
           Center(
             child: Text(
               "प्लान, बिलिंग और सदस्यता मैनेज करें",
-              style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 10, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -589,7 +591,7 @@ class SettingsSectionCard extends StatelessWidget {
           child: Text(
             title,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.4),
+              color: Colors.white.withValues(alpha: 0.4),
               fontSize: 11,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.5,
@@ -600,7 +602,7 @@ class SettingsSectionCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFF1A1A1A),
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
           ),
           child: Column(children: children),
         ),
@@ -635,14 +637,14 @@ class SettingsRowItem extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
-          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withOpacity(0.03))),
+          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.03))),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: (iconColor ?? Colors.orangeAccent).withOpacity(0.1),
+                color: (iconColor ?? Colors.orangeAccent).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: iconColor ?? Colors.orangeAccent, size: 20),
@@ -659,12 +661,12 @@ class SettingsRowItem extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white.withOpacity(0.2), size: 14),
+            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white.withValues(alpha: 0.2), size: 14),
           ],
         ),
       ),
@@ -698,14 +700,14 @@ class SettingsDangerRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
-          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withOpacity(0.03))),
+          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.03))),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: color, size: 20),
@@ -722,12 +724,12 @@ class SettingsDangerRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(color: color.withOpacity(0.5), fontSize: 11, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: color.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, color: color.withOpacity(0.2), size: 14),
+            Icon(Icons.arrow_forward_ios_rounded, color: color.withValues(alpha: 0.2), size: 14),
           ],
         ),
       ),

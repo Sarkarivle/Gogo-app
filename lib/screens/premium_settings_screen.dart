@@ -123,12 +123,12 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [const Color(0xFF1E1E1E), const Color(0xFF2A0D17).withOpacity(0.5)],
+                  colors: [const Color(0xFF1E1E1E), const Color(0xFF2A0D17).withValues(alpha: 0.5)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: _getStatusColor(status).withOpacity(0.2)),
+                border: Border.all(color: _getStatusColor(status).withValues(alpha: 0.2)),
               ),
               child: Column(
                 children: [

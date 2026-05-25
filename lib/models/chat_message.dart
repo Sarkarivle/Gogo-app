@@ -8,6 +8,7 @@ class ChatMessage {
   String? text;
   String? imageUrl;
   String? audioUrl;
+  String? localFilePath; // For optimistic UI media
   String type; // 'text', 'image', 'audio', 'block_event', 'unblock_event'
   final bool isViewOnce;
   bool isOpened;
@@ -35,6 +36,7 @@ class ChatMessage {
     this.text,
     this.imageUrl,
     this.audioUrl,
+    this.localFilePath,
     this.type = 'text',
     this.isViewOnce = false,
     this.isOpened = false,
@@ -52,6 +54,7 @@ class ChatMessage {
   factory ChatMessage.fromJson(Map<String, dynamic> json, String myPhone) {
     return ChatMessage(
       id: json['_id'],
+      localId: json['localId']?.toString(),
       text: json['message'],
       imageUrl: json['imageUrl'] != null ? ApiService.getSecureUrl(json['imageUrl']) : null,
       audioUrl: json['audioUrl'] != null ? ApiService.getSecureUrl(json['audioUrl']) : null,

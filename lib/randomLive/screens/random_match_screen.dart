@@ -89,7 +89,7 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
                       ),
                       
                       if (_controller.value > 0.5)
-                        const Icon(Icons.favorite, color: Colors.redAccent, size: 40),
+                        const Icon(Icons.favorite, color: Colors.amber, size: 40),
                     ],
                   ),
                 );
@@ -97,12 +97,13 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
             ),
             const SizedBox(height: 80),
             const Text(
-              "मैच मिल गया ❤️",
+              "मैच मिल गया 🧡",
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 32,
                 fontFamily: 'Inter',
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
               ),
             ),
             const SizedBox(height: 15),
@@ -112,8 +113,8 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
                 color: Colors.white.withValues(alpha: 0.7),
                 fontSize: 18,
                 fontFamily: 'Inter',
-                fontWeight: FontWeight.w400,
-                letterSpacing: 0.5
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.2
               ),
             ),
           ],

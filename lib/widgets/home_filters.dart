@@ -24,8 +24,8 @@ class HomeFilterChip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
-          border: Border.all(color: Colors.white.withOpacity(0.15)),
+          color: Colors.white.withValues(alpha: 0.05),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -72,7 +72,7 @@ class FilterDialog extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: '',
-      barrierColor: Colors.black.withOpacity(0.7),
+      barrierColor: Colors.black.withValues(alpha: 0.7),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, anim1, anim2) => Container(),
       transitionBuilder: (context, anim1, anim2, child) {
@@ -98,7 +98,7 @@ class FilterDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1E1E1E).withOpacity(0.9),
+      backgroundColor: const Color(0xFF1E1E1E).withValues(alpha: 0.9),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
         side: const BorderSide(color: Colors.white10),
@@ -145,9 +145,9 @@ class FilterDialog extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                     decoration: BoxDecoration(
-                      color: isSelected ? Colors.orangeAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                      color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: isSelected ? Colors.orangeAccent.withOpacity(0.3) : Colors.transparent),
+                      border: Border.all(color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.3) : Colors.transparent),
                     ),
                     child: Row(
                       children: [

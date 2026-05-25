@@ -20,20 +20,22 @@ class PermissionManager {
       
       if (!context.mounted) return;
 
-      await showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        isDismissible: false, // Force interaction for professional onboarding
-        builder: (context) => PermissionOnboardingModal(
-          isVideo: true, // Requesting both for the first time
-          isInitialOnboarding: true,
-          onAllow: () async {
-            // Request both permissions together
-            await [Permission.microphone, Permission.camera].request();
-          },
-        ),
-      );
+      if (context.mounted) {
+        await showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          isDismissible: false, // Force interaction for professional onboarding
+          builder: (context) => PermissionOnboardingModal(
+            isVideo: true, // Requesting both for the first time
+            isInitialOnboarding: true,
+            onAllow: () async {
+              // Request both permissions together
+              await [Permission.microphone, Permission.camera].request();
+            },
+          ),
+        );
+      }
     }
   }
 
@@ -41,17 +43,19 @@ class PermissionManager {
     final prefs = await SharedPreferences.getInstance();
     final bool hasShownOnboarding = prefs.getBool(_onboardingKey) ?? false;
 
-    if (!hasShownOnboarding) {
+    if (!hasShownOnboarding && context.mounted) {
       final bool? result = await showModalBottomSheet<bool>(
         context: context,
         backgroundColor: Colors.transparent,
         isScrollControlled: true,
-        builder: (context) => PermissionOnboardingModal(
+        builder: (modalContext) => PermissionOnboardingModal(
           isVideo: isVideo,
           isInitialOnboarding: isAutomatic,
           onAllow: () async {
             await prefs.setBool(_onboardingKey, true);
-            Navigator.of(context).pop(true);
+            if (modalContext.mounted) {
+              Navigator.of(modalContext).pop(true);
+            }
           },
         ),
       );
@@ -65,6 +69,7 @@ class PermissionManager {
     }
 
     // After onboarding, check actual permission status
+    if (!context.mounted) return false;
     return await _requestPermissions(context, isVideo: isVideo);
   }
 
@@ -73,6 +78,8 @@ class PermissionManager {
       Permission.microphone,
       if (isVideo) Permission.camera,
     ].request();
+
+    if (!context.mounted) return false;
 
     bool allGranted = true;
     bool permanentlyDenied = false;

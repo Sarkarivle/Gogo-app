@@ -214,8 +214,12 @@ class RandomRoomService {
     final userId = SocketService().currentUserPhone;
     if (userId == null) return;
 
-    _cleanupFull();
+    // Strict Cleanup Order
+    // 1. Notify partner & backend room cleanup first
     RandomSocketService().leaveRoom(userId);
+    
+    // 2. Full RTC & Local State Cleanup
+    _cleanupFull();
     
     if (context.mounted) {
        Navigator.of(context).pushAndRemoveUntil(

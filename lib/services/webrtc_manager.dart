@@ -18,7 +18,7 @@ class WebRTCManager {
   final _localStreamController = StreamController<MediaStream?>.broadcast();
   Stream<MediaStream?> get localStreamStream => _localStreamController.stream;
 
-  List<RTCIceCandidate> _remoteIceCandidates = [];
+  final List<RTCIceCandidate> _remoteIceCandidates = [];
   bool _remoteDescriptionSet = false;
 
   final Map<String, dynamic> _iceServers = {

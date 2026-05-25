@@ -97,14 +97,52 @@ class ChatRepository {
 
   Future<String?> uploadMedia(File file, String phone, String type) async {
     try {
-      var response = await ApiService.multipart('/api/chat/upload', file.path, 'image', {'phone': phone});
+      final fileName = file.path.split('/').last;
+      debugPrint("📤 [CHAT_UPLOAD] Starting upload: $fileName for $phone, type: $type");
+      
+      if (!file.existsSync()) {
+        debugPrint("🚨 [CHAT_UPLOAD] File does not exist at: ${file.path}");
+        return null;
+      }
+
+      var request = http.MultipartRequest('POST', Uri.parse('${ApiService.baseUrl}/api/chat/upload'));
+      
+      // Add Headers
+      request.headers['Accept'] = 'application/json';
+      request.headers['x-gogo-secret'] = ApiService.mediaToken;
+      
+      // Add Fields
+      request.fields['phone'] = phone;
+      
+      // Add File
+      request.files.add(await http.MultipartFile.fromPath(
+        'image', 
+        file.path,
+        filename: fileName
+      ));
+      
+      debugPrint("📡 [CHAT_UPLOAD] Sending Request to: ${request.url}");
+      var streamedResponse = await request.send().timeout(const Duration(seconds: 40));
+      var response = await http.Response.fromStream(streamedResponse);
+      
+      debugPrint("📡 [CHAT_UPLOAD] Response Status: ${response.statusCode}");
+      debugPrint("📡 [CHAT_UPLOAD] Response Body: ${response.body}");
+      
       if (response.statusCode == 200) {
-        var res = await http.Response.fromStream(response);
-        return jsonDecode(res.body)['imageUrl'];
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['imageUrl'] != null) {
+          debugPrint("✅ [CHAT_UPLOAD] Success: ${data['imageUrl']}");
+          return data['imageUrl'];
+        } else {
+          debugPrint("⚠️ [CHAT_UPLOAD] Server returned success:false or null imageUrl: $data");
+        }
+      } else {
+        debugPrint("❌ [CHAT_UPLOAD] Server error: ${response.statusCode} - ${response.body}");
       }
       return null;
-    } catch (e) {
-      debugPrint("Upload error: $e");
+    } catch (e, stack) {
+      debugPrint("🚨 [CHAT_UPLOAD] Exception: $e");
+      debugPrint("🚨 [CHAT_UPLOAD] StackTrace: $stack");
       return null;
     }
   }
@@ -205,10 +243,10 @@ class ChatRepository {
       final response = await ApiService.post('/api/chat/update-metadata', {
         'phone': myPhone,
         'partnerPhone': otherPhone,
-        if (isMuted != null) 'isMuted': isMuted,
-        if (isFavourite != null) 'isFavourite': isFavourite,
-        if (isHidden != null) 'isHidden': isHidden,
-      });
+        'isMuted': isMuted,
+        'isFavourite': isFavourite,
+        'isHidden': isHidden,
+      }..removeWhere((key, value) => value == null));
       return response.statusCode == 200;
     } catch (e) {
       debugPrint("Update metadata error: $e");
@@ -236,8 +274,13 @@ class ChatRepository {
 
   Future<bool> deleteRecentPhoto(String phone, String imageUrl) async {
     try {
-      // Strip token before sending to delete API to match DB record
-      final String cleanUrl = imageUrl.split('?')[0];
+      // 1. Strip token if present
+      String cleanUrl = imageUrl.split('?')[0];
+      
+      // 2. Remove base URL to match the relative path stored in DB
+      if (cleanUrl.contains(ApiService.baseUrl)) {
+        cleanUrl = cleanUrl.replaceAll(ApiService.baseUrl, '');
+      }
       
       final response = await ApiService.post('/api/chat/delete-recent-photo', {
         'phone': phone,

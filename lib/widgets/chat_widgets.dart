@@ -51,7 +51,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               await _player.pause(); 
               if (mounted) setState(() => _isPlaying = false); 
             } else { 
-              await _player.play(UrlSource(widget.url)); 
+              Source source = widget.url.startsWith('http') 
+                  ? UrlSource(widget.url) 
+                  : DeviceFileSource(widget.url);
+              await _player.play(source);
               if (mounted) setState(() => _isPlaying = true); 
             }
           }

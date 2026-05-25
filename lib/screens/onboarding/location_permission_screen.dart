@@ -37,8 +37,10 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
     try {
       // Step 1: Get coordinates quickly (Medium accuracy is enough and fast)
       Position pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 5),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 5),
+        ),
       );
       
       // Step 2: Get Address (Fast usually)
@@ -132,7 +134,7 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              const Color(0xFF2A0D17).withOpacity(0.8),
+              const Color(0xFF2A0D17).withValues(alpha: 0.8),
               const Color(0xFF0F0F0F),
             ],
           ),
@@ -156,11 +158,11 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
                     width: 180,
                     height: 180,
                     decoration: BoxDecoration(
-                      color: Colors.orangeAccent.withOpacity(0.1),
+                      color: Colors.orangeAccent.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.orangeAccent.withOpacity(0.05),
+                          color: Colors.orangeAccent.withValues(alpha: 0.05),
                           blurRadius: 40,
                           spreadRadius: 10,
                         )
@@ -186,7 +188,7 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
                   "To find amazing people near you, we need to know your location.",
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 16,
                     height: 1.6,
                     fontWeight: FontWeight.w500,
@@ -202,9 +204,9 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
                       backgroundColor: Colors.orangeAccent,
                       foregroundColor: Colors.black,
                       elevation: 8,
-                      shadowColor: Colors.orangeAccent.withOpacity(0.3),
+                      shadowColor: Colors.orangeAccent.withValues(alpha: 0.3),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      disabledBackgroundColor: Colors.orangeAccent.withOpacity(0.5),
+                      disabledBackgroundColor: Colors.orangeAccent.withValues(alpha: 0.5),
                     ),
                     child: _isProcessing 
                       ? const SizedBox(

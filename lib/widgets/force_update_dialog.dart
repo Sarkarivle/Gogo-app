@@ -28,10 +28,10 @@ class ForceUpdateDialog extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFF1C1C1E),
             borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 30,
                 spreadRadius: 10,
               )
@@ -47,10 +47,10 @@ class ForceUpdateDialog extends StatelessWidget {
                 height: 80,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.orangeAccent.withOpacity(0.1),
+                  color: Colors.orangeAccent.withValues(alpha: 0.1),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.orangeAccent.withOpacity(0.2),
+                      color: Colors.orangeAccent.withValues(alpha: 0.2),
                       blurRadius: 20,
                       spreadRadius: 5,
                     )
@@ -80,7 +80,7 @@ class ForceUpdateDialog extends StatelessWidget {
                   config.updateMessage,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 14,
                     height: 1.5,
                   ),
@@ -101,7 +101,7 @@ class ForceUpdateDialog extends StatelessWidget {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         elevation: 5,
-                        shadowColor: Colors.orangeAccent.withOpacity(0.4),
+                        shadowColor: Colors.orangeAccent.withValues(alpha: 0.4),
                       ),
                       child: const Text(
                         'UPDATE NOW',
@@ -118,7 +118,7 @@ class ForceUpdateDialog extends StatelessWidget {
                       child: Text(
                         'EXIT APP',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withValues(alpha: 0.4),
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 1,
@@ -132,7 +132,7 @@ class ForceUpdateDialog extends StatelessWidget {
               Text(
                 'Version: ${config.latestVersion}',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
                 ),

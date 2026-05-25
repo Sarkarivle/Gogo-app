@@ -68,32 +68,33 @@ class AppVisibilityCoordinator {
 
       if (confirmed == true) {
         await setHidden(true);
+        if (!context.mounted) return;
         // Restart app navigation to NewsHomeScreen
-        if (context.mounted) {
-           _restartApp(context);
-        }
+        _restartApp(context);
       }
     } else {
       await setHidden(false);
+      if (!context.mounted) return;
       _restartApp(context);
     }
   }
 
-  void _restartApp(BuildContext context) {
-    SharedPreferences.getInstance().then((prefs) {
-      final data = prefs.getString('user_data');
-      Widget initialScreen = const LoginScreen();
-      
-      if (_isHidden) {
-        initialScreen = const NewsHomeScreen();
-      } else if (data != null) {
-        initialScreen = const HomeScreen();
-      }
+  void _restartApp(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!context.mounted) return;
 
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => initialScreen),
-        (route) => false,
-      );
-    });
+    final data = prefs.getString('user_data');
+    Widget initialScreen = const LoginScreen();
+    
+    if (_isHidden) {
+      initialScreen = const NewsHomeScreen();
+    } else if (data != null) {
+      initialScreen = const HomeScreen();
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => initialScreen),
+      (route) => false,
+    );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'api_service.dart';
 
@@ -60,7 +61,7 @@ class AppConfigService {
         }
       }
     } catch (e) {
-      print('Error fetching app update config: $e');
+      debugPrint('Error fetching app update config: $e');
     }
     return _cachedConfig; // Return last known good config if fetch fails
   }
@@ -94,7 +95,7 @@ class AppConfigService {
         if (p1 > p2) return 1;
       }
     } catch (e) {
-      print('Version comparison error: $e');
+      debugPrint('Version comparison error: $e');
     }
     return 0;
   }

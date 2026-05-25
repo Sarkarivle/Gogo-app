@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -84,7 +83,11 @@ class InboxScreenState extends State<InboxScreen> {
   Future<void> _getCurrentLocation() async {
     try {
       _myPos = await Geolocator.getLastKnownPosition() ?? 
-               await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
+               await Geolocator.getCurrentPosition(
+                 locationSettings: const LocationSettings(
+                   accuracy: LocationAccuracy.low,
+                 ),
+               );
     } catch (_) {}
   }
 
@@ -96,15 +99,70 @@ class InboxScreenState extends State<InboxScreen> {
       final data = event['data'];
 
       if (eventName == 'receive_message' || eventName == 'unread_update' || eventName == 'message_opened' || eventName == 'moderation_state_updated' || eventName == 'user_deactivated' || eventName == 'user_reactivated') {
-        _handleInboxUpdate(data);
+        _handleInboxUpdate(data, eventName);
       }
     });
   }
 
-  // Optimize: Debounce inbox refresh to avoid spamming API on rapid messages
-  void _handleInboxUpdate(dynamic data) {
-    if (_inboxUpdateDebounce?.isActive ?? false) return;
-    _inboxUpdateDebounce = Timer(const Duration(seconds: 3), () {
+  // Optimized local reorder for realtime feel
+  void _applyLocalUpdate(dynamic data) {
+    if (data == null || _currentUser == null) return;
+
+    String? partnerPhone;
+    if (data['senderPhone'] != _currentUser!['phone']) {
+      partnerPhone = data['senderPhone'];
+    } else {
+      partnerPhone = data['receiverPhone'];
+    }
+
+    if (partnerPhone == null) return;
+
+    setState(() {
+      int index = _chats.indexWhere((c) => c['phone'] == partnerPhone);
+
+      Map<String, dynamic> chatData;
+      if (index != -1) {
+        chatData = Map<String, dynamic>.from(_chats.removeAt(index));
+      } else {
+        // If not found, trigger full fetch to get user details
+        _fetchInbox();
+        return;
+      }
+
+      // Update message details
+      String displayMsg = '';
+      final type = data['type'];
+      if (type == 'audio') {
+        displayMsg = '🎵 Voice Message';
+      } else if (type == 'image') {
+        displayMsg = '📷 Image';
+      } else {
+        displayMsg = data['message'] ?? (data['imageUrl'] != null ? '📷 Image' : '');
+      }
+      
+      chatData['msg'] = displayMsg;
+      chatData['timestamp'] = data['timestamp'] ?? DateTime.now().toIso8601String();
+
+      // Increment unread if incoming
+      if (data['senderPhone'] == partnerPhone) {
+        chatData['unread'] = (chatData['unread'] ?? 0) + 1;
+      }
+
+      // Move to top
+      _chats.insert(0, chatData);
+    });
+  }
+
+  // Optimize: Use local update then debounce full refresh
+  void _handleInboxUpdate(dynamic data, String eventName) {
+    if (!mounted) return;
+
+    if (eventName == 'receive_message') {
+      _applyLocalUpdate(data);
+    }
+
+    if (_inboxUpdateDebounce?.isActive ?? false) _inboxUpdateDebounce!.cancel();
+    _inboxUpdateDebounce = Timer(const Duration(seconds: 5), () {
       if (mounted) _fetchInbox();
     });
   }
@@ -233,7 +291,8 @@ class InboxScreenState extends State<InboxScreen> {
                     if (index == filteredChats.length) {
                       return const Padding(padding: EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)));
                     }
-                    return _buildChatItem(filteredChats[index]);
+                    final chat = filteredChats[index];
+                    return _buildChatItem(chat, key: ValueKey(chat['phone']));
                   },
                 ),
             ],
@@ -247,25 +306,37 @@ class InboxScreenState extends State<InboxScreen> {
     return Container(
       color: const Color(0xFF2A0D17),
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 15),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 10,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildFilterChip('Distance', _selectedDistance, () {
-            _showFilterDialog('Distance Range', ['Any', '5km', '10km', '25km', '50km'], _selectedDistance, (v) => setState(() => _selectedDistance = v));
-          }),
-          _buildFilterChip('Age', _selectedAge, () {
-            _showFilterDialog('Age Selection', ['Any', '18-25', '26-35', '36+'], _selectedAge, (v) => setState(() => _selectedAge = v));
-          }),
-          _buildFilterChip('Online', _isOnlineOnly ? 'Yes' : 'Any', () {
-            setState(() => _isOnlineOnly = !_isOnlineOnly);
-          }, isActive: _isOnlineOnly),
-          _buildFilterChip('Kamra hai', _havePlaceStatus, () {
-            _showFilterDialog('Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (v) => setState(() => _havePlaceStatus = v));
-          }),
-          _buildFilterChip('Position', _selectedPosition, () {
-            _showFilterDialog('Position', ['Any', 'Top', 'Bottom', 'Versatile'], _selectedPosition, (v) => setState(() => _selectedPosition = v));
-          }),
+          Wrap(
+            spacing: 8,
+            runSpacing: 10,
+            children: [
+              _buildFilterChip('Distance', _selectedDistance, () {
+                _showFilterDialog('Distance Range', ['Any', '5km', '10km', '25km', '50km'], _selectedDistance, (v) => setState(() => _selectedDistance = v));
+              }),
+              _buildFilterChip('Age', _selectedAge, () {
+                _showFilterDialog('Age Selection', ['Any', '18-25', '26-35', '36+'], _selectedAge, (v) => setState(() => _selectedAge = v));
+              }),
+              _buildFilterChip('Online', _isOnlineOnly ? 'Yes' : 'Any', () {
+                setState(() => _isOnlineOnly = !_isOnlineOnly);
+              }, isActive: _isOnlineOnly),
+              _buildFilterChip('Kamra hai', _havePlaceStatus, () {
+                _showFilterDialog('Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (v) => setState(() => _havePlaceStatus = v));
+              }),
+              _buildFilterChip('Position', _selectedPosition, () {
+                _showFilterDialog('Position', ['Any', 'Top', 'Bottom', 'Versatile'], _selectedPosition, (v) => setState(() => _selectedPosition = v));
+              }),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 12, left: 4),
+            child: Text(
+              "हाल ही की बातचीत सबसे ऊपर दिखाई जाती हैं",
+              style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.w400),
+            ),
+          ),
         ],
       ),
     );
@@ -331,7 +402,7 @@ class InboxScreenState extends State<InboxScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E1E1E),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: Colors.orangeAccent.withOpacity(0.1), width: 1),
+                    border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.1), width: 1),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -462,8 +533,9 @@ class InboxScreenState extends State<InboxScreen> {
     );
   }
 
-  Widget _buildChatItem(dynamic chat) {
+  Widget _buildChatItem(dynamic chat, {Key? key}) {
     return ValueListenableBuilder<Map<String, bool>>(
+      key: key,
       valueListenable: SocketService().onlineUsers,
       builder: (context, onlineMap, _) {
         return ValueListenableBuilder<Map<String, bool>>(
@@ -570,7 +642,7 @@ class InboxScreenState extends State<InboxScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 60, color: Colors.white.withOpacity(0.05)),
+          Icon(Icons.chat_bubble_outline, size: 60, color: Colors.white.withValues(alpha: 0.05)),
           const SizedBox(height: 16),
           const Text("No messages yet", style: TextStyle(color: Colors.white38, fontSize: 15)),
         ],

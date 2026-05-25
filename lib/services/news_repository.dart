@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 import '../models/news_article.dart';
 
@@ -19,7 +20,7 @@ class NewsRepository {
       }
       return [];
     } catch (e) {
-      print('Error fetching news: $e');
+      debugPrint('Error fetching news: $e');
       return [];
     }
   }

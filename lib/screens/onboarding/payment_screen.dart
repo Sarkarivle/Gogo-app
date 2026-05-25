@@ -210,7 +210,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void _showSuccessDialog() async {
     final prefs = await SharedPreferences.getInstance();
     final userDataStr = prefs.getString('user_data');
-    bool hasCompleted = jsonDecode(userDataStr!)['hasCompletedOnboarding'] ?? false;
+    if (userDataStr == null) return;
+    bool hasCompleted = jsonDecode(userDataStr)['hasCompletedOnboarding'] ?? false;
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -272,7 +275,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(color: Colors.green.withOpacity(0.08), border: Border(bottom: BorderSide(color: Colors.green.withOpacity(0.1), width: 0.5))),
+            decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.08), border: Border(bottom: BorderSide(color: Colors.green.withValues(alpha: 0.1), width: 0.5))),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -290,7 +293,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   const SizedBox(height: 20),
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.amber.withOpacity(0.15), width: 1.2)),
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.amber.withValues(alpha: 0.15), width: 1.2)),
                     child: Icon(Icons.workspace_premium, size: 32, color: Colors.amber.shade600),
                   ),
                   const SizedBox(height: 12),
@@ -302,7 +305,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(colors: [Color(0xFF252525), Color(0xFF1A1A1A)]),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.amber.shade400.withOpacity(0.4), width: 1.5),
+                      border: Border.all(color: Colors.amber.shade400.withValues(alpha: 0.4), width: 1.5),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -316,7 +319,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.amber.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
+                          decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
                           child: Text("ACTIVE", style: TextStyle(color: Colors.amber.shade600, fontWeight: FontWeight.bold, fontSize: 10)),
                         )
                       ],
@@ -326,7 +329,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   if (_isTrialAvailable)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.red.withOpacity(0.25))),
+                      decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.red.withValues(alpha: 0.25))),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -344,7 +347,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.amber.withOpacity(0.05), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber.withOpacity(0.1))),
+                    decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber.withValues(alpha: 0.1))),
                     child: Column(
                       children: [
                         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -375,7 +378,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
                       child: Image.asset(
                         _activeGateway == 'phonepe' ? 'assets/phonepe_logo.png' : 'assets/gpay_logo.png',
                         height: 18,

@@ -40,12 +40,14 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   void codeUpdated() {
     if (code != null && code!.length == 6) {
       debugPrint("OTP Auto-Retrieved: $code");
-      setState(() {
-        for (int i = 0; i < 6; i++) {
-          _otpControllers[i].text = code![i];
-        }
-      });
-      _verifyOTP();
+      if (mounted) {
+        setState(() {
+          for (int i = 0; i < 6; i++) {
+            _otpControllers[i].text = code![i];
+          }
+        });
+        _verifyOTP();
+      }
     }
   }
 
@@ -140,8 +142,12 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   void dispose() {
     cancel(); // Cancel SMS listener
     _phoneController.dispose();
-    for (var controller in _otpControllers) controller.dispose();
-    for (var node in _focusNodes) node.dispose();
+    for (var controller in _otpControllers) {
+      controller.dispose();
+    }
+    for (var node in _focusNodes) {
+      node.dispose();
+    }
     _timer?.cancel();
     super.dispose();
   }
@@ -150,8 +156,11 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
     _resendTimerCount = 30;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_resendTimerCount == 0) timer.cancel();
-      else setState(() => _resendTimerCount--);
+      if (_resendTimerCount == 0) {
+        timer.cancel();
+      } else {
+        setState(() => _resendTimerCount--);
+      }
     });
   }
 
@@ -233,8 +242,11 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
           'hasCompletedOnboarding': false
         });
         final regData = jsonDecode(regResponse.body);
-        if (regData['success'] == true) _saveUserAndGoHome(regData['user']);
-        else _showSnackBar('Registration failed. Please try later.');
+        if (regData['success'] == true) {
+          _saveUserAndGoHome(regData['user']);
+        } else {
+          _showSnackBar('Registration failed. Please try later.');
+        }
       }
     } catch (e) {
       String errorMsg = e.toString();
@@ -338,7 +350,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
           decoration: InputDecoration(
             hintText: 'Mobile No', hintStyle: const TextStyle(color: Colors.white10),
             prefixIcon: const Padding(padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14), child: Text('+91 ', style: TextStyle(color: Colors.orangeAccent, fontSize: 18, fontWeight: FontWeight.bold))),
-            filled: true, fillColor: Colors.white.withOpacity(0.05),
+            filled: true, fillColor: Colors.white.withValues(alpha: 0.05),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
           ),
         ),
@@ -361,14 +373,20 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
             counterText: "", 
             contentPadding: EdgeInsets.zero,
             filled: true, 
-            fillColor: Colors.white.withOpacity(0.05), 
+            fillColor: Colors.white.withValues(alpha: 0.05),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), 
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.orangeAccent))
           ),
           onChanged: (value) {
-            if (value.length == 1 && index < 5) _focusNodes[index + 1].requestFocus();
-            if (value.isEmpty && index > 0) _focusNodes[index - 1].requestFocus();
-            if (index == 5 && value.isNotEmpty) _verifyOTP();
+            if (value.length == 1 && index < 5) {
+              _focusNodes[index + 1].requestFocus();
+            }
+            if (value.isEmpty && index > 0) {
+              _focusNodes[index - 1].requestFocus();
+            }
+            if (index == 5 && value.isNotEmpty) {
+              _verifyOTP();
+            }
           },
         ),
       )),
