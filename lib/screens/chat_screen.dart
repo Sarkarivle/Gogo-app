@@ -887,7 +887,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         final previewRes = await Navigator.push(mediaContext, MaterialPageRoute(builder: (_) => MediaPreviewPage(imageUrl: url)));
         if (!mediaContext.mounted) return;
         if (previewRes != null) {
-          _chatRepository.sendMessage(senderPhone: currentUser!['phone'], receiverPhone: widget.receiverPhone, senderName: currentUser!['name'] ?? 'User', message: '', imageUrl: url, type: 'image', isViewOnce: previewRes['isViewOnce']);
+          final bool isVid = url.toLowerCase().contains('.mp4') || 
+                            url.toLowerCase().contains('.mov') || 
+                            url.toLowerCase().contains('.avi');
+          _chatRepository.sendMessage(
+            senderPhone: currentUser!['phone'], 
+            receiverPhone: widget.receiverPhone, 
+            senderName: currentUser!['name'] ?? 'User', 
+            message: '', 
+            imageUrl: url, 
+            type: isVid ? 'video' : 'image', 
+            isViewOnce: previewRes['isViewOnce']
+          );
         }
       } else if (file != null && type != null) {
         final previewRes = await Navigator.push(mediaContext, MaterialPageRoute(builder: (_) => MediaPreviewPage(file: file)));
@@ -958,7 +969,7 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
             children: [
               _buildItem(Icons.camera_alt_rounded, 'Camera', Colors.blueAccent, () async {
                 final cameraContext = context;
-                final f = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
+                final f = await _picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1200, maxHeight: 1200);
                 if (!cameraContext.mounted) return;
                 if (f != null) Navigator.pop(cameraContext, {'file': File(f.path), 'type': 'image'});
               }),
@@ -970,7 +981,7 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
               }),
               _buildItem(Icons.image_rounded, 'Gallery', Colors.greenAccent, () async {
                 final galleryContext = context;
-                final f = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
+                final f = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1200, maxHeight: 1200);
                 if (!galleryContext.mounted) return;
                 if (f != null) Navigator.pop(galleryContext, {'file': File(f.path), 'type': 'image'});
               }),
@@ -1000,12 +1011,17 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
   Widget _buildRecentItem(int i) {
     final p = _recentPhotos[i];
     final bool isDeleting = _deletingUrl == p['imageUrl'];
+    final String url = p['imageUrl'] ?? '';
+    final bool isVideo = url.toLowerCase().contains('.mp4') || 
+                        url.toLowerCase().contains('.mov') || 
+                        url.toLowerCase().contains('.avi');
+
     return Stack(
       children: [
         GestureDetector(
           onTap: () { 
             if (!_isEditMode && !isDeleting && mounted) {
-              Navigator.pop(context, {'url': p['imageUrl']}); 
+              Navigator.pop(context, {'url': url}); 
             }
           },
           child: Container(
@@ -1013,14 +1029,27 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
             margin: const EdgeInsets.only(right: 12), 
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(15), 
-              image: DecorationImage(image: CachedNetworkImageProvider(ApiService.getSecureUrl(p['imageUrl'])), fit: BoxFit.cover)
+              color: Colors.white10,
+              image: isVideo ? null : DecorationImage(
+                image: CachedNetworkImageProvider(ApiService.getSecureUrl(url)), 
+                fit: BoxFit.cover
+              )
             ),
             child: isDeleting 
               ? Container(
                   decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(15)),
                   child: const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent))),
                 )
-              : const Align(alignment: Alignment.topRight, child: Padding(padding: EdgeInsets.all(5), child: Icon(Icons.lock, color: Colors.white70, size: 14))),
+              : Stack(
+                  children: [
+                    if (isVideo) 
+                      const Center(child: Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 30)),
+                    const Align(
+                      alignment: Alignment.topRight, 
+                      child: Padding(padding: EdgeInsets.all(5), child: Icon(Icons.lock, color: Colors.white70, size: 14))
+                    ),
+                  ],
+                ),
           )
         ),
         if (_isEditMode && !isDeleting) Positioned(

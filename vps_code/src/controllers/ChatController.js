@@ -241,11 +241,17 @@ exports.handleFileUpload = async (req, res) => {
         // Build relative URL to ensure client can prepend its own baseUrl
         const fileUrl = `/api/media/${req.file.filename}`;
 
-        const phone = req.body.phone;
+        const { phone, type } = req.body;
         if (phone) {
             try {
-                const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });
-                await newRecent.save();
+                // If app explicitly says it's an image or video, trust it and save to RecentPhoto
+                if (type === 'image' || type === 'video') {
+                    const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });
+                    await newRecent.save();
+                    console.log(`📸 Saved to RecentPhoto: ${fileUrl} (App Type: ${type})`);
+                } else {
+                    console.log(`🚫 Skipped RecentPhoto: ${fileUrl} (App Type: ${type}) - Not a photo or video`);
+                }
             } catch (saveErr) {
                 console.error("⚠️ Error saving recent photo record:", saveErr);
             }
@@ -283,7 +289,8 @@ exports.serveSecureMedia = async (req, res) => {
 exports.getRecentPhotos = async (req, res) => {
     try {
         const { phone } = req.params;
-        const photos = await RecentPhoto.find({ phone: phone }).sort({ timestamp: -1 }).limit(20);
+        // Fetch all recent records for this user (filtering is already done during save)
+        const photos = await RecentPhoto.find({ phone }).sort({ timestamp: -1 }).limit(20);
         res.json({ success: true, photos });
     } catch (e) {
         res.status(500).json({ success: false, photos: [] });

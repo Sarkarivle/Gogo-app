@@ -21,6 +21,9 @@ class _VerificationPageState extends State<VerificationPage> {
     final XFile? photo = await _picker.pickImage(
       source: ImageSource.camera,
       preferredCameraDevice: CameraDevice.front,
+      imageQuality: 70,
+      maxWidth: 1000,
+      maxHeight: 1000,
     );
     if (photo != null) {
       setState(() => _image = File(photo.path));

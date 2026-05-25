@@ -113,6 +113,7 @@ class ChatRepository {
       
       // Add Fields
       request.fields['phone'] = phone;
+      request.fields['type'] = type;
       
       // Add File
       request.files.add(await http.MultipartFile.fromPath(
