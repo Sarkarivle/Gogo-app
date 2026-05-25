@@ -18,6 +18,7 @@ import '../services/chat_repository.dart';
 import '../services/premium_service.dart';
 import '../services/api_service.dart';
 import '../services/permission_manager.dart';
+import '../services/notification_service.dart';
 import 'chat_settings_screen.dart';
 import 'profile_detail_screen.dart';
 import '../widgets/chat_widgets.dart';
@@ -139,6 +140,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final roomId = _getRoomId();
       SocketService().joinRoom(roomId);
       _chatRepository.markChatSeen(currentUser!['phone'], widget.receiverPhone);
+      NotificationService.clearUnreadForSender(widget.receiverPhone);
     }
     _checkBlockStatus();
     _fetchChatHistory();

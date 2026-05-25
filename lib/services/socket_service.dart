@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_service.dart';
 import 'premium_service.dart';
+import 'notification_service.dart';
 
 class SocketService with WidgetsBindingObserver {
   static final SocketService _instance = SocketService._internal();
@@ -14,6 +15,7 @@ class SocketService with WidgetsBindingObserver {
   io.Socket? _socket;
   String? _currentUserPhone;
   String? _activeRoomId;
+  String? get activeRoomId => _activeRoomId;
   
   final ValueNotifier<Map<String, bool>> onlineUsers = ValueNotifier({});
   final ValueNotifier<Map<String, bool>> typingUsers = ValueNotifier({});
@@ -102,6 +104,11 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('receive_message', (data) {
       _messageController.add(data);
       _eventController.add({'event': 'receive_message', 'data': data});
+
+      // Show local notification if user is NOT in the active room
+      if (_activeRoomId != data['roomId']) {
+        NotificationService.showLocalNotificationFromSocket(data);
+      }
     });
     
     _socket!.on('message_delivered', (data) => _eventController.add({'event': 'message_delivered', 'data': data}));
@@ -115,7 +122,11 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('unread_update', (data) => _eventController.add({'event': 'unread_update', 'data': data}));
 
     // --- CALL EVENTS ---
-    _socket!.on('incoming_call', (data) => _eventController.add({'event': 'incoming_call', 'data': data}));
+    _socket!.on('incoming_call', (data) {
+      _eventController.add({'event': 'incoming_call', 'data': data});
+      // Show notification if app is in background/other screen
+      NotificationService.showCallNotification(data);
+    });
     _socket!.on('call_accepted', (data) => _eventController.add({'event': 'call_accepted', 'data': data}));
     _socket!.on('call_rejected', (data) => _eventController.add({'event': 'call_rejected', 'data': data}));
     _socket!.on('call_ended', (data) => _eventController.add({'event': 'call_ended', 'data': data}));

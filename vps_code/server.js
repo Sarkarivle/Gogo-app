@@ -202,14 +202,17 @@ io.on('connection', (socket) => {
                     });
                     await newMessage.save();
 
-                    if (!isReceiverOnline) {
-                        const receiverUser = await User.findOne({ phone: data.receiverPhone }, 'fcmToken');
-                        if (receiverUser && receiverUser.fcmToken) {
-                            notificationService.sendPushNotification(receiverUser.fcmToken, data.senderName || "New Message", data.message || "Sent a photo", {
-                                senderPhone: String(data.senderPhone),
-                                type: 'chat'
-                            });
-                        }
+                    // Send push notification regardless of online status to ensure delivery
+                    // when user is on another screen or app is in background.
+                    const receiverUser = await User.findOne({ phone: data.receiverPhone }, 'fcmToken');
+                    if (receiverUser && receiverUser.fcmToken) {
+                        notificationService.sendPushNotification(receiverUser.fcmToken, data.senderName || "New Message", data.message || "Sent a photo", {
+                            senderPhone: String(data.senderPhone),
+                            senderName: String(data.senderName || "User"),
+                            type: 'chat',
+                            roomId: roomId,
+                            messageId: tempId
+                        });
                     }
                 } catch (err) { console.log("DB Error:", err); }
             });
@@ -415,7 +418,7 @@ io.on('connection', (socket) => {
 
         const [sender, receiver] = await Promise.all([
             User.findOne({ phone: callerPhone }, 'accountStatus isDeactivated'),
-            User.findOne({ phone: targetPhone }, 'accountStatus isDeactivated')
+            User.findOne({ phone: targetPhone }, 'accountStatus isDeactivated fcmToken')
         ]);
 
         if (sender && (sender.accountStatus === 'Deactivated' || sender.isDeactivated)) {
@@ -429,11 +432,23 @@ io.on('connection', (socket) => {
         }
 
         console.log(`📞 Call initiated: ${callerPhone} -> ${targetPhone} (${isVideo ? 'Video' : 'Audio'})`);
+
+        // 1. Socket Emit
         io.to(`user_${targetPhone}`).emit('incoming_call', {
             callerPhone,
             callerName,
             isVideo
         });
+
+        // 2. Push Notification
+        if (receiver && receiver.fcmToken) {
+            notificationService.sendPushNotification(receiver.fcmToken, `Incoming ${isVideo ? 'Video' : 'Voice'} Call`, `from ${callerName}`, {
+                callerPhone: String(callerPhone),
+                callerName: String(callerName),
+                isVideo: String(isVideo),
+                type: 'call'
+            });
+        }
     });
 
     socket.on('call_ringing', (data) => {
