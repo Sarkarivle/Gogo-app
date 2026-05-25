@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/socket_service.dart';
@@ -26,7 +25,6 @@ class InboxScreenState extends State<InboxScreen> {
 
   Map<String, dynamic>? _currentUser;
   StreamSubscription? _socketEventSub;
-  Position? _myPos;
   Timer? _inboxUpdateDebounce;
 
   // Filter States
@@ -68,7 +66,6 @@ class InboxScreenState extends State<InboxScreen> {
       _currentUser = jsonDecode(userData);
       _listenToSocketEvents();
     }
-    await _getCurrentLocation();
     _fetchInbox();
   }
 
@@ -78,17 +75,6 @@ class InboxScreenState extends State<InboxScreen> {
       _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     }
     await _fetchInbox();
-  }
-
-  Future<void> _getCurrentLocation() async {
-    try {
-      _myPos = await Geolocator.getLastKnownPosition() ?? 
-               await Geolocator.getCurrentPosition(
-                 locationSettings: const LocationSettings(
-                   accuracy: LocationAccuracy.low,
-                 ),
-               );
-    } catch (_) {}
   }
 
   void _listenToSocketEvents() {
@@ -189,29 +175,10 @@ class InboxScreenState extends State<InboxScreen> {
       
       List<dynamic> fetchedChats = data['chats'] ?? [];
 
-      if (_myPos != null) {
-        for (var chat in fetchedChats) {
-          try {
-            if (chat['lat'] != null && chat['lng'] != null) {
-              double lat = double.tryParse(chat['lat'].toString()) ?? 0.0;
-              double lng = double.tryParse(chat['lng'].toString()) ?? 0.0;
-              
-              if (lat != 0.0 && lng != 0.0) {
-                double dist = Geolocator.distanceBetween(
-                    _myPos!.latitude, _myPos!.longitude, 
-                    lat, lng) / 1000;
-                chat['calculated_dist'] = dist;
-                chat['dist_str'] = "${dist.toStringAsFixed(1)} km";
-              } else {
-                chat['dist_str'] = "Unknown";
-              }
-            } else {
-              chat['dist_str'] = "Unknown";
-            }
-          } catch (e) {
-            chat['dist_str'] = "Any";
-          }
-        }
+      // Server already calculates 'distance' label with privacy and village/area logic.
+      // We just ensure we have a fallback for the UI field name if needed.
+      for (var chat in fetchedChats) {
+        chat['dist_str'] = (chat['distance'] ?? '').replaceAll(' away', '');
       }
 
       if (mounted) {

@@ -2,6 +2,74 @@ const socket = io();
 const mainContent = document.getElementById('mainContent');
 
 async function init() {
+    console.log("🚀 System Initializing...");
+    const token = API.getToken();
+    const loginOverlay = document.getElementById('loginOverlay');
+    const sidebar = document.getElementById('adminSidebar');
+    const mainWrapper = document.getElementById('adminMainWrapper');
+
+    if (!token || token === 'null' || token === 'undefined') {
+        console.log("🔒 No valid token found. Showing login.");
+        // UI already hidden by default in HTML
+        loginOverlay.classList.remove('hidden');
+        loginOverlay.style.display = 'flex';
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            const btn = document.getElementById('loginBtn');
+            const err = document.getElementById('loginError');
+
+            btn.disabled = true;
+            btn.innerText = 'AUTHENTICATING...';
+            err.classList.add('hidden');
+
+            try {
+                const res = await API.login(user, pass);
+                if (res.success) {
+                    console.log("✅ Authenticated Successfully");
+                    window.location.reload();
+                } else {
+                    err.innerText = res.message || 'Authentication failed';
+                    err.classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error("Login Error:", e);
+                err.innerText = "Server connection failed";
+                err.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'AUTHENTICATE';
+            }
+        });
+        return;
+    }
+
+    // If token exists, Show the UI
+    if(sidebar) {
+        sidebar.classList.remove('hidden');
+        sidebar.classList.add('flex');
+    }
+    if(mainWrapper) {
+        mainWrapper.classList.remove('hidden');
+        mainWrapper.classList.add('flex');
+    }
+    loginOverlay.classList.add('hidden');
+    loginOverlay.style.display = 'none';
+
+    // Update Profile UI
+    const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}');
+    if (adminUser.username) {
+        const nameEl = document.querySelector('aside .text-xs.font-bold.text-white');
+        const roleEl = document.querySelector('aside .text-\[10px\].text-slate-500.uppercase.font-black');
+        const avatarEl = document.querySelector('aside .w-8.h-8.rounded-full.bg-orange-500');
+
+        if(nameEl) nameEl.innerText = adminUser.username;
+        if(roleEl) roleEl.innerText = adminUser.role;
+        if(avatarEl) avatarEl.innerText = adminUser.username[0].toUpperCase();
+    }
+
     // Initial module
     const lastMod = localStorage.getItem('activeModule') || 'dashboard';
     await changeModule(lastMod);
@@ -91,6 +159,7 @@ async function changeModule(mod) {
         case 'app_update': await loadAppUpdate(); break;
         case 'news': await loadNews(); break;
         case 'audit': await loadAuditLogs(); break;
+        case 'admins': await loadAdmins(); break;
         default: await loadDashboard();
     }
 }
@@ -125,6 +194,10 @@ function playAlertSound() {
 
 function closeModal() {
     UI.modal.hide();
+}
+
+function logout() {
+    API.clearToken();
 }
 
 // Global handle for modal closing on overlay click

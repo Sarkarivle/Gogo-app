@@ -18,6 +18,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 router.get('/inbox/:phone', ChatController.getInbox);
+router.get('/history/:p1/:p2', ChatController.getChatHistory); // Added for mobile app access
 router.get('/check-block/:p1/:p2', ChatController.checkBlock);
 router.post('/block', ChatController.blockUser);
 router.post('/unblock', ChatController.unblockUser);
@@ -27,6 +28,5 @@ router.post('/upload', upload.single('image'), ChatController.handleFileUpload);
 router.get('/recent-photos/:phone', ChatController.getRecentPhotos);
 router.post('/delete-recent-photo', ChatController.deleteRecentPhotoByUrl);
 router.delete('/photo/:messageId', ChatController.deletePhoto);
-router.get('/wipe-recent-data', ChatController.wipeRecentData); // Temporary cleanup route
 
 module.exports = router;

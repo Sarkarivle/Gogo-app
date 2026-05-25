@@ -17,6 +17,7 @@ const notificationService = require('./src/services/notificationService');
 const analyticsService = require('./src/services/analyticsService');
 const revenueService = require('./src/services/revenueService');
 const randomMatchController = require('./src/controllers/RandomMatchController');
+const { updateConversationSummary, resetUnreadCount } = require('./src/utils/chatUtils');
 
 const app = express();
 const server = http.createServer(app);
@@ -202,6 +203,9 @@ io.on('connection', (socket) => {
                     });
                     await newMessage.save();
 
+                    // Update conversation summary for inbox optimization
+                    await updateConversationSummary(newMessage);
+
                     // Send push notification regardless of online status to ensure delivery
                     // when user is on another screen or app is in background.
                     const receiverUser = await User.findOne({ phone: data.receiverPhone }, 'fcmToken');
@@ -325,6 +329,7 @@ io.on('connection', (socket) => {
                 { roomId, receiverPhone: data.myPhone, isOpened: false, isViewOnce: false },
                 { isOpened: true, isDelivered: true }
             );
+            await resetUnreadCount(data.myPhone, data.otherPhone);
             socket.to(roomId).emit('chat_seen_update', { by: data.myPhone });
         } catch (e) {}
     });
@@ -346,6 +351,7 @@ io.on('connection', (socket) => {
                 type: 'block_event'
             });
             await systemMsg.save();
+            await updateConversationSummary(systemMsg);
 
             // Centralized Realtime Sync: Broadcast moderation status
             const syncData = {
@@ -381,6 +387,7 @@ io.on('connection', (socket) => {
                 type: 'unblock_event'
             });
             await systemMsg.save();
+            await updateConversationSummary(systemMsg);
 
             // Centralized Realtime Sync: Broadcast moderation status
             const syncData = {
@@ -511,6 +518,7 @@ io.on('connection', (socket) => {
                 metadata: { duration, status, callType }
             });
             await callMessage.save();
+            await updateConversationSummary(callMessage);
 
             // Emit to both users for inbox update
             const roomId = [senderPhone, receiverPhone].sort().join('_');

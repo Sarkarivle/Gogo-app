@@ -31,34 +31,36 @@ class UserRepository {
           ),
         );
         
-        String city = 'Unknown';
-        String area = 'Unknown';
+        String? city;
+        String? area;
         try {
           List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
           if (placemarks.isNotEmpty) {
             Placemark place = placemarks[0];
-            area = place.subLocality ?? place.thoroughfare ?? place.name ?? 'Unknown';
-            city = place.locality ?? place.subAdministrativeArea ?? 'Unknown';
+            area = place.subLocality ?? place.thoroughfare ?? place.name;
+            city = place.locality ?? place.subAdministrativeArea;
           }
         } catch (e) {
           debugPrint('Geocoding error: $e');
         }
 
-        await ApiService.post('/api/user/update-location', {
+        final Map<String, dynamic> locationData = {
           'phone': phone, 
           'lat': pos.latitude, 
           'lng': pos.longitude,
-          'city': city,
-          'area': area
-        });
+        };
+        if (city != null && city.toLowerCase() != 'unknown') locationData['city'] = city;
+        if (area != null && area.toLowerCase() != 'unknown') locationData['area'] = area;
+
+        await ApiService.post('/api/user/update-location', locationData);
 
         // Update local storage
         final prefs = await SharedPreferences.getInstance();
         final userDataStr = prefs.getString('user_data');
         if (userDataStr != null) {
           Map<String, dynamic> userData = jsonDecode(userDataStr);
-          userData['city'] = city;
-          userData['area'] = area;
+          if (city != null) userData['city'] = city;
+          if (area != null) userData['area'] = area;
           userData['lat'] = pos.latitude;
           userData['lng'] = pos.longitude;
           await prefs.setString('user_data', jsonEncode(userData));

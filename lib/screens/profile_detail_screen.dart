@@ -173,7 +173,8 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       locName = widget.city;
     }
 
-    String locationDisplay = locName.isNotEmpty ? "$locName, ${widget.distance}" : widget.distance;
+    String cleanDistance = widget.distance.replaceAll(' away', '');
+    String locationDisplay = locName.isNotEmpty ? "$locName, $cleanDistance" : cleanDistance;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),

@@ -199,7 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
         SettingsDangerRow(
           icon: Icons.no_accounts_outlined,
           title: 'Deactivate Account',
-          subtitle: 'Temporary account freeze',
+          subtitle: 'delete your account',
           color: Colors.orangeAccent,
           onTap: () => _showDeactivateModal(context),
         ),
@@ -280,29 +280,28 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
             ),
             const SizedBox(height: 32),
-            _buildWarningItem('Your profile will disappear from discovery'),
+            _buildWarningItem('Your profile will disappear from App'),
             _buildWarningItem('Nobody will see your profile in feed'),
-            _buildWarningItem('Existing chats will remain intact'),
-            _buildWarningItem('Your premium membership will stay safe'),
             _buildWarningItem('Reactivate anytime by logging back in'),
             const SizedBox(height: 32),
             ElevatedButton(
-              onPressed: () => _handleDeactivation(context),
+              onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orangeAccent,
-                foregroundColor: Colors.black,
+                backgroundColor: Colors.white.withValues(alpha: 0.1),
+                foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 56),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 elevation: 0,
               ),
-              child: const Text('Confirm Deactivation', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              child: const Text('No. dont deactivate my acount', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => _handleDeactivation(context),
               style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 56)),
-              child: Text('Maybe later', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w700)),
+              child: Text('Yes Deactivate my account', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w700)),
             ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -340,11 +339,8 @@ class _SettingsPageState extends State<SettingsPage> {
           await prefs.clear();
           if (context.mounted) {
             Navigator.of(context).pop(); // Close loading
-            Navigator.pushAndRemoveUntil(
-              context, 
-              MaterialPageRoute(builder: (context) => const LoginScreen()), 
-              (route) => false
-            );
+            Navigator.of(context).pop(); // Close modal
+            _showPostDeactivationDialog(context);
           }
           return;
         }
@@ -359,6 +355,58 @@ class _SettingsPageState extends State<SettingsPage> {
         const SnackBar(content: Text('Failed to deactivate. Please try again.')),
       );
     }
+  }
+
+  void _showPostDeactivationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text(
+          'Your Gogo acccont has been deactivated',
+          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDialogBullet("ab aapka gogo account kisi ko nahi dikhega"),
+            const SizedBox(height: 12),
+            _buildDialogBullet("gogo account ko login karke reactivate bhi kar sakte ho"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pushAndRemoveUntil(
+                context, 
+                MaterialPageRoute(builder: (context) => const LoginScreen()), 
+                (route) => false
+              );
+            },
+            child: const Text('OK', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDialogBullet(String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("• ", style: TextStyle(color: Colors.orangeAccent, fontSize: 18)),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+        ),
+      ],
+    );
   }
 }
 

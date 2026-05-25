@@ -39,13 +39,21 @@ class ProfileCard extends StatelessWidget {
     final String safeArea = area.toString();
     final String safeCity = city.toString();
 
-    if (safeArea.isNotEmpty && safeArea != "Unknown" && safeArea != "null") {
+    if (safeArea.isNotEmpty && safeArea.toLowerCase() != "unknown" && safeArea.toLowerCase() != "null") {
       locName = safeArea;
-    } else if (safeCity.isNotEmpty && safeCity != "Unknown" && safeCity != "null") {
+    } else if (safeCity.isNotEmpty && safeCity.toLowerCase() != "unknown" && safeCity.toLowerCase() != "null") {
       locName = safeCity;
     }
 
-    String locationDisplay = locName.isNotEmpty ? "$locName, $distance" : distance;
+    String cleanDistance = distance.replaceAll(' away', '');
+    String locationDisplay = cleanDistance;
+    if (locName.isNotEmpty) {
+      if (cleanDistance.isNotEmpty) {
+        locationDisplay = "$locName, $cleanDistance";
+      } else {
+        locationDisplay = locName;
+      }
+    }
 
     return GestureDetector(
       onTap: () {

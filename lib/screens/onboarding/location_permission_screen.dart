@@ -44,15 +44,15 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
       );
       
       // Step 2: Get Address (Fast usually)
-      String city = 'Unknown';
-      String area = 'Unknown';
+      String? city;
+      String? area;
       try {
         List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude)
             .timeout(const Duration(seconds: 3));
         if (placemarks.isNotEmpty) {
           Placemark place = placemarks[0];
-          area = place.subLocality ?? place.thoroughfare ?? place.name ?? 'Unknown';
-          city = place.locality ?? place.subAdministrativeArea ?? 'Unknown';
+          area = place.subLocality ?? place.thoroughfare ?? place.name;
+          city = place.locality ?? place.subAdministrativeArea;
         }
       } catch (e) {
         debugPrint("Geocoding timeout or error: $e");
@@ -63,20 +63,24 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
       final userDataStr = prefs.getString('user_data');
       if (userDataStr != null) {
         Map<String, dynamic> user = jsonDecode(userDataStr);
-        user['area'] = area;
-        user['city'] = city;
+        if (area != null && area.toLowerCase() != 'unknown') user['area'] = area;
+        if (city != null && city.toLowerCase() != 'unknown') user['city'] = city;
         user['lat'] = pos.latitude;
         user['lng'] = pos.longitude;
         await prefs.setString('user_data', jsonEncode(user));
         
-        // Step 4: Sync with server (Fire and forget or short timeout to keep it fast)
-        ApiService.post('/api/user/update-location', {
+        // Step 4: Sync with server
+        final Map<String, dynamic> locationData = {
           'phone': user['phone'], 
           'lat': pos.latitude, 
           'lng': pos.longitude,
-          'city': city,
-          'area': area
-        }).timeout(const Duration(seconds: 2)).catchError((e) => http.Response('Error', 500));
+        };
+        if (city != null && city.toLowerCase() != 'unknown') locationData['city'] = city;
+        if (area != null && area.toLowerCase() != 'unknown') locationData['area'] = area;
+
+        ApiService.post('/api/user/update-location', locationData)
+            .timeout(const Duration(seconds: 2))
+            .catchError((e) => http.Response('Error', 500));
       }
 
       // Step 5: Navigate

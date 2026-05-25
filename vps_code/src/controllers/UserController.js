@@ -3,6 +3,32 @@ const Report = require('../models/Report');
 const VerificationRequest = require('../models/VerificationRequest');
 const analyticsService = require('../services/analyticsService');
 
+/**
+ * Helper to calculate distance for privacy
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const p1Lat = parseFloat(lat1);
+    const p1Lon = parseFloat(lon1);
+    const p2Lat = parseFloat(lat2);
+    const p2Lon = parseFloat(lon2);
+
+    // Check if any coordinate is missing or essentially zero
+    if (!p1Lat || !p1Lon || !p2Lat || !p2Lon) return "";
+
+    const R = 6371; // km
+    const dLat = (p2Lat - p1Lat) * Math.PI / 180;
+    const dLon = (p2Lon - p1Lon) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(p1Lat * Math.PI / 180) * Math.cos(p2Lat * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+
+    // Estimated distance labels for privacy
+    if (d < 1) return "Within 1 km";
+    return `${d.toFixed(1)} km`;
+}
+
 exports.submitVerification = async (req, res) => {
     try {
         const { phone, selfieUrl } = req.body;
@@ -29,8 +55,16 @@ exports.updateFcmToken = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
     try {
-        const user = await User.findOne({ phone: req.params.phone });
+        const user = await User.findOne({ phone: req.params.phone }).select('-lat -lng -location').lean();
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Smart Location Label: Best single name (Area or City)
+        const cleanArea = (user.area && user.area.toLowerCase() !== 'unknown') ? user.area : '';
+        const cleanCity = (user.city && user.city.toLowerCase() !== 'unknown') ? user.city : '';
+
+        user.city = cleanArea || cleanCity || 'Nearby';
+        user.area = '';
+
         res.json({ success: true, user });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -131,8 +165,17 @@ exports.register = async (req, res) => {
 
 exports.updateLocation = async (req, res) => {
     try {
-        const { phone, lat, lng, city, area } = req.body;
-        const update = { lat, lng, city, area, lastSeen: new Date() };
+        let { phone, lat, lng, city, area } = req.body;
+
+        // Clean up "Unknown" strings sent from mobile
+        if (city && city.toLowerCase() === 'unknown') city = null;
+        if (area && area.toLowerCase() === 'unknown') area = null;
+
+        const update = { lastSeen: new Date() };
+        if (lat) update.lat = lat;
+        if (lng) update.lng = lng;
+        if (city) update.city = city;
+        if (area) update.area = area;
 
         if (lat && lng) {
             update.location = {
@@ -214,6 +257,18 @@ exports.getDiscover = async (req, res) => {
             lng
         } = req.query;
 
+        let userLat = lat ? parseFloat(lat) : null;
+        let userLng = lng ? parseFloat(lng) : null;
+
+        // If lat/lng missing in query, try to get from user record
+        if (!userLat || !userLng) {
+            const caller = await User.findOne({ phone }, 'lat lng location');
+            if (caller) {
+                userLat = userLat || caller.lat || caller.location?.coordinates?.[1];
+                userLng = userLng || caller.lng || caller.location?.coordinates?.[0];
+            }
+        }
+
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
         const skip = (pageNum - 1) * limitNum;
@@ -250,10 +305,7 @@ exports.getDiscover = async (req, res) => {
         let finalQuery = { ...baseQuery };
 
         // Handle tabs and geo-filtering
-        if (tab === 'Nearby' && lat && lng) {
-            const userLat = parseFloat(lat);
-            const userLng = parseFloat(lng);
-
+        if (tab === 'Nearby' && userLat && userLng) {
             // Determine search radiuses to try for smart expansion
             let radii = [20, 100, 500];
 
@@ -288,7 +340,7 @@ exports.getDiscover = async (req, res) => {
 
                     users = await User.find(geoQuery)
                         .limit(limitNum)
-                        .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                        .select('phone name age position havePlace city area lat lng location isOnline isVerified isPremium profileImages')
                         .lean();
 
                     if (users.length > 0) break;
@@ -302,7 +354,7 @@ exports.getDiscover = async (req, res) => {
                     ...baseQuery,
                     location: {
                         $near: {
-                            $geometry: { type: "Point", coordinates: [userLng, userLat] },
+                            $geometry: { type: "Point", coordinates: [userLng, searchRadius] },
                             $maxDistance: searchRadius * 1000
                         }
                     }
@@ -311,7 +363,7 @@ exports.getDiscover = async (req, res) => {
                 users = await User.find(geoQuery)
                     .skip(skip)
                     .limit(limitNum)
-                    .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                    .select('phone name age position havePlace city area lat lng location isOnline isVerified isPremium profileImages')
                     .lean();
             }
 
@@ -321,14 +373,28 @@ exports.getDiscover = async (req, res) => {
                 users = await User.find(baseQuery)
                     .sort({ lastSeen: -1 })
                     .limit(limitNum)
-                    .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+                    .select('phone name age position havePlace city area lat lng location isOnline isVerified isPremium profileImages')
                     .lean();
             }
+
+            const processedUsers = (users || []).map(u => {
+                const uLat = u.lat || u.location?.coordinates?.[1];
+                const uLng = u.lng || u.location?.coordinates?.[0];
+                const distanceStr = calculateDistance(userLat, userLng, uLat, uLng);
+
+                // Best single location name (Village/Area > City)
+                const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
+                const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
+                const cityLabel = cleanArea || cleanCity || 'Nearby';
+
+                const { lat: _l, lng: _g, location: _loc, ...rest } = u;
+                return { ...rest, city: cityLabel, area: '', distance: distanceStr };
+            });
 
             return res.json({
                 success: true,
                 page: pageNum,
-                users: users || [],
+                users: processedUsers,
                 radiusUsed: pageNum === 1 ? currentRadiusUsed : null
             });
 
@@ -345,13 +411,27 @@ exports.getDiscover = async (req, res) => {
             .sort(sort)
             .skip(skip)
             .limit(limitNum)
-            .select('phone name age position havePlace city area lat lng isOnline isVerified isPremium profileImages')
+            .select('phone name age position havePlace city area lat lng location isOnline isVerified isPremium profileImages')
             .lean();
+
+        const processedUsers = (users || []).map(u => {
+            const uLat = u.lat || u.location?.coordinates?.[1];
+            const uLng = u.lng || u.location?.coordinates?.[0];
+            const distanceStr = calculateDistance(userLat, userLng, uLat, uLng);
+
+            // Best single location name (Village/Area > City)
+            const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
+            const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
+            const cityLabel = cleanArea || cleanCity || 'Nearby';
+
+            const { lat: _l, lng: _g, location: _loc, ...rest } = u;
+            return { ...rest, city: cityLabel, area: '', distance: distanceStr };
+        });
 
         res.json({
             success: true,
             page: pageNum,
-            users: users || []
+            users: processedUsers
         });
 
     } catch (e) {

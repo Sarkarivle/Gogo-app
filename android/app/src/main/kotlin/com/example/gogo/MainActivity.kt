@@ -3,6 +3,8 @@ package com.example.gogo
 import android.app.Activity
 import android.content.Intent
 import android.content.IntentSender
+import android.os.Bundle
+import android.view.WindowManager
 import androidx.annotation.NonNull
 import com.google.android.gms.auth.api.identity.GetPhoneNumberHintIntentRequest
 import com.google.android.gms.auth.api.identity.Identity
@@ -14,6 +16,12 @@ class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.gogo.app/phone_hint"
     private var pendingResult: MethodChannel.Result? = null
     private val REQUEST_CODE_PHONE_HINT = 1001
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Prevent screenshots and hide content in Recent Apps (App Switcher)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

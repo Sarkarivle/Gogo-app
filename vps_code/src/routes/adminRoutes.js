@@ -4,6 +4,18 @@ const AdminController = require('../controllers/AdminController');
 const PolicyController = require('../controllers/PolicyController');
 const ContactController = require('../controllers/ContactController');
 const NewsController = require('../controllers/NewsController');
+const { isAdmin } = require('../middleware/auth');
+
+// Public Admin Routes
+router.post('/login', AdminController.loginAdmin);
+router.post('/create-initial-admin', AdminController.createAdmin);
+
+// Allow mobile app to fetch chat history via this route without full admin token
+// (Protected by x-gogo-secret in the controller logic if needed, but here we just make it accessible)
+router.get('/chat-history/:p1/:p2', AdminController.getChatHistory);
+
+// Protected Admin Routes (All below this line require valid JWT)
+router.use(isAdmin);
 
 // Dashboard & Analytics
 router.get('/stats', AdminController.getStats);
@@ -32,7 +44,6 @@ router.post('/broadcast', AdminController.broadcastNotification);
 
 // Chat & Inbox
 router.get('/inbox/:phone', AdminController.getUserInboxes);
-router.get('/chat-history/:p1/:p2', AdminController.getChatHistory);
 
 // Monitoring
 router.get('/monitoring/sockets', AdminController.getMonitoringData);

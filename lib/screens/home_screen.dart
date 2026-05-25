@@ -247,32 +247,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           
           List<dynamic> processedProfiles = List.from(newProfiles);
           
-          // Calculate distance for all profiles if position is known
-          if (_lastKnownPosition != null) {
-            for (var p in processedProfiles) {
-              try {
-                if (p['lat'] != null && p['lng'] != null) {
-                  double lat = double.tryParse(p['lat'].toString()) ?? 0.0;
-                  double lng = double.tryParse(p['lng'].toString()) ?? 0.0;
-                  
-                  if (lat != 0.0 && lng != 0.0) {
-                    double d = Geolocator.distanceBetween(
-                      _lastKnownPosition!.latitude, 
-                      _lastKnownPosition!.longitude, 
-                      lat, 
-                      lng
-                    ) / 1000;
-                    p['calculated_dist'] = "${d.toStringAsFixed(1)} km";
-                  } else {
-                    p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
-                  }
-                } else {
-                  p['calculated_dist'] = p['calculated_dist'] ?? "Unknown";
-                }
-              } catch (e) {
-                p['calculated_dist'] = "Any";
-              }
-            }
+          // Server already calculates 'distance' label with privacy and village/area logic.
+          // We use that directly instead of calculating it locally to ensure consistency.
+          for (var p in processedProfiles) {
+            p['calculated_dist'] = (p['distance'] ?? '').replaceAll(' away', '');
           }
 
           if (loadMore) {

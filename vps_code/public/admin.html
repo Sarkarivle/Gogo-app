@@ -26,8 +26,36 @@
 </head>
 <body class="flex h-screen overflow-hidden">
 
+    <!-- LOGIN OVERLAY (Hidden by default, shown by JS if no token) -->
+    <div id="loginOverlay" class="fixed inset-0 bg-[#0b0d13] z-[1000] flex items-center justify-center p-6 hidden">
+        <div class="glass w-full max-w-md p-10 rounded-[2.5rem] shadow-2xl border border-white/10">
+            <div class="flex flex-col items-center mb-10">
+                <div class="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/30 mb-6">
+                    <i class="fas fa-bolt text-black text-3xl"></i>
+                </div>
+                <h1 class="text-3xl font-black text-white">GoGo <span class="text-orange-500">PRO</span></h1>
+                <p class="text-slate-500 text-xs uppercase font-bold tracking-widest mt-2">Enterprise Access Only</p>
+            </div>
+
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Username</label>
+                    <input type="text" id="username" required class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:outline-none focus:border-orange-500 transition" placeholder="admin_user">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Password</label>
+                    <input type="password" id="password" required class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:outline-none focus:border-orange-500 transition" placeholder="••••••••">
+                </div>
+                <button type="submit" id="loginBtn" class="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-orange-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                    AUTHENTICATE
+                </button>
+            </form>
+            <p id="loginError" class="text-red-500 text-xs font-bold text-center mt-6 hidden"></p>
+        </div>
+    </div>
+
     <!-- SIDEBAR -->
-    <aside class="w-64 bg-[#12151f] border-r border-white/5 flex flex-col shrink-0 z-50">
+    <aside id="adminSidebar" class="w-64 bg-[#12151f] border-r border-white/5 flex flex-col shrink-0 z-50 hidden">
         <div class="p-8">
             <div class="flex items-center space-x-3">
                 <div class="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
@@ -91,21 +119,29 @@
             <div onclick="changeModule('database')" id="nav-database" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
                 <i class="fas fa-database mr-3 w-5 text-center"></i> DB Tools
             </div>
+            <div onclick="changeModule('admins')" id="nav-admins" class="sidebar-item w-full flex items-center p-4 rounded-xl text-xs uppercase font-bold">
+                <i class="fas fa-user-shield mr-3 w-5 text-center text-purple-500"></i> Admin Staff
+            </div>
         </nav>
 
         <div class="p-4 border-t border-white/5 mt-auto bg-black/20">
-            <div class="glass p-4 rounded-2xl flex items-center space-x-3">
-                <div class="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-black font-bold">H</div>
-                <div>
-                    <p class="text-xs font-bold text-white">Himanshu</p>
-                    <p class="text-[10px] text-slate-500 uppercase font-black">Senior Engineer</p>
+            <div class="glass p-4 rounded-2xl flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-black font-bold">H</div>
+                    <div>
+                        <p class="text-xs font-bold text-white">Admin</p>
+                        <p class="text-[10px] text-slate-500 uppercase font-black">Staff</p>
+                    </div>
                 </div>
+                <button onclick="logout()" class="text-slate-500 hover:text-red-500 transition-colors">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
             </div>
         </div>
     </aside>
 
     <!-- MAIN -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <div id="adminMainWrapper" class="flex-1 flex flex-col min-w-0 hidden">
         <header class="h-20 border-b border-white/5 flex items-center justify-between px-10 glass shrink-0 relative z-40">
             <div class="flex items-center space-x-4">
                 <div class="w-1 h-6 bg-orange-500 rounded-full"></div>
@@ -118,7 +154,7 @@
                 </div>
                 <div class="h-8 w-px bg-white/5"></div>
                 <button class="text-slate-400 hover:text-white transition"><i class="fas fa-bell"></i></button>
-                <button class="text-slate-400 hover:text-white transition"><i class="fas fa-gear"></i></button>
+                <button onclick="logout()" class="text-slate-400 hover:text-red-500 transition" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
             </div>
         </header>
         <main class="flex-1 overflow-y-auto p-10 relative" id="mainContent"></main>
@@ -155,6 +191,7 @@
     <script src="js/modules/placeholders.js"></script>
     <script src="js/modules/app_update.js"></script>
     <script src="js/modules/news.js"></script>
+    <script src="js/modules/admins.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

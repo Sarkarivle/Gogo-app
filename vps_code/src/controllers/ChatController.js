@@ -3,8 +3,36 @@ const User = require('../models/User');
 const Block = require('../models/Block');
 const RecentPhoto = require('../models/RecentPhoto');
 const ConversationMetadata = require('../models/ConversationMetadata');
+const Conversation = require('../models/Conversation');
+const { updateConversationSummary, resetUnreadCount } = require('../utils/chatUtils');
 const path = require('path');
 const fs = require('fs');
+
+/**
+ * Helper to calculate distance for privacy
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const p1Lat = parseFloat(lat1);
+    const p1Lon = parseFloat(lon1);
+    const p2Lat = parseFloat(lat2);
+    const p2Lon = parseFloat(lon2);
+
+    // Check if any coordinate is missing or essentially zero
+    if (!p1Lat || !p1Lon || !p2Lat || !p2Lon) return "";
+
+    const R = 6371; // km
+    const dLat = (p2Lat - p1Lat) * Math.PI / 180;
+    const dLon = (p2Lon - p1Lon) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(p1Lat * Math.PI / 180) * Math.cos(p2Lat * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+
+    // Estimated distance labels for privacy
+    if (d < 1) return "Within 1 km";
+    return `${d.toFixed(1)} km`;
+}
 
 exports.getInbox = async (req, res) => {
     try {
@@ -12,68 +40,46 @@ exports.getInbox = async (req, res) => {
         const { page = 1, limit = 50 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        // Fetch all metadata for this user to apply filters (muted, hidden, favourites)
+        const currentUser = await User.findOne({ phone }, 'lat lng location');
+
         const allMetadata = await ConversationMetadata.find({ phone });
         const metaMap = {};
         allMetadata.forEach(m => metaMap[m.partnerPhone] = m);
 
-        // Find unique conversation partners using aggregation
-        const conversations = await Message.aggregate([
-            {
-                $match: {
-                    $or: [{ senderPhone: phone }, { receiverPhone: phone }]
-                }
-            },
-            { $sort: { timestamp: -1 } },
-            {
-                $group: {
-                    _id: {
-                        $cond: [
-                            { $eq: ["$senderPhone", phone] },
-                            "$receiverPhone",
-                            "$senderPhone"
-                        ]
-                    },
-                    lastMsg: { $first: "$$ROOT" }
-                }
-            }
-        ]);
+        // Fetch optimized conversations
+        const conversations = await Conversation.find({ userPhone: phone }).lean();
 
-        // Filter out hidden conversations (unless a newer message exists)
+        // If inbox is empty, it might be because migration hasn't run.
+        // We'll return success with empty array, but the developer should run /api/chat/migrate-inbox once.
+
+        // Filter and Safety Check
         const visibleConversations = conversations.filter(c => {
-            const meta = metaMap[c._id];
+            if (!c.lastMessage) return false; // Skip if no message content
+
+            const meta = metaMap[c.partnerPhone];
             if (!meta) return true;
             if (meta.isHidden) {
-                // Only keep if the last message is newer than when it was hidden/cleared
-                return meta.lastClearedAt ? new Date(c.lastMsg.timestamp) > new Date(meta.lastClearedAt) : false;
+                const lastMsgTime = new Date(c.lastMessage.timestamp || 0).getTime();
+                const clearedAtTime = new Date(meta.lastClearedAt || 0).getTime();
+                return lastMsgTime > clearedAtTime;
             }
             return true;
         });
 
         const sortedVisible = visibleConversations.sort((a, b) => {
-            // Priority 1: Latest message timestamp (Realtime Sort)
-            const timeA = new Date(a.lastMsg.timestamp).getTime();
-            const timeB = new Date(b.lastMsg.timestamp).getTime();
-
-            if (timeB !== timeA) {
-                return timeB - timeA;
-            }
-
-            // Priority 2: Unread messages (Optional fallback)
-            // Since timestamps are high-precision, this is mostly a safeguard
-            return 0;
+            const timeA = new Date(a.lastMessage?.timestamp || 0).getTime();
+            const timeB = new Date(b.lastMessage?.timestamp || 0).getTime();
+            return timeB - timeA;
         });
 
         const pagedConversations = sortedVisible.slice(skip, skip + parseInt(limit));
+        const totalUnreadCount = visibleConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-        const unreadCount = await Message.countDocuments({ receiverPhone: phone, isOpened: false });
-
-        const partnerPhones = pagedConversations.map(c => c._id);
-        const partnerUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name lat lng position city area isOnline isVerified');
+        const partnerPhones = pagedConversations.map(c => c.partnerPhone);
+        const partnerUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name lat lng location position city area isOnline isVerified');
         const userMap = {};
         partnerUsers.forEach(u => userMap[u.phone] = u);
 
-        // Fetch block status for all partners
         const blocks = await Block.find({
             $or: [
                 { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
@@ -81,35 +87,43 @@ exports.getInbox = async (req, res) => {
             ]
         });
 
-        const chats = await Promise.all(pagedConversations.map(async (conv) => {
-            const m = conv.lastMsg;
-            const other = conv._id;
+        const chats = pagedConversations.map((conv) => {
+            const m = conv.lastMessage || {};
+            const other = conv.partnerPhone;
             const otherUser = userMap[other] || {};
             const meta = metaMap[other] || {};
-
-            const partnerUnread = await Message.countDocuments({
-                senderPhone: other,
-                receiverPhone: phone,
-                isOpened: false
-            });
 
             const blockInfo = blocks.find(b =>
                 (b.blockerPhone === phone && b.blockedPhone === other) ||
                 (b.blockerPhone === other && b.blockedPhone === phone)
             );
 
+            // Smart Location Fallback
+            const myLat = currentUser?.lat || (currentUser?.location?.coordinates ? currentUser.location.coordinates[1] : null);
+            const myLng = currentUser?.lng || (currentUser?.location?.coordinates ? currentUser.location.coordinates[0] : null);
+            const otherLat = otherUser.lat || (otherUser.location?.coordinates ? otherUser.location.coordinates[1] : null);
+            const otherLng = otherUser.lng || (otherUser.location?.coordinates ? otherUser.location.coordinates[0] : null);
+
+            const distLabel = calculateDistance(myLat, myLng, otherLat, otherLng);
+
+            // Clean Area/City from "Unknown" strings
+            const cleanArea = (otherUser.area && otherUser.area.toLowerCase() !== 'unknown') ? otherUser.area : '';
+            const cleanCity = (otherUser.city && otherUser.city.toLowerCase() !== 'unknown') ? otherUser.city : '';
+
+            // Priority: Area/Village > City > Nearby
+            const locationLabel = cleanArea || cleanCity || "Nearby";
+
             return {
                 phone: other,
                 msg: m.type === 'audio' ? '🎵 Voice Message' : (m.message || (m.imageUrl ? '📷 Image' : '')),
-                time: new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                timestamp: m.timestamp,
+                time: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                timestamp: m.timestamp || new Date(),
                 name: otherUser.name || 'User',
                 pos: otherUser.position || 'Any',
-                lat: otherUser.lat,
-                lng: otherUser.lng,
-                city: otherUser.city || 'Unknown',
-                area: otherUser.area || '',
-                unread: partnerUnread,
+                distance: distLabel,
+                city: locationLabel,
+                area: '',
+                unread: conv.unreadCount || 0,
                 isOnline: otherUser.isOnline || false,
                 isVerified: otherUser.isVerified || false,
                 isMuted: meta.isMuted || false,
@@ -117,12 +131,12 @@ exports.getInbox = async (req, res) => {
                 isBlocked: !!blockInfo,
                 iBlocked: blockInfo?.blockerPhone === phone
             };
-        }));
+        });
 
-        res.json({ totalUnread: unreadCount, chats });
+        res.json({ totalUnread: totalUnreadCount, chats });
     } catch (e) {
         console.error("GET_INBOX_ERROR:", e);
-        res.status(500).json({ totalUnread: 0, chats: [] });
+        res.status(500).json({ totalUnread: 0, chats: [], error: e.message });
     }
 };
 
@@ -167,6 +181,7 @@ exports.blockUser = async (req, res) => {
             type: 'block_event'
         });
         await systemMsg.save();
+        await updateConversationSummary(systemMsg);
         res.json({ success: true, message: "User blocked" });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -187,6 +202,7 @@ exports.unblockUser = async (req, res) => {
             type: 'unblock_event'
         });
         await systemMsg.save();
+        await updateConversationSummary(systemMsg);
         res.json({ success: true, message: "User unblocked" });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -216,12 +232,11 @@ exports.markSeen = async (req, res) => {
     try {
         const { myPhone, otherPhone } = req.body;
         const roomId = [myPhone, otherPhone].sort().join('_');
-        // IMPORTANT: We only mark regular messages as opened (seen).
-        // View-once media must NOT be automatically marked as opened by markSeen.
         await Message.updateMany(
             { roomId, receiverPhone: myPhone, isOpened: false, isViewOnce: false },
             { isOpened: true, isDelivered: true }
         );
+        await resetUnreadCount(myPhone, otherPhone);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -307,7 +322,7 @@ exports.deletePhoto = async (req, res) => {
         try {
             const fileName = imageUrl.split('/').pop();
             const filePath = path.join(process.cwd(), 'uploads', fileName);
-            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            if (fs.existsSync(filePath)) await fs.promises.unlink(filePath);
         } catch (fErr) {}
         res.json({ success: true });
     } catch (e) {
@@ -341,7 +356,7 @@ exports.deleteRecentPhotoByUrl = async (req, res) => {
             const fileName = cleanUrl.split('/').pop();
             const filePath = path.join(process.cwd(), 'uploads', fileName);
             if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
+                await fs.promises.unlink(filePath);
                 console.log(`✅ File deleted: ${fileName}`);
             }
         } catch (fErr) {
@@ -355,11 +370,21 @@ exports.deleteRecentPhotoByUrl = async (req, res) => {
     }
 };
 
-exports.wipeRecentData = async (req, res) => {
+exports.getChatHistory = async (req, res) => {
     try {
-        await RecentPhoto.deleteMany({});
-        res.send("<h1>Recent Data Wiped Successfully</h1>");
+        const { p1, p2 } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const roomId = [p1, p2].sort().join('_');
+        const chats = await Message.find({ roomId })
+            .sort({ timestamp: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        res.json(chats.reverse());
     } catch (e) {
-        res.status(500).send("Wipe failed: " + e.message);
+        console.error("GET_CHAT_HISTORY_ERROR:", e);
+        res.status(500).json([]);
     }
 };

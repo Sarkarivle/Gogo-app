@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Admin = require('../models/Admin');
 const Message = require('../models/Message');
 const Report = require('../models/Report');
 const Block = require('../models/Block');
@@ -10,6 +11,67 @@ const Config = require('../models/Config');
 const analyticsService = require('../services/analyticsService');
 const revenueService = require('../services/revenueService');
 const notificationService = require('../services/notificationService');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
+
+// Admin Login
+exports.loginAdmin = async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        console.log(`🔐 Admin login attempt: ${username}`);
+
+        const admin = await Admin.findOne({ username });
+        if (!admin) {
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
+
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
+
+        // Generate JWT Token
+        const token = jwt.sign(
+            { id: admin._id, username: admin.username, role: admin.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        admin.lastLogin = new Date();
+        await admin.save();
+
+        await AdminLog.create({ action: 'Login', details: `Admin ${username} logged in` });
+
+        res.json({
+            success: true,
+            token,
+            admin: {
+                username: admin.username,
+                role: admin.role
+            }
+        });
+    } catch (e) {
+        console.error("LOGIN_ERROR:", e);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
+// Create Initial Admin (Use this once or protect it)
+exports.createAdmin = async (req, res) => {
+    try {
+        const { username, password, role, secret } = req.body;
+        // Simple safety check for initial creation
+        if (secret !== 'GOGO_INIT_SECRET_99') return res.status(403).json({ success: false });
+
+        const admin = new Admin({ username, password, role });
+        await admin.save();
+        res.json({ success: true, message: "Admin created" });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
 
 // Get Dynamic Config (e.g., Razorpay keys)
 exports.getConfig = async (req, res) => {

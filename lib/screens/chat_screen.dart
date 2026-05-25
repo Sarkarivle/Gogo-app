@@ -528,7 +528,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       titleSpacing: 0,
       title: GestureDetector(
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileDetailPage(
-          name: widget.name, phone: widget.receiverPhone, distance: widget.distance, city: 'Unknown', area: 'Unknown', age: 18, position: widget.position, havePlace: 'Unknown', showMessageButton: false
+          name: widget.name, 
+          phone: widget.receiverPhone, 
+          distance: widget.distance, 
+          city: '', // Don't pass 'Unknown'
+          area: '', 
+          age: 18, 
+          position: widget.position, 
+          havePlace: '', 
+          showMessageButton: false
         ))),
         child: Row(
           children: [
@@ -545,7 +553,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       final bool isOnline = onlineMap[widget.receiverPhone] ?? false;
                       return Row(
                         children: [
-                          Text(widget.distance, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                          Text(widget.distance.replaceAll(' away', ''), style: const TextStyle(fontSize: 11, color: Colors.white54)),
                           if (isOnline) ...[
                             const SizedBox(width: 6),
                             const Text('● Online', style: TextStyle(fontSize: 11, color: Colors.greenAccent, fontWeight: FontWeight.w800)),

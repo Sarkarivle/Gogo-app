@@ -14,6 +14,9 @@ async function loadMonetization() {
         const statsData = await statsRes.json();
 
         let settings = configData.config || {};
+        // Ensure activeGateway is set to razorpay by default if missing
+        if (!settings.activeGateway) settings.activeGateway = 'razorpay';
+
         let s = statsData.stats || { grossRevenue: 0, todayEarnings: 0, monthlyRevenue: 0, activePremiumUsers: 0, topGateway: 'N/A' };
 
         mainContent.innerHTML = `
