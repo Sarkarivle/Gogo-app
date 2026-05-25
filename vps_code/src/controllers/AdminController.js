@@ -9,6 +9,7 @@ const FeatureFlag = require('../models/FeatureFlag');
 const Config = require('../models/Config');
 const analyticsService = require('../services/analyticsService');
 const revenueService = require('../services/revenueService');
+const notificationService = require('../services/notificationService');
 
 // Get Dynamic Config (e.g., Razorpay keys)
 exports.getConfig = async (req, res) => {
@@ -336,9 +337,35 @@ exports.toggleFeatureFlag = async (req, res) => {
 
 exports.broadcastNotification = async (req, res) => {
     try {
-        await AdminLog.create({ action: 'Broadcast', details: req.body.message });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+        const { title, message } = req.body;
+
+        // 1. Log the broadcast
+        await AdminLog.create({ action: 'Broadcast', details: `Title: ${title}, Msg: ${message}` });
+
+        // 2. Real-time Socket Broadcast (Immediate)
+        const io = req.app.get('socketio');
+        if (io) {
+            console.log("📢 Broadcasting admin_alert to all connected sockets");
+            io.emit('admin_alert', { title, message });
+        }
+
+        // 3. Push Notification to all registered users with FCM tokens
+        const users = await User.find({ fcmToken: { $exists: true, $ne: null } }, 'fcmToken');
+        const tokens = users.map(u => u.fcmToken);
+
+        if (tokens.length > 0) {
+            console.log(`🚀 Sending Push Broadcast to ${tokens.length} devices`);
+            // We use a loop for now. For massive scale, we should use admin.messaging().sendEachForMulticast()
+            for (const token of tokens) {
+                notificationService.sendPushNotification(token, title || "Announcement", message, { type: 'broadcast' });
+            }
+        }
+
+        res.json({ success: true, message: `Broadcast sent to ${tokens.length} devices` });
+    } catch (e) {
+        console.error("BROADCAST_ERROR:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
 };
 
 // 8. Monetization

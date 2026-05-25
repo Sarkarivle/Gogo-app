@@ -22,10 +22,19 @@ async function loadNotifications() {
 }
 
 async function sendBroadcast() {
+    const title = document.getElementById('notifTitle').value;
     const msg = document.getElementById('notifBody').value;
     if(!msg) return alert("Message required");
-    await API.broadcastNotification(msg);
-    alert("Campaign queued for delivery");
+
+    showSystemToast("Campaign", "Initializing Broadcast...", "bg-blue-500");
+    const res = await API.broadcastNotification(title, msg);
+    if(res.success) {
+        showSystemToast("Success", "Broadcast executed successfully", "bg-emerald-500");
+        document.getElementById('notifTitle').value = "";
+        document.getElementById('notifBody').value = "";
+    } else {
+        showSystemToast("Error", "Failed to send broadcast", "bg-red-500");
+    }
 }
 
 async function loadModeration() {

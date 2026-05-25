@@ -125,11 +125,11 @@ const API = {
         const res = await fetch(`/api/admin/monetization/history?page=${page}`);
         return await res.json();
     },
-    async broadcastNotification(message) {
+    async broadcastNotification(title, message) {
         const res = await fetch('/api/admin/broadcast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({ title, message })
         });
         return await res.json();
     },
