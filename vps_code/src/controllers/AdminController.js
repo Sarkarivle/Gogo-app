@@ -209,7 +209,13 @@ exports.updateConfig = async (req, res) => {
 };
 
 exports.getMonetizationStats = async (req, res) => {
-    try { res.json({ success: true, stats: await revenueService.getFinancialMetrics() }); } catch (e) { res.status(500).json({ success: false }); }
+    try {
+        const stats = await revenueService.getFinancialMetrics();
+        res.json({ success: true, stats });
+    } catch (e) {
+        console.error("Monetization Stats Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
 };
 
 exports.getPaymentHistory = async (req, res) => {

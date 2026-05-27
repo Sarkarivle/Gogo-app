@@ -3,20 +3,33 @@ const Config = require('../models/Config');
 
 const getPublicSettings = async (req, res) => {
     try {
-        const config = await Config.findOne({ key: 'payment_settings' });
-        const activeGateway = config?.value?.activeGateway || 'razorpay';
-        res.json({ success: true, activeGateway });
+        const [payConfig, gpConfig] = await Promise.all([
+            Config.findOne({ key: 'payment_settings' }),
+            Config.findOne({ key: 'google_play_settings' })
+        ]);
+
+        const settings = payConfig?.value || {};
+        const gpSettings = gpConfig?.value || {};
+
+        res.json({
+            success: true,
+            activeGateway: settings.activeGateway || 'razorpay',
+            config: {
+                isUpiEnabled: settings.isUpiEnabled !== false,
+                isGooglePlayEnabled: gpSettings.isEnabled === true || settings.isGooglePlayEnabled === true
+            }
+        });
     } catch (e) {
-        res.json({ success: true, activeGateway: 'razorpay' });
+        res.json({ success: true, activeGateway: 'razorpay', config: { isUpiEnabled: true, isGooglePlayEnabled: false } });
     }
 };
 
 const createOrder = async (req, res) => {
     try {
-        const { phone } = req.body;
+        const { phone, preferredGateway } = req.body;
         if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
 
-        const orderData = await PaymentService.createOrder(phone);
+        const orderData = await PaymentService.createOrder(phone, preferredGateway);
         res.json(orderData);
     } catch (error) {
         console.error("Create Order Error:", error);

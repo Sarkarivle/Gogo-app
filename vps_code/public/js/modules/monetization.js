@@ -5,70 +5,123 @@ async function loadMonetization() {
     mainContent.innerHTML = UI.loader();
 
     try {
-        const [configData, statsData] = await Promise.all([
-            API.getConfig('payment_settings'),
-            API.getMonetizationStats()
+        const [configData, gpConfigData, statsData] = await Promise.all([
+            API.getConfig('payment_settings').catch(e => ({ success: false, config: {} })),
+            API.getConfig('google_play_settings').catch(e => ({ success: false, config: {} })),
+            API.getMonetizationStats().catch(e => ({ success: false, stats: {} }))
         ]);
 
         let settings = configData.config || {};
+        let gpSettings = gpConfigData.config || {};
+
         // Ensure activeGateway is set to razorpay by default if missing
         if (!settings.activeGateway) settings.activeGateway = 'razorpay';
 
-        let s = statsData.stats || { grossRevenue: 0, todayEarnings: 0, monthlyRevenue: 0, activePremiumUsers: 0, topGateway: 'N/A' };
+        let s = statsData.stats || {};
+        const stats = {
+            grossRevenue: s.grossRevenue || 0,
+            todayEarnings: s.todayEarnings || 0,
+            monthlyRevenue: s.monthlyRevenue || 0,
+            activePremiumUsers: s.activePremiumUsers || 0,
+            topGateway: s.topGateway || 'N/A',
+            arpu: s.arpu || 0,
+            failedToday: s.failedToday || 0,
+            subscriptionHealth: s.subscriptionHealth || { churnRate: '0.0%' }
+        };
 
         mainContent.innerHTML = `
             <div class="space-y-10 animate-fade pb-20">
                 <!-- Primary Revenue Cards -->
                 <div class="grid grid-cols-4 gap-6">
-                    ${UI.card('Gross Revenue', '₹' + s.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500', 'gross-revenue')}
-                    ${UI.card('Today Earnings', '₹' + s.todayEarnings.toLocaleString(), '24h Performance', 'text-orange-500', 'today-earnings')}
-                    ${UI.card('Monthly Revenue', '₹' + s.monthlyRevenue.toLocaleString(), 'Current Period', 'text-blue-500', 'monthly-revenue')}
-                    ${UI.card('Active Premium', s.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500', 'active-premium')}
+                    ${UI.card('Gross Revenue', '₹' + stats.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500', 'gross-revenue')}
+                    ${UI.card('Today Earnings', '₹' + stats.todayEarnings.toLocaleString(), '24h Performance', 'text-orange-500', 'today-earnings')}
+                    ${UI.card('Monthly Revenue', '₹' + stats.monthlyRevenue.toLocaleString(), 'Current Period', 'text-blue-500', 'monthly-revenue')}
+                    ${UI.card('Active Premium', stats.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500', 'active-premium')}
                 </div>
 
                 <!-- Secondary Financial Metrics -->
                 <div class="grid grid-cols-4 gap-6">
                     <div class="glass p-6 rounded-3xl">
                         <p class="text-[9px] font-black text-slate-500 uppercase">Top Gateway</p>
-                        <p class="text-xl font-black text-white uppercase mt-1">${s.topGateway}</p>
+                        <p class="text-xl font-black text-white uppercase mt-1">${stats.topGateway}</p>
                     </div>
                     <div class="glass p-6 rounded-3xl">
                         <p class="text-[9px] font-black text-slate-500 uppercase">Avg ARPU</p>
-                        <p class="text-xl font-black text-white mt-1">₹${s.arpu || 0}</p>
+                        <p class="text-xl font-black text-white mt-1">₹${stats.arpu}</p>
                     </div>
                     <div class="glass p-6 rounded-3xl">
                         <p class="text-[9px] font-black text-slate-500 uppercase">Failed Today</p>
-                        <p class="text-xl font-black text-red-500 mt-1">${s.failedToday || 0}</p>
+                        <p class="text-xl font-black text-red-500 mt-1">${stats.failedToday}</p>
                     </div>
                     <div class="glass p-6 rounded-3xl">
                         <p class="text-[9px] font-black text-slate-500 uppercase">Churn Rate</p>
-                        <p class="text-xl font-black text-white mt-1">${s.subscriptionHealth?.churnRate || '0.0%'}</p>
+                        <p class="text-xl font-black text-white mt-1">${stats.subscriptionHealth.churnRate}</p>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-10">
                     <!-- Gateway Config -->
-                    <div class="glass p-10 rounded-[3rem] space-y-8 border border-orange-500/10">
-                        <div class="border-b border-white/5 pb-6">
-                            <h3 class="text-xs font-black text-white uppercase">Infrastructure Control</h3>
-                            <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Manage payment providers & credentials</p>
+                    <div class="space-y-6">
+                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-orange-500/10">
+                            <div class="border-b border-white/5 pb-6">
+                                <h3 class="text-xs font-black text-white uppercase">UPI Gateways (Local Banks)</h3>
+                                <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Configure Razorpay, PhonePe or Cashfree</p>
+                            </div>
+
+                            <div class="flex items-center justify-between glass p-4 rounded-2xl">
+                                <div>
+                                    <p class="text-[10px] font-black text-white uppercase">Enable UPI Payments</p>
+                                    <p class="text-[8px] text-slate-500 uppercase">Visible on checkout page</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="upi_toggle" ${settings.isUpiEnabled !== false ? 'checked' : ''} class="sr-only peer">
+                                    <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                </label>
+                            </div>
+
+                            <div class="flex gap-2">
+                                ${['razorpay', 'phonepe', 'cashfree'].map(g => `
+                                    <button onclick="toggleGateway('${g}')" class="flex-1 py-3 rounded-xl border ${settings.activeGateway === g ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-white/5 text-slate-500'} transition text-[10px] font-black uppercase">
+                                        ${g}
+                                    </button>
+                                `).join('')}
+                            </div>
+
+                            <div id="activeGatewayForm" class="space-y-6 pt-4">
+                                ${renderGatewayForm(settings.activeGateway, settings)}
+                            </div>
+
+                            <button onclick="savePaymentSettings('${settings.activeGateway}')" class="w-full py-4 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-orange-500/20">
+                                Sync UPI Config
+                            </button>
                         </div>
 
-                        <div class="flex gap-2">
-                            ${['razorpay', 'phonepe', 'cashfree'].map(g => `
-                                <button onclick="toggleGateway('${g}')" class="flex-1 py-3 rounded-xl border ${settings.activeGateway === g ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-white/5 text-slate-500'} transition text-[10px] font-black uppercase">
-                                    ${g}
-                                </button>
-                            `).join('')}
-                        </div>
+                        <!-- Google Play Section -->
+                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-blue-500/10">
+                            <div class="border-b border-white/5 pb-6">
+                                <h3 class="text-xs font-black text-white uppercase">Google Play Billing</h3>
+                                <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Separate from UPI - Official Play Store Payment</p>
+                            </div>
 
-                        <div id="activeGatewayForm" class="space-y-6 pt-4">
-                            ${renderGatewayForm(settings.activeGateway, settings)}
-                        </div>
+                            <div class="flex items-center justify-between glass p-4 rounded-2xl">
+                                <div>
+                                    <p class="text-[10px] font-black text-white uppercase">Enable Google Play</p>
+                                    <p class="text-[8px] text-slate-500 uppercase">Direct Play Store Purchase</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="google_play_toggle" ${gpSettings.isEnabled === true ? 'checked' : ''} class="sr-only peer">
+                                    <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                </label>
+                            </div>
 
-                        <button onclick="savePaymentSettings('${settings.activeGateway}')" class="w-full py-4 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-orange-500/20">
-                            Sync Infrastructure
-                        </button>
+                            <div id="googlePlayForm" class="space-y-6">
+                                ${renderGatewayForm('google_play', { google_play: gpSettings })}
+                            </div>
+
+                            <button onclick="saveGooglePlaySettings()" class="w-full py-4 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-blue-500/20">
+                                Sync Google Play Config
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Live Activity Feed -->
@@ -141,6 +194,38 @@ function renderGatewayForm(active, settings) {
                     <option value="UAT" ${p.env === 'UAT' ? 'selected' : ''}>UAT (Testing)</option>
                     <option value="PROD" ${p.env === 'PROD' ? 'selected' : ''}>PROD (Production)</option>
                 </select>
+            </div>
+        `;
+    }
+    if (active === 'cashfree') {
+        const c = settings.cashfree || {};
+        return `
+            <div class="grid grid-cols-1 gap-4">
+                <input type="text" id="cf_app_id" value="${c.appId || ''}" placeholder="App ID" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
+                <input type="password" id="cf_secret_key" value="${c.secretKey || ''}" placeholder="Secret Key" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
+                <select id="cf_env" class="bg-[#12151f] border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
+                    <option value="SANDBOX" ${c.env === 'SANDBOX' ? 'selected' : ''}>SANDBOX</option>
+                    <option value="PROD" ${c.env === 'PROD' ? 'selected' : ''}>PROD</option>
+                </select>
+            </div>
+        `;
+    }
+    if (active === 'google_play') {
+        const g = settings.google_play || {};
+        return `
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Monthly Plan Product ID</label>
+                    <input type="text" id="gp_product_id" value="${g.productId || 'premium_gold_monthly'}" placeholder="premium_gold_monthly" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                </div>
+                <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Trial Plan Product ID</label>
+                    <input type="text" id="gp_trial_product_id" value="${g.trialProductId || 'premium_gold_trial'}" placeholder="premium_gold_trial" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                </div>
+                <div class="col-span-2">
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Service Account Key (JSON String)</label>
+                    <textarea id="gp_service_account" placeholder="{ ... }" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-[10px] text-white mt-1 h-32">${g.serviceAccount ? JSON.stringify(g.serviceAccount) : ''}</textarea>
+                </div>
             </div>
         `;
     }
@@ -221,9 +306,15 @@ function updateCardValue(id, val) {
 
 async function toggleGateway(gateway) {
     try {
+        const upiToggle = document.getElementById('upi_toggle');
+        const googlePlayToggle = document.getElementById('google_play_toggle');
+
         const data = await API.getConfig('payment_settings');
         const settings = data.config || {};
         settings.activeGateway = gateway;
+
+        // Sync toggle
+        settings.isUpiEnabled = upiToggle.checked;
 
         await API.updateConfig('payment_settings', settings);
         showSystemToast("Gateway Switched", `Switched to ${gateway.toUpperCase()}`, 'bg-emerald-500');
@@ -235,11 +326,21 @@ async function toggleGateway(gateway) {
 
 async function savePaymentSettings(activeGateway) {
     try {
-        // First fetch current settings to preserve other gateway keys
+        const upiToggle = document.getElementById('upi_toggle');
+        const googlePlayToggle = document.getElementById('google_play_toggle');
+
+        // PREVENT BOTH OFF: If user tries to turn off UPI while Google Play is already off
+        if (!upiToggle.checked && !googlePlayToggle.checked) {
+            upiToggle.checked = true; // Force it back
+            return showSystemToast("Safety Lock", "At least one payment method must remain active", 'bg-orange-500');
+        }
+
         const data = await API.getConfig('payment_settings');
         const settings = data.config || { activeGateway: 'razorpay' };
 
-        // Only update the active gateway fields
+        // Update Visibility Toggle
+        settings.isUpiEnabled = upiToggle.checked;
+
         if (activeGateway === 'razorpay') {
             settings.razorpay = {
                 keyId: document.getElementById('rp_key_id')?.value,
@@ -255,12 +356,51 @@ async function savePaymentSettings(activeGateway) {
                 webhookSecret: document.getElementById('pp_webhook_secret')?.value,
                 env: document.getElementById('pp_env')?.value
             };
+        } else if (activeGateway === 'cashfree') {
+            settings.cashfree = {
+                appId: document.getElementById('cf_app_id')?.value,
+                secretKey: document.getElementById('cf_secret_key')?.value,
+                env: document.getElementById('cf_env')?.value
+            };
         }
 
         settings.activeGateway = activeGateway;
 
         await API.updateConfig('payment_settings', settings);
-        showSystemToast("Infrastructure Updated", "Payment credentials saved successfully", 'bg-emerald-500');
+        showSystemToast("UPI Updated", "Payment credentials saved successfully", 'bg-emerald-500');
+        loadMonetization();
+    } catch (err) {
+        showSystemToast("Sync Failed", "Could not save credentials", 'bg-red-500');
+    }
+}
+
+async function saveGooglePlaySettings() {
+    try {
+        const upiToggle = document.getElementById('upi_toggle');
+        const googlePlayToggle = document.getElementById('google_play_toggle');
+
+        // PREVENT BOTH OFF: If user tries to turn off Google Play while UPI is already off
+        if (!googlePlayToggle.checked && !upiToggle.checked) {
+            googlePlayToggle.checked = true; // Force it back
+            return showSystemToast("Safety Lock", "At least one payment method must remain active", 'bg-orange-500');
+        }
+
+        let sa = {};
+        try {
+            sa = JSON.parse(document.getElementById('gp_service_account')?.value || '{}');
+        } catch (e) {
+            return showSystemToast("Invalid JSON", "Service account must be valid JSON", 'bg-red-500');
+        }
+
+        const settings = {
+            isEnabled: googlePlayToggle.checked,
+            productId: document.getElementById('gp_product_id')?.value,
+            trialProductId: document.getElementById('gp_trial_product_id')?.value,
+            serviceAccount: sa
+        };
+
+        await API.updateConfig('google_play_settings', settings);
+        showSystemToast("Google Play Updated", "Billing credentials saved successfully", 'bg-blue-500');
         loadMonetization();
     } catch (err) {
         showSystemToast("Sync Failed", "Could not save credentials", 'bg-red-500');

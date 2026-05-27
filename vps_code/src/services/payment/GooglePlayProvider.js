@@ -7,10 +7,16 @@ class GooglePlayProvider extends PaymentProvider {
     }
 
     async createOrder({ phone, amount }) {
-        // For Google Play, "order" is essentially the Product ID defined in Play Console
+        // Determine product ID based on amount (trial vs regular)
+        const isTrial = amount === 1;
+        const productId = isTrial
+            ? (this.config.trialProductId || 'premium_gold_trial')
+            : (this.config.productId || 'premium_gold_monthly');
+
         return {
             success: true,
-            productId: this.config.productId || 'premium_subscription_monthly',
+            orderId: `gp_${Date.now()}`,
+            productId: productId,
             gateway: 'google_play'
         };
     }

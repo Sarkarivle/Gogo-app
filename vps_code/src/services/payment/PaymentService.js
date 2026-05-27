@@ -14,6 +14,9 @@ class PaymentService {
         if (!config) throw new Error("Payment settings not configured");
 
         const settings = config.value;
+        const gpConfig = await Config.findOne({ key: 'google_play_settings' });
+        const gpSettings = gpConfig ? gpConfig.value : (settings.google_play || {});
+
         const gateway = gatewayName || settings.activeGateway;
 
         switch (gateway.toLowerCase()) {
@@ -24,7 +27,7 @@ class PaymentService {
             case 'cashfree':
                 return new CashfreeProvider(settings.cashfree);
             case 'google_play':
-                return new GooglePlayProvider(settings.google_play || {});
+                return new GooglePlayProvider(gpSettings);
             default:
                 throw new Error(`Unsupported gateway: ${gateway}`);
         }

@@ -152,5 +152,20 @@ const API = {
     },
     async deleteNews(id) {
         return await this.request(`/api/admin/news/${id}`, { method: 'DELETE' });
+    },
+    async getConfig(key) {
+        return await this.request(`/api/admin/config/${key}`);
+    },
+    async updateConfig(key, value) {
+        return await this.request('/api/admin/config/update', {
+            method: 'POST',
+            body: JSON.stringify({ key, value })
+        });
+    },
+    async getMonetizationStats() {
+        return await this.request('/api/admin/monetization/stats');
+    },
+    async getPaymentHistory(page = 1) {
+        return await this.request(`/api/admin/monetization/history?page=${page}`);
     }
 };

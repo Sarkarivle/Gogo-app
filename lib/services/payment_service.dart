@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
 import 'api_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:phonepe_payment_sdk/phonepe_payment_sdk.dart';
 import 'package:flutter_cashfree_pg_sdk/api/cferrorresponse/cferrorresponse.dart';
@@ -127,51 +129,65 @@ class CashfreeHandler implements PaymentHandler {
 
 class GooglePlayHandler implements PaymentHandler {
   final InAppPurchase _iap = InAppPurchase.instance;
+  StreamSubscription<List<PurchaseDetails>>? _subscription;
 
   @override
   Future<void> initiatePayment(Map<String, dynamic> data, Function(Map<String, dynamic>) onSuccess, Function(String) onError) async {
-    final bool available = await _iap.isAvailable();
-    if (!available) {
-      onError("Google Play Billing is not available on this device");
-      return;
-    }
-
-    final String productId = data['productId'] ?? 'premium_subscription_monthly';
-    final Set<String> ids = {productId};
-    final ProductDetailsResponse response = await _iap.queryProductDetails(ids);
-
-    if (response.error != null) {
-      onError(response.error!.message);
-      return;
-    }
-
-    if (response.productDetails.isEmpty) {
-      onError("Subscription plan not found in Play Store");
-      return;
-    }
-
-    final ProductDetails productDetails = response.productDetails.first;
-    final PurchaseParam purchaseParam = PurchaseParam(productDetails: productDetails);
-
-    _iap.purchaseStream.listen((List<PurchaseDetails> purchaseDetailsList) {
-      for (var purchase in purchaseDetailsList) {
-        if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
-          onSuccess({
-            'gateway': 'google_play',
-            'purchaseToken': purchase.verificationData.serverVerificationData,
-            'productId': purchase.productID,
-            'orderId': purchase.purchaseID,
-          });
-          if (purchase.pendingCompletePurchase) {
-            _iap.completePurchase(purchase);
-          }
-        } else if (purchase.status == PurchaseStatus.error) {
-          onError(purchase.error?.message ?? "Play Store error");
-        }
+    debugPrint("DEBUG: Initiating Google Play Payment...");
+    try {
+      final bool available = await _iap.isAvailable();
+      if (!available) {
+        onError("Google Play Billing is not available on this device");
+        return;
       }
-    });
 
-    _iap.buyNonConsumable(purchaseParam: purchaseParam);
+      final String productId = data['productId'] ?? 'premium_subscription_monthly';
+      final ProductDetailsResponse response = await _iap.queryProductDetails({productId});
+
+      if (response.error != null) {
+        onError(response.error!.message);
+        return;
+      }
+
+      if (response.productDetails.isEmpty) {
+        onError("Subscription plan '$productId' not found in Play Store");
+        return;
+      }
+
+      final ProductDetails productDetails = response.productDetails.first;
+      final PurchaseParam purchaseParam = PurchaseParam(productDetails: productDetails);
+
+      _subscription?.cancel();
+      _subscription = _iap.purchaseStream.listen((List<PurchaseDetails> purchaseDetailsList) {
+        for (var purchase in purchaseDetailsList) {
+          if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
+            onSuccess({
+              'gateway': 'google_play',
+              'purchaseToken': purchase.verificationData.serverVerificationData,
+              'productId': purchase.productID,
+              'orderId': purchase.purchaseID,
+            });
+            if (purchase.pendingCompletePurchase) {
+              _iap.completePurchase(purchase);
+            }
+            _subscription?.cancel();
+          } else if (purchase.status == PurchaseStatus.error) {
+            onError(purchase.error?.message ?? "Play Store error");
+            _subscription?.cancel();
+          } else if (purchase.status == PurchaseStatus.canceled) {
+            onError("Payment Cancelled");
+            _subscription?.cancel();
+          }
+        }
+      }, onError: (e) {
+        onError(e.toString());
+        _subscription?.cancel();
+      });
+
+      await _iap.buyNonConsumable(purchaseParam: purchaseParam);
+    } catch (e) {
+      onError(e.toString());
+    }
   }
 }
 

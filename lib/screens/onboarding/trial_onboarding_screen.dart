@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -26,6 +27,8 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
   bool _isLoading = false;
   String? _currentOrderId;
   String _activeGateway = "razorpay";
+  bool _isUpiEnabled = true;
+  bool _isGooglePlayEnabled = true;
   late ConfettiController _confettiController;
 
   @override
@@ -51,6 +54,8 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
         if (data['success'] == true) {
           setState(() {
             _activeGateway = data['activeGateway'] ?? 'razorpay';
+            _isUpiEnabled = data['config']?['isUpiEnabled'] ?? true;
+            _isGooglePlayEnabled = data['config']?['isGooglePlayEnabled'] ?? true;
           });
         }
       }
@@ -146,6 +151,13 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
 
   Future<void> _startSubscription() async {
     if (_isLoading) return;
+    
+    // Determine which gateway to trigger for the main button
+    String? preferredGateway;
+    if (!_isUpiEnabled && _isGooglePlayEnabled) {
+      preferredGateway = 'google_play';
+    }
+
     setState(() => _isLoading = true);
     
     try {
@@ -159,11 +171,11 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
 
       UserRepository().trackEvent('payment_started', customId: phone);
 
-      final orderData = await PaymentService.createOrder(phone);
+      // Use preferred gateway (e.g. if UPI disabled, trigger Play Store)
+      final orderData = await PaymentService.createOrder(phone, gateway: preferredGateway);
       
       if (orderData['success'] == true) {
-        final gateway = orderData['gateway']?.toString().toLowerCase() ?? 'razorpay';
-        setState(() => _activeGateway = gateway);
+        final gateway = orderData['gateway']?.toString().toLowerCase() ?? _activeGateway;
         _currentOrderId = orderData['orderId'];
 
         final handler = PaymentService.getHandler(gateway);
@@ -193,12 +205,14 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
       final verifyRes = await PaymentService.verifyPayment(
         userData['phone'],
         {
-          'gateway': _activeGateway,
+          'gateway': successData['gateway'] ?? _activeGateway,
           'orderId': _currentOrderId,
           'razorpay_payment_id': successData['paymentId'],
           'razorpay_subscription_id': successData['orderId'] ?? _currentOrderId,
           'razorpay_signature': successData['signature'],
           'merchantTransactionId': _currentOrderId,
+          'purchaseToken': successData['purchaseToken'],
+          'productId': successData['productId'],
         }
       );
 

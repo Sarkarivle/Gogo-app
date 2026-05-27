@@ -30,6 +30,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   int _joinedCount = 51;
   String _userCity = "आस-पास";
   Map<String, String> policyUrls = {};
+  bool _isUpiEnabled = true;
+  bool _isGooglePlayEnabled = true;
 
   Timer? _timer;
   int _secondsRemaining = 600;
@@ -59,6 +61,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         if (data['success'] == true) {
           setState(() {
             _activeGateway = data['activeGateway'] ?? 'razorpay';
+            _isUpiEnabled = data['config']?['isUpiEnabled'] ?? true;
+            _isGooglePlayEnabled = data['config']?['isGooglePlayEnabled'] ?? true;
           });
         }
       }
@@ -150,7 +154,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       UserRepository().trackEvent('payment_started', customId: phone);
 
-      // Use preferred gateway if provided (like google_play), else use server default
       final orderData = await PaymentService.createOrder(phone, gateway: preferredGateway);
       
       if (orderData['success'] == true) {
@@ -369,189 +372,191 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   const SizedBox(height: 20),
 
                   // UPI Apps Container
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  if (_isUpiEnabled)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("UPI Apps", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.pink.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text("UPI Apps", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.pink.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.flash_on, color: Colors.pinkAccent.shade100, size: 12),
+                                    const SizedBox(width: 4),
+                                    Text("FASTEST", style: TextStyle(color: Colors.pinkAccent.shade100, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                  ],
+                                ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 15),
+                          InkWell(
+                            onTap: () => _startSubscription(), // Use default server gateway
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
                               child: Row(
                                 children: [
-                                  Icon(Icons.flash_on, color: Colors.pinkAccent.shade100, size: 12),
-                                  const SizedBox(width: 4),
-                                  Text("FASTEST", style: TextStyle(color: Colors.pinkAccent.shade100, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                    child: Image.asset('assets/gpay_logo.png', height: 18, errorBuilder: (c, e, s) => const Icon(Icons.payment, color: Colors.black, size: 18)),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text("GPay", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                                  const Spacer(),
+                                  const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 15),
-                        InkWell(
-                          onTap: () => _startSubscription(), // Use default server gateway
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                  child: Image.asset('assets/gpay_logo.png', height: 18, errorBuilder: (c, e, s) => const Icon(Icons.payment, color: Colors.black, size: 18)),
-                                ),
-                                const SizedBox(width: 12),
-                                const Text("GPay", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                                const Spacer(),
-                                const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
-                              ],
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Divider(color: Colors.white10, height: 1),
+                          ),
+                          InkWell(
+                            onTap: () {}, // Future logic
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Text("Scan QR and Pay", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13, fontWeight: FontWeight.w500)),
+                                  const Spacer(),
+                                  const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 12),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Divider(color: Colors.white10, height: 1),
-                        ),
-                        InkWell(
-                          onTap: () {}, // Future logic
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Text("Scan QR and Pay", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13, fontWeight: FontWeight.w500)),
-                                const Spacer(),
-                                const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 12),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
 
                   const SizedBox(height: 16),
 
                   // Google Play Container
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  if (_isGooglePlayEnabled)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.security, color: Colors.blue.shade300, size: 12),
+                                    const SizedBox(width: 4),
+                                    Text("SECURE", style: TextStyle(color: Colors.blue.shade300, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                  ],
+                                ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 15),
+                          InkWell(
+                            onTap: () => _startSubscription(preferredGateway: 'google_play'),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
                               child: Row(
                                 children: [
-                                  Icon(Icons.security, color: Colors.blue.shade300, size: 12),
-                                  const SizedBox(width: 4),
-                                  Text("SECURE", style: TextStyle(color: Colors.blue.shade300, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                    child: Image.network(
+                                      'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_Play_2022_icon.svg/512px-Google_Play_2022_icon.svg.png',
+                                      height: 18,
+                                      errorBuilder: (c, e, s) => const Icon(Icons.play_arrow_sharp, color: Colors.blue, size: 18),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                                  const Spacer(),
+                                  const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 15),
-                        InkWell(
-                          onTap: () => _startSubscription(preferredGateway: 'google_play'),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                  child: Image.network(
-                                    'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_Play_2022_icon.svg/512px-Google_Play_2022_icon.svg.png',
-                                    height: 18,
-                                    errorBuilder: (c, e, s) => const Icon(Icons.play_arrow_sharp, color: Colors.blue, size: 18),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-                                const Spacer(),
-                                const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
-                              ],
-                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 20),
-                  Column(
-                    children: [
-                      const Text(
-                        "Cancel anytime. Subscription auto-renews. Read more about",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white38, fontSize: 10),
-                      ),
-                      const SizedBox(height: 2),
-                      InkWell(
-                        onTap: () => _launchUrl('refund_policy'),
-                        child: Container(
-                          padding: const EdgeInsets.only(bottom: 1), // Gap between text and underline
-                          decoration: const BoxDecoration(
-                            border: Border(bottom: BorderSide(color: Colors.white54, width: 0.8)),
-                          ),
-                          child: const Text(
-                            "Refund & cancellation Policy",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white54,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 1),
                 ],
               ),
             ),
           ),
+          Column(
+            children: [
+              const Text(
+                "Cancel anytime. Subscription auto-renews. Read more about",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+              const SizedBox(height: 2),
+              InkWell(
+                onTap: () => _launchUrl('refund_policy'),
+                child: Container(
+                  padding: const EdgeInsets.only(bottom: 1), // Gap between text and underline
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Colors.white54, width: 0.8)),
+                  ),
+                  child: const Text(
+                    "Refund & cancellation Policy",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 1),
           SafeArea(
             top: false,
             child: Container(

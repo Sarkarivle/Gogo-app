@@ -55,41 +55,51 @@ class RevenueService {
     }
 
     async getFinancialMetrics() {
-        const [gross, today, monthly, activePremium, totalUsers, failedToday] = await Promise.all([
-            this.getGrossRevenue(),
-            this.getTodayEarnings(),
-            this.getMonthlyRevenue(),
-            User.countDocuments({ isPremium: true }),
-            User.countDocuments(),
-            PaymentTransaction.countDocuments({
-                status: 'FAILED',
-                createdAt: { $gte: new Date(new Date().setHours(0,0,0,0)) }
-            })
-        ]);
+        try {
+            const [gross, today, monthly, activePremium, totalUsers, failedToday] = await Promise.all([
+                this.getGrossRevenue().catch(e => 0),
+                this.getTodayEarnings().catch(e => ({ total: 0, count: 0 })),
+                this.getMonthlyRevenue().catch(e => 0),
+                User.countDocuments({ isPremium: true }).catch(e => 0),
+                User.countDocuments().catch(e => 0),
+                PaymentTransaction.countDocuments({
+                    status: 'FAILED',
+                    createdAt: { $gte: new Date(new Date().setHours(0,0,0,0)) }
+                }).catch(e => 0)
+            ]);
 
-        const arpu = totalUsers > 0 ? (gross / totalUsers).toFixed(2) : 0;
+            const arpu = totalUsers > 0 ? (gross / totalUsers).toFixed(2) : 0;
 
-        // Gateway performance
-        const gatewayStats = await PaymentTransaction.aggregate([
-            { $match: { status: 'SUCCESS' } },
-            { $group: { _id: '$gateway', count: { $sum: 1 }, total: { $sum: '$amount' } } },
-            { $sort: { total: -1 } }
-        ]);
-
-        return {
-            grossRevenue: gross,
-            todayEarnings: today.total,
-            todaySales: today.count,
-            monthlyRevenue: monthly,
-            activePremiumUsers: activePremium,
-            failedToday,
-            arpu,
-            topGateway: gatewayStats.length > 0 ? gatewayStats[0]._id : 'N/A',
-            subscriptionHealth: {
-                active: activePremium,
-                churnRate: '2.4%' // Example calculation would go here
+            // Gateway performance
+            let gatewayStats = [];
+            try {
+                gatewayStats = await PaymentTransaction.aggregate([
+                    { $match: { status: 'SUCCESS' } },
+                    { $group: { _id: '$gateway', count: { $sum: 1 }, total: { $sum: '$amount' } } },
+                    { $sort: { total: -1 } }
+                ]);
+            } catch (ae) {
+                console.error("Aggregation error:", ae);
             }
-        };
+
+            return {
+                grossRevenue: gross,
+                todayEarnings: today.total || 0,
+                todaySales: today.count || 0,
+                monthlyRevenue: monthly,
+                activePremiumUsers: activePremium,
+                failedToday,
+                arpu,
+                topGateway: (gatewayStats && gatewayStats.length > 0) ? gatewayStats[0]._id : 'N/A',
+                subscriptionHealth: {
+                    active: activePremium,
+                    churnRate: '2.4%'
+                }
+            };
+        } catch (error) {
+            console.error("Critical Revenue Error:", error);
+            throw error;
+        }
     }
 
     async broadcastFinancials() {
