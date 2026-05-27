@@ -64,6 +64,16 @@ exports.getProfile = async (req, res) => {
         const user = await User.findOne({ phone: req.params.phone }).select('-lat -lng -location').lean();
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+        // SECURE CHECK: Auto-downgrade if premium expired
+        const now = new Date();
+        if (user.isPremium) {
+            if (!user.premiumExpiry || new Date(user.premiumExpiry) < now) {
+                await User.updateOne({ _id: user._id }, { $set: { isPremium: false, 'subscription.status': 'expired' } });
+                user.isPremium = false;
+                user.subscription.status = 'expired';
+            }
+        }
+
         const cleanArea = (user.area && user.area.toLowerCase() !== 'unknown') ? user.area : '';
         const cleanCity = (user.city && user.city.toLowerCase() !== 'unknown') ? user.city : '';
 

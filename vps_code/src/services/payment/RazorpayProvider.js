@@ -78,6 +78,16 @@ class RazorpayProvider extends PaymentProvider {
         const payment = payload.payload.payment ? payload.payload.payment.entity : null;
         const subscription = payload.payload.subscription ? payload.payload.subscription.entity : null;
 
+        // Normalized Status mapping
+        let status = 'FAILED';
+        if (payload.event === 'subscription.charged' || payload.event === 'payment.captured') {
+            status = 'SUCCESS';
+        } else if (payload.event === 'subscription.cancelled' || payload.event === 'subscription.expired') {
+            status = 'CANCELLED';
+        } else if (payload.event === 'subscription.halted' || payload.event === 'subscription.pending') {
+            status = 'PENDING_FAIL';
+        }
+
         // Return normalized event
         return {
             event: payload.event,
@@ -85,7 +95,7 @@ class RazorpayProvider extends PaymentProvider {
             paymentId: payment ? payment.id : null,
             amount: payment ? (payment.amount / 100) : 0, // Convert paise to INR
             userPhone: (payment && payment.notes) ? payment.notes.phone : (subscription && subscription.notes ? subscription.notes.phone : null),
-            status: payload.event === 'subscription.charged' || payload.event === 'payment.captured' ? 'SUCCESS' : 'FAILED',
+            status: status,
             raw: payload
         };
     }

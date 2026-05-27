@@ -2,33 +2,36 @@ const Config = require('../../models/Config');
 const RazorpayProvider = require('./RazorpayProvider');
 const PhonePeProvider = require('./PhonePeProvider');
 const CashfreeProvider = require('./CashfreeProvider');
+const GooglePlayProvider = require('./GooglePlayProvider');
 const PaymentTransaction = require('../../models/PaymentTransaction');
 const User = require('../../models/User');
 const analyticsService = require('../analyticsService');
 const revenueService = require('../revenueService');
 
 class PaymentService {
-    static async getProvider() {
+    static async getProvider(gatewayName) {
         const config = await Config.findOne({ key: 'payment_settings' });
         if (!config) throw new Error("Payment settings not configured");
 
         const settings = config.value;
-        const activeGateway = settings.activeGateway;
+        const gateway = gatewayName || settings.activeGateway;
 
-        switch (activeGateway) {
+        switch (gateway.toLowerCase()) {
             case 'razorpay':
                 return new RazorpayProvider(settings.razorpay);
             case 'phonepe':
                 return new PhonePeProvider(settings.phonepe);
             case 'cashfree':
                 return new CashfreeProvider(settings.cashfree);
+            case 'google_play':
+                return new GooglePlayProvider(settings.google_play || {});
             default:
-                throw new Error(`Unsupported gateway: ${activeGateway}`);
+                throw new Error(`Unsupported gateway: ${gateway}`);
         }
     }
 
-    static async createOrder(phone) {
-        const provider = await this.getProvider();
+    static async createOrder(phone, preferredGateway) {
+        const provider = await this.getProvider(preferredGateway);
         const user = await User.findOne({ phone });
         const hasUsedTrial = user?.subscription?.hasUsedTrial || false;
 
@@ -38,10 +41,10 @@ class PaymentService {
         const orderData = await provider.createOrder({
             phone,
             amount,
-            isSubscription: true // Defaulting to subscription behavior if supported
+            isSubscription: true
         });
 
-        if (orderData.success) {
+        if (orderData.success && orderData.orderId) {
             await PaymentTransaction.create({
                 orderId: orderData.orderId,
                 userPhone: phone,
@@ -57,7 +60,8 @@ class PaymentService {
 
     static async _updateUserSubscription(phone, transaction, method) {
         const now = new Date();
-        const trialDays = (transaction.amount === 1) ? 1 : 0;
+        const isTrial = (transaction.amount === 1);
+        const durationDays = isTrial ? 1 : 30; // ₹1 = 24h trial, ₹199 = 30 days
 
         // Fetch user to calculate new expiry correctly
         const user = await User.findOne({ phone });
@@ -65,24 +69,31 @@ class PaymentService {
 
         // Calculate new expiry: if already premium and not expired, extend from existing expiry
         let baseDate = (user.premiumExpiry && user.premiumExpiry > now) ? user.premiumExpiry : now;
-        const newExpiry = new Date(baseDate.getTime() + (30 * 24 * 60 * 60 * 1000) + (trialDays * 24 * 60 * 60 * 1000));
+        const newExpiry = new Date(baseDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
 
         const updateFields = {
             isPremium: true,
             premiumExpiry: newExpiry,
-            premiumPlan: transaction.amount === 1 ? '₹1 Trial Gold' : 'Monthly Gold',
-            'subscription.id': transaction.orderId,
-            'subscription.status': trialDays > 0 ? 'trial_active' : 'active',
+            premiumPlan: isTrial ? '₹1 Trial Gold' : 'Monthly Gold',
+            'subscription.status': isTrial ? 'trial_active' : 'active',
             'subscription.hasUsedTrial': true,
-            'subscription.startDate': now, // Start of current billing cycle
+            'subscription.startDate': now,
             'subscription.nextBillingDate': newExpiry,
             'subscription.lastPaymentDate': now,
             'subscription.paymentMethod': method || 'UPI',
+            'subscription.autoRenew': true
         };
 
-        if (trialDays > 0) {
+        // Ensure we don't overwrite subscription ID with individual payment IDs
+        if (transaction.orderId && transaction.orderId.startsWith('sub_')) {
+            updateFields['subscription.id'] = transaction.orderId;
+        } else if (transaction.gatewaySubscriptionId) {
+            updateFields['subscription.id'] = transaction.gatewaySubscriptionId;
+        }
+
+        if (isTrial) {
             updateFields['subscription.trialStartDate'] = now;
-            updateFields['subscription.trialEndDate'] = new Date(now.getTime() + (1 * 24 * 60 * 60 * 1000));
+            updateFields['subscription.trialEndDate'] = newExpiry;
         }
 
         const updatedUser = await User.findOneAndUpdate(
@@ -114,30 +125,56 @@ class PaymentService {
     }
 
     static async verifyPayment(phone, paymentData) {
-        const provider = await this.getProvider();
+        const gateway = paymentData.gateway || 'razorpay';
+        const provider = await this.getProvider(gateway);
+
+        // SECURE: Verify signature/receipt with gateway
         const verification = await provider.verifyPayment(paymentData);
 
         if (verification.success) {
-            const transaction = await PaymentTransaction.findOneAndUpdate(
+            // For Google Play, we might not have a PENDING transaction yet
+            let transaction;
+            const orderId = paymentData.orderId || paymentData.razorpay_subscription_id || paymentData.merchantTransactionId || verification.transactionId;
+
+            transaction = await PaymentTransaction.findOneAndUpdate(
                 {
-                    orderId: paymentData.orderId || paymentData.razorpay_subscription_id || paymentData.merchantTransactionId,
-                    status: { $ne: 'SUCCESS' }
+                    orderId: orderId,
+                    status: 'PENDING'
                 },
                 {
                     status: 'SUCCESS',
                     gatewayTransactionId: verification.transactionId,
-                    paymentMethod: paymentData.method || 'UPI'
+                    paymentMethod: paymentData.method || (gateway === 'google_play' ? 'Google Play' : 'UPI')
                 },
                 { new: true }
             );
 
-            if (!transaction) {
-                // Transaction was already marked success by webhook
-                const user = await User.findOne({ phone });
-                return { success: true, user };
+            if (!transaction && gateway === 'google_play') {
+                // Auto-create transaction for Google Play if not exists
+                transaction = await PaymentTransaction.create({
+                    orderId: orderId,
+                    userPhone: phone,
+                    gateway: 'google_play',
+                    amount: paymentData.amount || 199,
+                    status: 'SUCCESS',
+                    gatewayTransactionId: verification.transactionId,
+                    paymentMethod: 'Google Play'
+                });
             }
 
-            const updatedUser = await this._updateUserSubscription(phone, transaction, paymentData.method);
+            if (!transaction) {
+                const alreadyDone = await PaymentTransaction.findOne({
+                    orderId: orderId,
+                    status: 'SUCCESS'
+                });
+                if (alreadyDone) {
+                    const user = await User.findOne({ phone });
+                    return { success: true, user };
+                }
+                throw new Error("Invalid or duplicate transaction");
+            }
+
+            const updatedUser = await this._updateUserSubscription(phone, transaction, transaction.paymentMethod);
             return { success: true, user: updatedUser };
         }
 
@@ -189,6 +226,7 @@ class PaymentService {
                     amount: result.amount,
                     status: 'SUCCESS',
                     gatewayTransactionId: result.paymentId,
+                    gatewaySubscriptionId: result.orderId, // This is the sub_... ID
                     metadata: result.raw
                 });
             } else {
@@ -200,6 +238,17 @@ class PaymentService {
             } else if (result.userPhone) {
                 await this._updateUserSubscription(result.userPhone, transaction, result.method);
             }
+        } else if (result.status === 'CANCELLED' || result.status === 'FAILED') {
+            // Update user subscription status on failure/cancellation
+            await User.findOneAndUpdate(
+                { 'subscription.id': result.orderId },
+                {
+                    $set: {
+                        'subscription.status': result.status.toLowerCase(),
+                        'subscription.autoRenew': false,
+                    }
+                }
+            );
         }
 
         return { success: true };

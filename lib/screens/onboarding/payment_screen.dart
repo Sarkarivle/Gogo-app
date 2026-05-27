@@ -14,7 +14,8 @@ import '../../services/payment_service.dart';
 import '../../services/user_repository.dart';
 
 class PaymentScreen extends StatefulWidget {
-  const PaymentScreen({super.key});
+  final bool autoStart;
+  const PaymentScreen({super.key, this.autoStart = false});
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -42,6 +43,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _startTimer();
     _fetchPolicies();
     _fetchPaymentSettings();
+    
+    if (widget.autoStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _startSubscription();
+      });
+    }
   }
 
   Future<void> _fetchPaymentSettings() async {
@@ -128,7 +135,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.dispose();
   }
 
-  Future<void> _startSubscription() async {
+  Future<void> _startSubscription({String? preferredGateway}) async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
     
@@ -143,11 +150,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       UserRepository().trackEvent('payment_started', customId: phone);
 
-      final orderData = await PaymentService.createOrder(phone);
+      // Use preferred gateway if provided (like google_play), else use server default
+      final orderData = await PaymentService.createOrder(phone, gateway: preferredGateway);
       
       if (orderData['success'] == true) {
-        final gateway = orderData['gateway']?.toString().toLowerCase() ?? 'razorpay';
-        setState(() => _activeGateway = gateway);
+        final gateway = orderData['gateway']?.toString().toLowerCase() ?? _activeGateway;
         _currentOrderId = orderData['orderId'];
 
         final handler = PaymentService.getHandler(gateway);
@@ -177,12 +184,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final verifyRes = await PaymentService.verifyPayment(
         userData['phone'],
         {
-          'gateway': _activeGateway,
+          'gateway': successData['gateway'] ?? _activeGateway,
           'orderId': _currentOrderId,
           'razorpay_payment_id': successData['paymentId'],
           'razorpay_subscription_id': successData['orderId'] ?? _currentOrderId,
           'razorpay_signature': successData['signature'],
           'merchantTransactionId': _currentOrderId,
+          'purchaseToken': successData['purchaseToken'],
+          'productId': successData['productId'],
         }
       );
 
@@ -267,7 +276,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         backgroundColor: const Color(0xFF0F0F0F),
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context)),
-        title: const Text("GoGo Premium", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20)),
+        title: const Text("Payment methods", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20)),
         centerTitle: true,
       ),
       body: Column(
@@ -281,7 +290,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               children: [
                 Icon(Icons.verified_user, size: 14, color: Colors.green.shade400),
                 const SizedBox(width: 8),
-                Text("100% SECURE GOLD ACTIVATION", style: TextStyle(color: Colors.green.shade400, fontWeight: FontWeight.bold, letterSpacing: 0.8, fontSize: 10.5)),
+                const Text("100% SECURE GOLD ACTIVATION", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, letterSpacing: 0.8, fontSize: 10.5)),
               ],
             ),
           ),
@@ -290,15 +299,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
                 children: [
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.amber.withValues(alpha: 0.15), width: 1.2)),
-                    child: Icon(Icons.workspace_premium, size: 32, color: Colors.amber.shade600),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text("Activate Gold Status", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFFFFD700), letterSpacing: -0.6)),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
+                  if (_isTrialAvailable)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.red.withValues(alpha: 0.25))),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
+                            const SizedBox(width: 8),
+                            RichText(text: TextSpan(style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold), children: [
+                              const TextSpan(text: "₹1 ऑफर सिर्फ "),
+                              TextSpan(text: _formatTime(_secondsRemaining), style: const TextStyle(color: Colors.white, backgroundColor: Colors.red)),
+                              const TextSpan(text: " मिनट के लिए मान्य"),
+                            ])),
+                          ],
+                        ),
+                      ),
+                    ),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -326,28 +347,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (_isTrialAvailable)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.red.withValues(alpha: 0.25))),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
-                          const SizedBox(width: 8),
-                          RichText(text: TextSpan(style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold), children: [
-                            const TextSpan(text: "₹1 ऑफर सिर्फ "),
-                            TextSpan(text: _formatTime(_secondsRemaining), style: const TextStyle(color: Colors.white, backgroundColor: Colors.red)),
-                            const TextSpan(text: " मिनट के लिए मान्य"),
-                          ])),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 24),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber.withValues(alpha: 0.1))),
                     child: Column(
                       children: [
                         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -364,70 +366,218 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 20),
+
+                  // UPI Apps Container
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text("UPI Apps", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.pink.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.flash_on, color: Colors.pinkAccent.shade100, size: 12),
+                                  const SizedBox(width: 4),
+                                  Text("FASTEST", style: TextStyle(color: Colors.pinkAccent.shade100, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 15),
+                        InkWell(
+                          onTap: () => _startSubscription(), // Use default server gateway
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                  child: Image.asset('assets/gpay_logo.png', height: 18, errorBuilder: (c, e, s) => const Icon(Icons.payment, color: Colors.black, size: 18)),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text("GPay", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(color: Colors.white10, height: 1),
+                        ),
+                        InkWell(
+                          onTap: () {}, // Future logic
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Text("Scan QR and Pay", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13, fontWeight: FontWeight.w500)),
+                                const Spacer(),
+                                const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 12),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Google Play Container
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.security, color: Colors.blue.shade300, size: 12),
+                                  const SizedBox(width: 4),
+                                  Text("SECURE", style: TextStyle(color: Colors.blue.shade300, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 15),
+                        InkWell(
+                          onTap: () => _startSubscription(preferredGateway: 'google_play'),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                  child: Image.network(
+                                    'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_Play_2022_icon.svg/512px-Google_Play_2022_icon.svg.png',
+                                    height: 18,
+                                    errorBuilder: (c, e, s) => const Icon(Icons.play_arrow_sharp, color: Colors.blue, size: 18),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Column(
+                    children: [
+                      const Text(
+                        "Cancel anytime. Subscription auto-renews. Read more about",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white38, fontSize: 10),
+                      ),
+                      const SizedBox(height: 2),
+                      InkWell(
+                        onTap: () => _launchUrl('refund_policy'),
+                        child: Container(
+                          padding: const EdgeInsets.only(bottom: 1), // Gap between text and underline
+                          decoration: const BoxDecoration(
+                            border: Border(bottom: BorderSide(color: Colors.white54, width: 0.8)),
+                          ),
+                          child: const Text(
+                            "Refund & cancellation Policy",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 1),
                 ],
               ),
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            decoration: const BoxDecoration(color: Color(0xFF151515), borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32))),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
-                      child: Image.asset(
-                        _activeGateway == 'phonepe' ? 'assets/phonepe_logo.png' : 'assets/gpay_logo.png',
-                        height: 18,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.white, size: 18),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: const BoxDecoration(
+                color: Color(0xFF151515), 
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+                boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, -2))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isLoading) 
+                    const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: CircularProgressIndicator(color: Colors.amber))
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(_activeGateway.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                        const Text("Instant & Secure Activation", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                        const Text("Secured by ", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                        const Text("India's Trusted Banks", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 6),
+                        Icon(Icons.check_circle, color: Colors.green.shade400, size: 14),
                       ],
                     ),
-                    const Spacer(),
-                    const Icon(Icons.verified, color: Colors.blue, size: 16),
-                    const SizedBox(width: 4),
-                    const Text("Secured", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 11)),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                if (_isLoading) 
-                  const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: CircularProgressIndicator(color: Colors.amber))
-                else
-                  SizedBox(
-                    width: double.infinity,
-                    height: 60,
-                    child: ElevatedButton(
-                      onPressed: _startSubscription,
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFD700), foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.bolt_rounded, color: Colors.black, size: 24),
-                          SizedBox(width: 8),
-                          Text("ACTIVATE NOW", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5)),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                Opacity(
-                  opacity: 0.6,
-                  child: InkWell(
-                    onTap: () => _launchUrl('refund_policy'),
-                    child: const Text("Read more about our Refund and condition for GoGo Premium users.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 8.5, decoration: TextDecoration.underline)),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
