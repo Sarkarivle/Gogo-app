@@ -5,6 +5,9 @@ const crypto = require('crypto');
 class RazorpayProvider extends PaymentProvider {
     constructor(config) {
         super(config);
+        if (!config || !config.keyId || !config.keySecret) {
+            throw new Error("Razorpay configuration (keyId or keySecret) is missing.");
+        }
         this.client = new Razorpay({
             key_id: config.keyId,
             key_secret: config.keySecret

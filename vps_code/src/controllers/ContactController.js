@@ -1,40 +1,40 @@
 const ContactMessage = require('../models/ContactMessage');
 const User = require('../models/User');
+const { normalize } = require('../utils/phoneUtils');
 
 // For App: Submit Contact Form
 exports.submitMessage = async (req, res) => {
     try {
-        const { phone, category, message, subject, name, email } = req.body;
+        let { phone, category, message, subject, name, email } = req.body;
+        const normalizedPhone = normalize(phone);
 
         // Fetch User context if available
         let userContext = {};
-        if (phone) {
-            const user = await User.findOne({ phone });
+        if (normalizedPhone) {
+            const user = await User.findOne({ phone: normalizedPhone });
             if (user) {
                 userContext = {
                     userId: user._id,
                     premiumStatus: user.isPremium || false,
                     deviceInfo: req.headers['user-agent'] || 'Unknown',
                     signupDate: user.createdAt,
-                    reportCount: 0, // Should be fetched from Report model
+                    reportCount: 0,
                     activityScore: user.activityScore || 0
                 };
             }
         }
 
         const newMessage = new ContactMessage({
-            name, phone, email, subject, message, category,
-            userPhone: phone,
+            name, phone: normalizedPhone, email, subject, message, category,
+            userPhone: normalizedPhone,
             userContext
         });
 
         await newMessage.save();
 
-        // Emit Realtime Event to Admin Panel
         const io = req.app.get('socketio');
         if (io) {
             io.emit('new_support_ticket', newMessage);
-            // Critical alert for admins
             if (newMessage.priority === 'Critical') {
                 io.emit('admin_critical_alert', {
                     type: 'SUPPORT_CRITICAL',
@@ -52,7 +52,7 @@ exports.submitMessage = async (req, res) => {
     }
 };
 
-// For Admin: Get all messages (with filters and pagination)
+// For Admin: Get all messages
 exports.getMessages = async (req, res) => {
     try {
         const { status, category, priority, assignedTo, page = 1, limit = 50 } = req.query;
@@ -64,7 +64,7 @@ exports.getMessages = async (req, res) => {
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const messages = await ContactMessage.find(query)
-            .sort({ priority: -1, createdAt: -1 }) // Priority first
+            .sort({ priority: -1, createdAt: -1 })
             .skip(skip)
             .limit(parseInt(limit));
 
@@ -85,32 +85,27 @@ exports.getMessages = async (req, res) => {
     }
 };
 
-// For Admin: Update Ticket (Status, Reply, Priority, Category)
 exports.updateMessageStatus = async (req, res) => {
     try {
         const { id } = req.params;
-        const updateData = req.body; // adminReply, status, priority, category
+        const updateData = req.body;
 
         const ticket = await ContactMessage.findById(id);
         if (!ticket) return res.status(404).json({ success: false, message: "Ticket not found" });
 
-        // track first response time
         if (!ticket.responseStartAt && (updateData.adminReply || updateData.status !== 'Pending')) {
             ticket.responseStartAt = new Date();
             ticket.responseTimeMs = ticket.responseStartAt - ticket.createdAt;
         }
 
-        // handle resolution
         if (updateData.status === 'Resolved' || updateData.status === 'Closed') {
             ticket.resolvedAt = new Date();
             ticket.resolutionTimeMs = ticket.resolvedAt - ticket.createdAt;
-            // ticket.resolvedBy = req.admin._id; // If auth is available
         }
 
         Object.assign(ticket, updateData);
         await ticket.save();
 
-        // Emit update
         const io = req.app.get('socketio');
         if (io) io.emit('support_ticket_updated', ticket);
 
@@ -120,7 +115,6 @@ exports.updateMessageStatus = async (req, res) => {
     }
 };
 
-// For Admin: Assign Ticket
 exports.assignTicket = async (req, res) => {
     try {
         const { id } = req.params;
@@ -141,7 +135,6 @@ exports.assignTicket = async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
-// For Admin: Add Internal Note
 exports.addInternalNote = async (req, res) => {
     try {
         const { id } = req.params;
@@ -158,7 +151,6 @@ exports.addInternalNote = async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
-// Get Ticket Detail
 exports.getTicketDetail = async (req, res) => {
     try {
         const ticket = await ContactMessage.findById(req.params.id);

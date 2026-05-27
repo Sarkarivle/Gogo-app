@@ -17,7 +17,8 @@ const path = require('path');
 const fs = require('fs');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
-const normalize = (p) => p ? String(p).replace(/[^0-9]/g, '') : '';
+
+const { normalize, phoneQuery } = require('../utils/phoneUtils');
 
 exports.loginAdmin = async (req, res) => {
     try {
@@ -32,8 +33,13 @@ exports.loginAdmin = async (req, res) => {
 
 exports.createAdmin = async (req, res) => {
     try {
-        if (req.body.secret !== 'GOGO_INIT_SECRET_99') return res.status(403).json({ success: false });
-        await new Admin(req.body).save();
+        const INIT_SECRET = process.env.ADMIN_INIT_SECRET || 'GOGO_INIT_SECRET_99';
+        if (req.body.secret !== INIT_SECRET) return res.status(403).json({ success: false });
+
+        const { username, password, role } = req.body;
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        await new Admin({ username, password: hashedPassword, role: role || 'admin' }).save();
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -41,7 +47,14 @@ exports.createAdmin = async (req, res) => {
 exports.getChatHistory = async (req, res) => {
     try {
         const p1 = normalize(req.params.p1), p2 = normalize(req.params.p2);
-        const chats = await Message.find({ roomId: [p1, p2].sort().join('_'), deletedBy: { $ne: p1 } }).sort({ timestamp: -1 }).skip((parseInt(req.query.page || 1) - 1) * parseInt(req.query.limit || 50)).limit(parseInt(req.query.limit || 50));
+        const roomId = [p1, p2].sort().join('_');
+        const chats = await Message.find({
+            $or: [
+                { roomId: roomId },
+                { roomId: { $in: [`${p1}_${p2}`, `${p2}_${p1}`, `+91${p1}_${p2}`, `+91${p2}_${p1}`] } }
+            ],
+            deletedBy: { $ne: p1 }
+        }).sort({ timestamp: -1 }).skip((parseInt(req.query.page || 1) - 1) * parseInt(req.query.limit || 50)).limit(parseInt(req.query.limit || 50));
         res.json(chats.reverse());
     } catch (e) { res.status(500).json([]); }
 };
@@ -68,12 +81,13 @@ exports.getAllUsers = async (req, res) => {
 exports.getUserFullProfile = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
+        const pQ = phoneQuery(phone);
         const [user, reports, blocks, sub, payments] = await Promise.all([
-            User.findOne({ phone }),
-            Report.find({ reportedPhone: phone }).sort({ timestamp: -1 }),
-            Block.find({ blockedPhone: phone }).sort({ timestamp: -1 }),
-            Subscription.findOne({ userPhone: phone }),
-            revenueService.getPaymentHistory({ userPhone: phone }, 1, 50)
+            User.findOne(pQ),
+            Report.find({ reportedPhone: new RegExp(phone + '$') }).sort({ timestamp: -1 }),
+            Block.find({ blockedPhone: new RegExp(phone + '$') }).sort({ timestamp: -1 }),
+            Subscription.findOne({ userPhone: new RegExp(phone + '$') }),
+            revenueService.getPaymentHistory({ userPhone: new RegExp(phone + '$') }, 1, 50)
         ]);
         if (!user) return res.status(404).json({ success: false });
         res.json({ success: true, user, reportsAgainst: reports, blockedBy: blocks, subscription: sub || { status: 'None' }, paymentHistory: payments.history || [] });
@@ -83,7 +97,8 @@ exports.getUserFullProfile = async (req, res) => {
 exports.updateUserStatus = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const user = await User.findOneAndUpdate({ phone }, req.body, { new: true });
+        const user = await User.findOneAndUpdate(phoneQuery(phone), req.body, { new: true });
+        if (!user) return res.status(404).json({ success: false });
         const io = req.app.get('socketio');
         if (io) {
             io.to(`user_${phone}`).emit('profile_sync_required', { type: 'STATUS_UPDATE', fullUser: user });
@@ -95,7 +110,8 @@ exports.updateUserStatus = async (req, res) => {
 
 exports.addAdminNote = async (req, res) => {
     try {
-        const user = await User.findOneAndUpdate({ phone: normalize(req.params.phone) }, { $push: { adminNotes: { ...req.body, timestamp: new Date() } } }, { new: true });
+        const phone = normalize(req.params.phone);
+        const user = await User.findOneAndUpdate(phoneQuery(phone), { $push: { adminNotes: { ...req.body, timestamp: new Date() } } }, { new: true });
         res.json({ success: true, user });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -105,7 +121,7 @@ exports.sendDirectNotification = async (req, res) => {
         const phone = normalize(req.params.phone);
         const io = req.app.get('socketio');
         if (io) io.to(`user_${phone}`).emit('admin_alert', req.body);
-        const user = await User.findOne({ phone }, 'fcmToken');
+        const user = await User.findOne(phoneQuery(phone), 'fcmToken');
         if (user?.fcmToken) await notificationService.sendPushNotification(user.fcmToken, req.body.title, req.body.message);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
@@ -114,7 +130,8 @@ exports.sendDirectNotification = async (req, res) => {
 exports.clearUserChat = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        await Message.deleteMany({ $or: [{ senderPhone: phone }, { receiverPhone: phone }] });
+        const pQ = new RegExp(phone + '$');
+        await Message.deleteMany({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -122,7 +139,14 @@ exports.clearUserChat = async (req, res) => {
 exports.deleteUser = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        await Promise.all([User.findOneAndDelete({ phone }), Message.deleteMany({ $or: [{ senderPhone: phone }, { receiverPhone: phone }] }), Report.deleteMany({ $or: [{ reporterPhone: phone }, { reportedPhone: phone }] }), Block.deleteMany({ $or: [{ blockerPhone: phone }, { blockedPhone: phone }] }), Subscription.findOneAndDelete({ userPhone: phone })]);
+        const pQ = new RegExp(phone + '$');
+        await Promise.all([
+            User.findOneAndDelete(phoneQuery(phone)),
+            Message.deleteMany({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] }),
+            Report.deleteMany({ $or: [{ reporterPhone: pQ }, { reportedPhone: pQ }] }),
+            Block.deleteMany({ $or: [{ blockerPhone: pQ }, { blockedPhone: pQ }] }),
+            Subscription.findOneAndDelete({ userPhone: pQ })
+        ]);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -147,7 +171,10 @@ exports.getVerificationRequests = async (req, res) => {
 exports.approveVerification = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        await Promise.all([User.findOneAndUpdate({ phone }, { isVerified: true }), VerificationRequest.findOneAndUpdate({ userPhone: phone }, { status: 'Approved' })]);
+        await Promise.all([
+            User.findOneAndUpdate(phoneQuery(phone), { isVerified: true }),
+            VerificationRequest.findOneAndUpdate({ userPhone: new RegExp(phone + '$') }, { status: 'Approved' })
+        ]);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -165,10 +192,13 @@ exports.broadcastNotification = async (req, res) => {
 exports.getUserInboxes = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const messages = await Message.find({ $or: [{ senderPhone: phone }, { receiverPhone: phone }] }).sort({ timestamp: -1 });
+        const pQ = new RegExp(phone + '$');
+        const messages = await Message.find({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] }).sort({ timestamp: -1 });
         let pMap = {};
         for (const m of messages) {
-            let other = m.senderPhone === phone ? m.receiverPhone : m.senderPhone;
+            let sP = normalize(m.senderPhone);
+            let rP = normalize(m.receiverPhone);
+            let other = sP === phone ? rP : sP;
             if (!pMap[other]) pMap[other] = { phone: other, lastMsg: m.message || 'Media', timestamp: m.timestamp };
         }
         res.json(Object.values(pMap));
@@ -224,11 +254,13 @@ exports.getPaymentHistory = async (req, res) => {
 
 exports.getAllMedia = async (req, res) => {
     try {
-        const MASTER_SECRET = process.env.MASTER_SECRET || 'GOGO_SECURE_ACCESS_2024_PROD';
-        const [users, messages] = await Promise.all([User.find({ profileImages: { $exists: true, $not: { $size: 0 } } }, 'phone profileImages name'), Message.find({ type: 'image' }, 'senderPhone imageUrl timestamp').sort({ timestamp: -1 }).limit(100)]);
+        const [users, messages] = await Promise.all([
+            User.find({ profileImages: { $exists: true, $not: { $size: 0 } } }, 'phone profileImages name'),
+            Message.find({ type: 'image' }, 'senderPhone imageUrl timestamp').sort({ timestamp: -1 }).limit(100)
+        ]);
         let allMedia = [];
-        users.forEach(u => u.profileImages.forEach(img => allMedia.push({ url: `${img}?token=${MASTER_SECRET}`, owner: u.phone, ownerName: u.name, type: 'Profile', timestamp: u.updatedAt || new Date() })));
-        messages.forEach(m => m.imageUrl && allMedia.push({ url: `${m.imageUrl}?token=${MASTER_SECRET}`, owner: m.senderPhone, type: 'Chat', timestamp: m.timestamp }));
+        users.forEach(u => u.profileImages.forEach(img => allMedia.push({ url: img, owner: normalize(u.phone), ownerName: u.name, type: 'Profile', timestamp: u.updatedAt || new Date() })));
+        messages.forEach(m => m.imageUrl && allMedia.push({ url: m.imageUrl, owner: normalize(m.senderPhone), type: 'Chat', timestamp: m.timestamp }));
         res.json({ success: true, media: allMedia.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)) });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -238,7 +270,7 @@ exports.deleteMedia = async (req, res) => {
         const fileName = req.body.url.split('/').pop().split('?')[0];
         const filePath = path.join(__dirname, '../../uploads', fileName);
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        if (req.body.type === 'Profile') await User.findOneAndUpdate({ phone: req.body.owner }, { $pull: { profileImages: req.body.url.split('?')[0] } });
+        if (req.body.type === 'Profile') await User.findOneAndUpdate(phoneQuery(req.body.owner), { $pull: { profileImages: req.body.url.split('?')[0] } });
         else if (req.body.type === 'Chat') await Message.findOneAndUpdate({ imageUrl: req.body.url.split('?')[0] }, { $set: { message: "[Deleted]", imageUrl: null, type: 'text' } });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }

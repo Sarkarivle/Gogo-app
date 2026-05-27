@@ -5,10 +5,10 @@ const RecentPhoto = require('../models/RecentPhoto');
 const ConversationMetadata = require('../models/ConversationMetadata');
 const Conversation = require('../models/Conversation');
 const { updateConversationSummary, resetUnreadCount } = require('../utils/chatUtils');
+const { normalize, phoneQuery } = require('../utils/phoneUtils');
 const path = require('path');
 const fs = require('fs');
-
-const normalize = (p) => p ? String(p).replace(/[^0-9]/g, '') : '';
+const jwt = require('jsonwebtoken');
 
 exports.getInbox = async (req, res) => {
     try {
@@ -17,14 +17,18 @@ exports.getInbox = async (req, res) => {
         const limit = Math.max(1, parseInt(req.query.limit || 50));
         const skip = (page - 1) * limit;
 
-        // 1. Fetch conversations sorted by last message timestamp with pagination
+        // Optimized Search: Always use normalized 10-digit phone
+        // We still check variations for backward compatibility if needed, but prefer normalized
+        const phoneVariations = [phone, `+91${phone}`, `91${phone}`];
+
+        // 1. Fetch conversations
         const [conversations, allMetadata] = await Promise.all([
-            Conversation.find({ userPhone: phone })
+            Conversation.find({ userPhone: { $in: phoneVariations } })
                 .sort({ 'lastMessage.timestamp': -1 })
                 .skip(skip)
                 .limit(limit)
                 .lean(),
-            ConversationMetadata.find({ phone }).lean()
+            ConversationMetadata.find({ phone: { $in: phoneVariations } }).lean()
         ]);
 
         const metaMap = {};
@@ -99,9 +103,19 @@ exports.getChatHistory = async (req, res) => {
         const p1 = normalize(req.params.p1);
         const p2 = normalize(req.params.p2);
         const { page = 1, limit = 50 } = req.query;
-        const roomId = [p1, p2].sort().join('_');
 
-        const chats = await Message.find({ roomId, deletedBy: { $ne: p1 } })
+        // Match 10-digit roomId (Fastest) or variations (Legacy)
+        const roomId = [p1, p2].sort().join('_');
+        const roomIdPart1 = p1 + '_' + p2;
+        const roomIdPart2 = p2 + '_' + p1;
+
+        const chats = await Message.find({
+            $or: [
+                { roomId: roomId },
+                { roomId: { $in: [roomIdPart1, roomIdPart2, `+91${roomIdPart1}`, `+91${roomIdPart2}`] } }
+            ],
+            deletedBy: { $ne: p1 }
+        })
             .sort({ timestamp: -1 })
             .skip((parseInt(page) - 1) * parseInt(limit))
             .limit(parseInt(limit));
@@ -114,7 +128,9 @@ exports.handleFileUpload = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false });
         const fileUrl = `/api/media/${req.file.filename}`;
-        const phone = normalize(req.body.phone || req.query.phone);
+
+        // Security: Use phone from token if available, otherwise from body
+        const phone = (req.user && !req.user.role) ? req.user.phone : normalize(req.body.phone || req.query.phone);
         const type = req.body.type || req.query.type;
 
         if (phone && (type === 'image' || type === 'video')) {
@@ -128,9 +144,29 @@ exports.serveSecureMedia = async (req, res) => {
     try {
         const filePath = path.join(__dirname, '../../uploads', req.params.filename);
         const MASTER_SECRET = process.env.MASTER_SECRET || 'GOGO_SECURE_ACCESS_2024_PROD';
-        if (req.headers['x-gogo-secret'] !== MASTER_SECRET && req.query.token !== MASTER_SECRET) {
-            return res.status(403).send("Unauthorized");
+        const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
+
+        let authorized = false;
+
+        // 1. Check for Master Secret (Legacy/Internal)
+        if (req.headers['x-gogo-secret'] === MASTER_SECRET || req.query.token === MASTER_SECRET) {
+            authorized = true;
         }
+
+        // 2. Check for valid JWT (Admin or User)
+        if (!authorized) {
+            const authHeader = req.headers.authorization || (req.query.auth ? `Bearer ${req.query.auth}` : null);
+            if (authHeader) {
+                try {
+                    const token = authHeader.split(' ')[1];
+                    jwt.verify(token, JWT_SECRET);
+                    authorized = true;
+                } catch (err) {}
+            }
+        }
+
+        if (!authorized) return res.status(403).send("Unauthorized");
+
         if (fs.existsSync(filePath)) res.sendFile(filePath);
         else res.status(404).send("Not found");
     } catch (e) { res.status(500).send("Error"); }
@@ -139,7 +175,17 @@ exports.serveSecureMedia = async (req, res) => {
 exports.markSeen = async (req, res) => {
     try {
         const m = normalize(req.body.myPhone), o = normalize(req.body.otherPhone);
-        await Message.updateMany({ roomId: [m, o].sort().join('_'), receiverPhone: m, isOpened: false }, { isOpened: true, isDelivered: true });
+        const phoneVariations = [m, `+91${m}`, `91${m}`];
+
+        await Message.updateMany({
+            $or: [
+                { roomId: [m, o].sort().join('_') },
+                { roomId: [`+91${m}`, `+91${o}`].sort().join('_') }
+            ],
+            receiverPhone: { $in: phoneVariations },
+            isOpened: false
+        }, { isOpened: true, isDelivered: true });
+
         await resetUnreadCount(m, o);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }

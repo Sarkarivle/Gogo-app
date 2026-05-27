@@ -2,9 +2,28 @@ const User = require('../models/User');
 const Report = require('../models/Report');
 const VerificationRequest = require('../models/VerificationRequest');
 const analyticsService = require('../services/analyticsService');
+const { normalize, phoneQuery } = require('../utils/phoneUtils');
 const jwt = require('jsonwebtoken');
+const admin = require('firebase-admin');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
+
+/**
+ * Helper to verify Firebase ID Token
+ */
+async function verifyFirebaseToken(phone, token) {
+    if (process.env.NODE_ENV === 'development' && !token) return true; // Bypass for dev if needed
+    if (!token) return false;
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        const firebasePhone = normalize(decodedToken.phone_number);
+        const requestPhone = normalize(phone);
+        return firebasePhone === requestPhone;
+    } catch (error) {
+        console.error("Firebase Verification Error:", error.message);
+        return false;
+    }
+}
 
 /**
  * Helper to calculate distance for privacy
@@ -38,8 +57,9 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 exports.submitVerification = async (req, res) => {
     try {
         const { phone, selfieUrl } = req.body;
+        const normalizedPhone = normalize(phone);
         await VerificationRequest.findOneAndUpdate(
-            { userPhone: phone },
+            { userPhone: normalizedPhone },
             { selfieUrl, status: 'Pending', submittedAt: new Date() },
             { upsert: true }
         );
@@ -51,8 +71,11 @@ exports.submitVerification = async (req, res) => {
 
 exports.updateFcmToken = async (req, res) => {
     try {
-        const { phone, fcmToken } = req.body;
-        await User.findOneAndUpdate({ phone }, { fcmToken });
+        // Use phone from token for security, fallback to body only if Admin
+        const phone = (req.user && !req.user.role) ? req.user.phone : req.body.phone;
+        const normalizedPhone = normalize(phone);
+        const { fcmToken } = req.body;
+        await User.findOneAndUpdate({ phone: normalizedPhone }, { fcmToken });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -61,7 +84,8 @@ exports.updateFcmToken = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
     try {
-        const user = await User.findOne({ phone: req.params.phone }).select('-lat -lng -location').lean();
+        const normalizedPhone = normalize(req.params.phone);
+        const user = await User.findOne({ phone: normalizedPhone }).select('-lat -lng -location').lean();
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
         // SECURE CHECK: Auto-downgrade if premium expired
@@ -87,9 +111,16 @@ exports.getProfile = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-    const { phone, deviceId, deviceModel, os, ip } = req.body;
+    const { phone, firebaseToken, deviceId, deviceModel, os, ip } = req.body;
     try {
-        const user = await User.findOne({ phone });
+        const normalizedPhone = normalize(phone);
+        // --- SECURE FIREBASE VERIFICATION ---
+        const isValid = await verifyFirebaseToken(normalizedPhone, firebaseToken);
+        if (!isValid) {
+            return res.status(401).json({ success: false, message: "Identity verification failed" });
+        }
+
+        const user = await User.findOne({ phone: normalizedPhone });
         if (user) {
             if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned' || user.isBanned) {
                 return res.status(403).json({ success: false, message: "Account blocked" });
@@ -127,8 +158,8 @@ exports.reportUser = async (req, res) => {
     try {
         const { reporterPhone, reportedPhone, category, description, reportType } = req.body;
         const report = new Report({
-            reporterPhone,
-            reportedPhone,
+            reporterPhone: normalize(reporterPhone),
+            reportedPhone: normalize(reportedPhone),
             category,
             description,
             reportType: reportType || 'Profile Report'
@@ -141,26 +172,44 @@ exports.reportUser = async (req, res) => {
 };
 
 exports.register = async (req, res) => {
-    let { phone, name, gender } = req.body;
+    let { phone, name, gender, firebaseToken } = req.body;
     if (!phone) return res.status(400).json({ success: false, message: "Phone required" });
-    const normalizedPhone = String(phone).replace(/[^0-9]/g, '');
+
+    const normalizedPhone = normalize(phone);
+    // --- SECURE FIREBASE VERIFICATION ---
+    const isValid = await verifyFirebaseToken(normalizedPhone, firebaseToken);
+    if (!isValid) {
+        return res.status(401).json({ success: false, message: "Identity verification failed" });
+    }
+
     try {
         const existing = await User.findOne({ phone: normalizedPhone });
         if (existing) {
             const token = jwt.sign({ phone: existing.phone, id: existing._id }, JWT_SECRET, { expiresIn: '90d' });
             return res.json({ success: true, user: existing, token });
         }
+
+        // SECURE: Only take allowed fields to prevent mass assignment (e.g., setting isPremium: true via register)
         const userData = {
-            ...req.body,
             phone: normalizedPhone,
             name: name || 'GoGo User',
             gender: gender || 'Male',
+            dobDay: req.body.dobDay,
+            dobMonth: req.body.dobMonth,
+            dobYear: req.body.dobYear,
+            bio: req.body.bio,
             accountStatus: 'Active',
             isBanned: false,
             isDeactivated: false,
             isOnline: true,
             lastSeen: new Date()
         };
+
+        if (userData.dobYear) {
+            const year = parseInt(userData.dobYear);
+            if (!isNaN(year)) userData.age = new Date().getFullYear() - year;
+        }
+
         const newUser = new User(userData);
         const savedUser = await newUser.save();
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
@@ -173,6 +222,10 @@ exports.register = async (req, res) => {
 exports.updateLocation = async (req, res) => {
     try {
         let { phone, lat, lng, city, area } = req.body;
+        // Identity check: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = req.user.phone;
+        const normalizedPhone = normalize(phone);
+
         if (city && city.toLowerCase() === 'unknown') city = null;
         if (area && area.toLowerCase() === 'unknown') area = null;
         const update = { lastSeen: new Date() };
@@ -183,7 +236,7 @@ exports.updateLocation = async (req, res) => {
         if (lat && lng) {
             update.location = { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] };
         }
-        await User.findOneAndUpdate({ phone }, { $set: update });
+        await User.findOneAndUpdate({ phone: normalizedPhone }, { $set: update });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -192,15 +245,32 @@ exports.updateLocation = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
     try {
-        const { phone, ...updateData } = req.body;
-        if (updateData.dobYear) {
-            const year = parseInt(updateData.dobYear);
-            if (!isNaN(year)) updateData.age = new Date().getFullYear() - year;
+        let { phone, ...updateData } = req.body;
+        // Identity check: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = req.user.phone;
+        const normalizedPhone = normalize(phone);
+
+        // SECURE: Prevent Mass Assignment (Privilege Escalation)
+        const allowedUpdates = [
+            'name', 'bio', 'gender', 'age', 'dobDay', 'dobMonth', 'dobYear',
+            'position', 'havePlace', 'heightFt', 'heightInch', 'weight',
+            'profileImages', 'hasCompletedOnboarding'
+        ];
+
+        const filteredUpdate = {};
+        allowedUpdates.forEach(key => {
+            if (updateData[key] !== undefined) filteredUpdate[key] = updateData[key];
+        });
+
+        if (filteredUpdate.dobYear) {
+            const year = parseInt(filteredUpdate.dobYear);
+            if (!isNaN(year)) filteredUpdate.age = new Date().getFullYear() - year;
         }
-        updateData.lastSeen = new Date();
-        const updatedUser = await User.findOneAndUpdate({ phone }, { $set: updateData }, { new: true });
+        filteredUpdate.lastSeen = new Date();
+
+        const updatedUser = await User.findOneAndUpdate({ phone: normalizedPhone }, { $set: filteredUpdate }, { new: true });
         if (!updatedUser) return res.status(404).json({ success: false });
-        if (updateData.hasCompletedOnboarding) analyticsService.trackEvent('onboarding_completed', phone);
+        if (filteredUpdate.hasCompletedOnboarding) analyticsService.trackEvent('onboarding_completed', normalizedPhone);
         res.json({ success: true, user: updatedUser });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -210,7 +280,8 @@ exports.updateProfile = async (req, res) => {
 exports.updatePremium = async (req, res) => {
     try {
         const { phone, isPremium } = req.body;
-        const updatedUser = await User.findOneAndUpdate({ phone }, { isPremium, lastSeen: new Date() }, { new: true });
+        const normalizedPhone = normalize(phone);
+        const updatedUser = await User.findOneAndUpdate({ phone: normalizedPhone }, { isPremium, lastSeen: new Date() }, { new: true });
         res.json({ success: true, user: updatedUser });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -219,11 +290,14 @@ exports.updatePremium = async (req, res) => {
 
 exports.getDiscover = async (req, res) => {
     try {
-        const { phone, page = 1, limit = 10, tab = 'Nearby', distance, age, isOnlineOnly, havePlace, position, lat, lng } = req.query;
+        const { page = 1, limit = 10, tab = 'Nearby', distance, age, isOnlineOnly, havePlace, position, lat, lng } = req.query;
+        let phone = (req.user && !req.user.role) ? req.user.phone : req.query.phone;
+        const normalizedPhone = normalize(phone);
+
         let userLat = lat ? parseFloat(lat) : null;
         let userLng = lng ? parseFloat(lng) : null;
         if (!userLat || !userLng) {
-            const caller = await User.findOne({ phone }, 'lat lng location').lean();
+            const caller = await User.findOne({ phone: normalizedPhone }, 'lat lng location').lean();
             if (caller) {
                 userLat = caller.lat || caller.location?.coordinates?.[1];
                 userLng = caller.lng || caller.location?.coordinates?.[0];
@@ -232,7 +306,7 @@ exports.getDiscover = async (req, res) => {
         const pageNum = Math.max(1, parseInt(page));
         const limitNum = Math.max(1, parseInt(limit));
         const skip = (pageNum - 1) * limitNum;
-        const baseQuery = { phone: { $ne: phone }, accountStatus: 'Active' };
+        const baseQuery = { phone: { $ne: normalizedPhone }, accountStatus: 'Active' };
         if (isOnlineOnly === 'true' || tab === 'Online') baseQuery.isOnline = true;
         if (havePlace && havePlace !== 'Any') baseQuery.havePlace = havePlace;
         if (position && position !== 'Any') {
@@ -285,7 +359,8 @@ exports.trackEvent = async (req, res) => {
 exports.deactivateAccount = async (req, res) => {
     try {
         const { phone, reason } = req.body;
-        const user = await User.findOne({ phone });
+        const normalizedPhone = normalize(phone);
+        const user = await User.findOne({ phone: normalizedPhone });
         if (!user) return res.status(404).json({ success: false });
         user.isDeactivated = true;
         user.accountStatus = 'Deactivated';
@@ -293,7 +368,7 @@ exports.deactivateAccount = async (req, res) => {
         user.isOnline = false;
         await user.save();
         const io = req.app.get('socketio');
-        if (io) io.emit('user_deactivated', { phone });
+        if (io) io.emit('user_deactivated', { phone: normalizedPhone });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -303,7 +378,8 @@ exports.deactivateAccount = async (req, res) => {
 exports.reactivateAccount = async (req, res) => {
     try {
         const { phone } = req.body;
-        const user = await User.findOne({ phone });
+        const normalizedPhone = normalize(phone);
+        const user = await User.findOne({ phone: normalizedPhone });
         if (!user) return res.status(404).json({ success: false });
         user.isDeactivated = false;
         user.accountStatus = 'Active';
@@ -311,7 +387,7 @@ exports.reactivateAccount = async (req, res) => {
         user.isOnline = true;
         await user.save();
         const io = req.app.get('socketio');
-        if (io) io.emit('user_reactivated', { phone });
+        if (io) io.emit('user_reactivated', { phone: normalizedPhone });
         res.json({ success: true, user });
     } catch (e) {
         res.status(500).json({ success: false });

@@ -1,4 +1,5 @@
 const Conversation = require('../models/Conversation');
+const { normalize } = require('./phoneUtils');
 
 /**
  * Updates or creates a conversation entry for both participants (Optimized)
@@ -10,8 +11,8 @@ async function updateConversationSummary(message) {
 
         if (!senderPhone || !receiverPhone) return;
 
-        senderPhone = String(senderPhone).replace(/[^0-9]/g, '');
-        receiverPhone = String(receiverPhone).replace(/[^0-9]/g, '');
+        const sPhone = normalize(senderPhone);
+        const rPhone = normalize(receiverPhone);
 
         let displayMessage = text;
         if (isDeletedForEveryone) {
@@ -26,7 +27,7 @@ async function updateConversationSummary(message) {
             message: displayMessage,
             type: type || 'text',
             timestamp: timestamp || new Date(),
-            senderPhone,
+            senderPhone: sPhone,
             imageUrl: isDeletedForEveryone ? null : imageUrl,
             audioUrl: isDeletedForEveryone ? null : audioUrl,
             isDeletedForEveryone: isDeletedForEveryone || false
@@ -35,12 +36,12 @@ async function updateConversationSummary(message) {
         // Run updates in parallel for better performance
         await Promise.all([
             Conversation.findOneAndUpdate(
-                { userPhone: senderPhone, partnerPhone: receiverPhone },
+                { userPhone: sPhone, partnerPhone: rPhone },
                 { $set: { lastMessage: summary } },
                 { upsert: true }
             ),
             Conversation.findOneAndUpdate(
-                { userPhone: receiverPhone, partnerPhone: senderPhone },
+                { userPhone: rPhone, partnerPhone: sPhone },
                 {
                     $set: { lastMessage: summary },
                     $inc: { unreadCount: (type === 'block_event' || type === 'unblock_event') ? 0 : 1 }
@@ -51,8 +52,8 @@ async function updateConversationSummary(message) {
                 if (updatedConv && (type !== 'block_event' && type !== 'unblock_event')) {
                     const io = require('../services/analyticsService').io; // Access global io
                     if (io) {
-                        io.to(`user_${receiverPhone}`).emit('unread_update', {
-                            phone: senderPhone,
+                        io.to(`user_${rPhone}`).emit('unread_update', {
+                            phone: sPhone,
                             unreadCount: updatedConv.unreadCount,
                             lastMessage: summary
                         });
@@ -67,8 +68,8 @@ async function updateConversationSummary(message) {
 
 async function resetUnreadCount(userPhone, partnerPhone) {
     try {
-        const uPhone = String(userPhone).replace(/[^0-9]/g, '');
-        const pPhone = String(partnerPhone).replace(/[^0-9]/g, '');
+        const uPhone = normalize(userPhone);
+        const pPhone = normalize(partnerPhone);
         await Conversation.findOneAndUpdate(
             { userPhone: uPhone, partnerPhone: pPhone },
             { $set: { unreadCount: 0 } }

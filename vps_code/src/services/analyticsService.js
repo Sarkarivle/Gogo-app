@@ -4,6 +4,12 @@ const Report = require('../models/Report');
 const AnalyticsEvent = require('../models/AnalyticsEvent');
 const os = require('os');
 
+const normalize = (p) => {
+    if (!p) return '';
+    const clean = String(p).replace(/[^0-9]/g, '');
+    return clean.length >= 10 ? clean.slice(-10) : clean;
+};
+
 class AnalyticsService {
     constructor() {
         this.io = null;
@@ -105,6 +111,7 @@ class AnalyticsService {
 
     async trackEvent(type, distinctId, metadata = {}) {
         this.eventCounter++;
+        const dId = normalize(distinctId);
 
         // 1. Update Live (Total) Activity
         if (this.metrics.liveActivity[type] !== undefined) {
@@ -117,11 +124,11 @@ class AnalyticsService {
         }
 
         // 3. Persistent Unique Tracking
-        if (distinctId) {
-            // Check if this distinctId has already performed this event type
-            const exists = await AnalyticsEvent.exists({ type, distinctId });
+        if (dId) {
+            // Check if this distinctId has already performed this event type (with regex for safety)
+            const exists = await AnalyticsEvent.exists({ type, distinctId: new RegExp(dId + '$') });
             if (!exists) {
-                await AnalyticsEvent.create({ type, distinctId, metadata });
+                await AnalyticsEvent.create({ type, distinctId: dId, metadata });
                 // Increment in-memory unique counter for instant feedback
                 if (this.metrics.uniqueFunnel[type] !== undefined) {
                     this.metrics.uniqueFunnel[type]++;
@@ -242,7 +249,7 @@ class AnalyticsService {
                 premiumConv,
                 overallROI
             },
-            funnelRaw: uf, // Sending unique counts for the funnel cards
+            funnelRaw: uf,
             liveActivity: this.metrics.liveActivity,
             systemStatus: 'ONLINE'
         };

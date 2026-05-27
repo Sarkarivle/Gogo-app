@@ -1,5 +1,6 @@
 const PaymentService = require('../services/payment/PaymentService');
 const Config = require('../models/Config');
+const { normalize } = require('../utils/phoneUtils');
 
 const getPublicSettings = async (req, res) => {
     try {
@@ -26,10 +27,14 @@ const getPublicSettings = async (req, res) => {
 
 const createOrder = async (req, res) => {
     try {
-        const { phone, preferredGateway } = req.body;
-        if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
+        let { phone, preferredGateway } = req.body;
+        // Identity check: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = req.user.phone;
 
-        const orderData = await PaymentService.createOrder(phone, preferredGateway);
+        if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
+        const normalizedPhone = normalize(phone);
+
+        const orderData = await PaymentService.createOrder(normalizedPhone, preferredGateway);
         res.json(orderData);
     } catch (error) {
         console.error("Create Order Error:", error);
@@ -39,10 +44,14 @@ const createOrder = async (req, res) => {
 
 const verifyPayment = async (req, res) => {
     try {
-        const { phone } = req.body;
-        if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
+        let { phone } = req.body;
+        // Identity check: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = req.user.phone;
 
-        const result = await PaymentService.verifyPayment(phone, req.body);
+        if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
+        const normalizedPhone = normalize(phone);
+
+        const result = await PaymentService.verifyPayment(normalizedPhone, req.body);
         res.json(result);
     } catch (error) {
         console.error("Verify Payment Error:", error);

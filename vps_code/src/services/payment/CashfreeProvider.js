@@ -5,13 +5,23 @@ const crypto = require('crypto');
 class CashfreeProvider extends PaymentProvider {
     constructor(config) {
         super(config);
-        this.appId = config.appId;
-        this.secretKey = config.secretKey;
-        this.env = config.env || 'SANDBOX';
+        // CRITICAL SAFETY CHECK
+        if (!config) {
+            console.error("❌ Cashfree Config is missing!");
+            this.appId = "";
+            this.secretKey = "";
+        } else {
+            this.appId = config.appId || "";
+            this.secretKey = config.secretKey || "";
+        }
+        this.env = (config && config.env) || 'SANDBOX';
         this.host = this.env === 'PROD' ? 'api.cashfree.com' : 'sandbox.cashfree.com';
     }
 
     async createOrder({ phone, amount }) {
+        if (!this.appId || !this.secretKey) {
+            throw new Error("Cashfree credentials missing in database.");
+        }
         const orderId = "ORD" + Date.now();
         const data = {
             order_amount: amount,
@@ -69,6 +79,7 @@ class CashfreeProvider extends PaymentProvider {
     }
 
     async verifyPayment({ order_id }) {
+        if (!this.appId) throw new Error("Cashfree credentials missing");
         const options = {
             hostname: this.host,
             path: `/pg/orders/${order_id}`,
@@ -103,9 +114,9 @@ class CashfreeProvider extends PaymentProvider {
     }
 
     async handleWebhook(payload, signature) {
-        // Cashfree webhook verification
+        if (!this.secretKey) throw new Error("Cashfree secret missing");
         const timestamp = payload.timestamp;
-        const rawBody = payload.rawBody; // Need to pass raw body from controller
+        const rawBody = payload.rawBody;
         const data = timestamp + rawBody;
         const expectedSignature = crypto
             .createHmac('sha256', this.secretKey)

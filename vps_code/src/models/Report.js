@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
 const ReportSchema = new mongoose.Schema({
-    reporterPhone: { type: String, required: true },
-    reportedPhone: { type: String, required: true },
+    reporterPhone: { type: String, required: true, index: true },
+    reportedPhone: { type: String, required: true, index: true },
     category: { type: String, required: true },
     reportType: {
         type: String,

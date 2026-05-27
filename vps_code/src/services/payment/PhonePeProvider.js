@@ -5,6 +5,9 @@ const https = require('https');
 class PhonePeProvider extends PaymentProvider {
     constructor(config) {
         super(config);
+        if (!config || !config.merchantId || !config.saltKey) {
+            throw new Error("PhonePe configuration (merchantId or saltKey) is missing.");
+        }
         this.merchantId = config.merchantId.trim();
         this.saltKey = config.saltKey.trim();
         this.saltIndex = config.saltIndex || "1";
