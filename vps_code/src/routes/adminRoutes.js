@@ -6,78 +6,53 @@ const ContactController = require('../controllers/ContactController');
 const NewsController = require('../controllers/NewsController');
 const { isAdmin } = require('../middleware/auth');
 
-// Public Admin Routes
-router.post('/login', AdminController.loginAdmin);
-router.post('/create-initial-admin', AdminController.createAdmin);
+// Safety function to prevent "Undefined" crash
+const s = (fn) => fn || ((req, res) => res.status(500).json({ error: "Not Implemented" }));
 
-// Allow mobile app to fetch chat history via this route without full admin token
-// (Protected by x-gogo-secret in the controller logic if needed, but here we just make it accessible)
-router.get('/chat-history/:p1/:p2', AdminController.getChatHistory);
+router.post('/login', s(AdminController.loginAdmin));
+router.post('/create-initial-admin', s(AdminController.createAdmin));
+router.get('/chat-history/:p1/:p2', s(AdminController.getChatHistory));
 
-// Protected Admin Routes (All below this line require valid JWT)
 router.use(isAdmin);
 
-// Dashboard & Analytics
-router.get('/stats', AdminController.getStats);
-router.get('/analytics/detailed', AdminController.getAnalytics);
-router.get('/admins', AdminController.getAdmins);
+router.get('/stats', s(AdminController.getStats));
+router.get('/analytics/detailed', s(AdminController.getAnalytics));
+router.get('/admins', s(AdminController.getAdmins));
+router.get('/users', s(AdminController.getAllUsers));
+router.get('/user/:phone/full', s(AdminController.getUserFullProfile));
+router.post('/user/:phone/update', s(AdminController.updateUserStatus));
+router.post('/user/:phone/note', s(AdminController.addAdminNote));
+router.post('/user/:phone/notify', s(AdminController.sendDirectNotification));
+router.delete('/user/:phone/clear-chat', s(AdminController.clearUserChat));
+router.delete('/user/:phone/delete-account', s(AdminController.deleteUser));
+router.get('/reports', s(AdminController.getReports));
+router.post('/reports/handle', s(AdminController.handleReport));
+router.get('/verification/requests', s(AdminController.getVerificationRequests));
+router.post('/verification/approve/:phone', s(AdminController.approveVerification));
+router.post('/broadcast', s(AdminController.broadcastNotification));
+router.get('/inbox/:phone', s(AdminController.getUserInboxes));
+router.get('/monitoring/sockets', s(AdminController.getMonitoringData));
+router.get('/audit-logs', s(AdminController.getAuditLogs));
+router.get('/feature-flags', s(AdminController.getFeatureFlags));
+router.post('/feature-flags/toggle', s(AdminController.toggleFeatureFlag));
+router.get('/config/:key', s(AdminController.getConfig));
+router.post('/config/update', s(AdminController.updateConfig));
+router.get('/monetization/stats', s(AdminController.getMonetizationStats));
+router.get('/monetization/history', s(AdminController.getPaymentHistory));
+router.get('/media/all', s(AdminController.getAllMedia));
+router.post('/media/delete', s(AdminController.deleteMedia));
 
-// User Management
-router.get('/users', AdminController.getAllUsers);
-router.get('/user/:phone/full', AdminController.getUserFullProfile);
-router.post('/user/:phone/update', AdminController.updateUserStatus);
-router.post('/user/:phone/note', AdminController.addAdminNote);
-router.post('/user/:phone/notify', AdminController.sendDirectNotification);
-router.delete('/user/:phone/clear-chat', AdminController.clearUserChat);
-router.delete('/user/:phone/delete-account', AdminController.deleteUser);
-
-// Reports
-router.get('/reports', AdminController.getReports);
-router.post('/reports/handle', AdminController.handleReport);
-
-// Verification
-router.get('/verification/requests', AdminController.getVerificationRequests);
-router.post('/verification/approve/:phone', AdminController.approveVerification);
-
-// Engagement
-router.post('/broadcast', AdminController.broadcastNotification);
-
-// Chat & Inbox
-router.get('/inbox/:phone', AdminController.getUserInboxes);
-
-// Monitoring
-router.get('/monitoring/sockets', AdminController.getMonitoringData);
-
-// Audit & Flags
-router.get('/audit-logs', AdminController.getAuditLogs);
-router.get('/feature-flags', AdminController.getFeatureFlags);
-router.post('/feature-flags/toggle', AdminController.toggleFeatureFlag);
-
-// Dynamic Config (Monetization/Razorpay)
-router.get('/config/:key', AdminController.getConfig);
-router.post('/config/update', AdminController.updateConfig);
-router.get('/monetization/stats', AdminController.getMonetizationStats);
-router.get('/monetization/history', AdminController.getPaymentHistory);
-
-// Media Moderation
-router.get('/media/all', AdminController.getAllMedia);
-router.post('/media/delete', AdminController.deleteMedia);
-
-// Policy Manager
-router.get('/policies', PolicyController.getPolicies);
-router.post('/policy/update', PolicyController.updatePolicy);
-
-// Contact Messages Manager
-router.get('/messages', ContactController.getMessages);
-router.get('/message/:id', ContactController.getTicketDetail);
-router.post('/message/:id/reply', ContactController.updateMessageStatus);
-router.post('/message/:id/assign', ContactController.assignTicket);
-router.post('/message/:id/note', ContactController.addInternalNote);
-
-// News Manager
-router.get('/news', NewsController.getAllNews);
-router.post('/news', NewsController.createNews);
-router.put('/news/:id', NewsController.updateNews);
-router.delete('/news/:id', NewsController.deleteNews);
+// External Controllers
+router.get('/policies', s(PolicyController.getPolicies));
+router.post('/policy/update', s(PolicyController.updatePolicy));
+router.get('/messages', s(ContactController.getMessages));
+router.get('/message/:id', s(ContactController.getTicketDetail));
+router.post('/message/:id/reply', s(ContactController.updateMessageStatus));
+router.post('/message/:id/assign', s(ContactController.assignTicket));
+router.post('/message/:id/note', s(ContactController.addInternalNote));
+router.get('/news', s(NewsController.getAllNews));
+router.post('/news', s(NewsController.createNews));
+router.put('/news/:id', s(NewsController.updateNews));
+router.delete('/news/:id', s(NewsController.deleteNews));
 
 module.exports = router;

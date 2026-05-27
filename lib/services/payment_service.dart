@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:phonepe_payment_sdk/phonepe_payment_sdk.dart';
@@ -126,20 +125,12 @@ class CashfreeHandler implements PaymentHandler {
 
 class PaymentService {
   static Future<Map<String, dynamic>> createOrder(String phone) async {
-    final response = await http.post(
-      Uri.parse('${ApiService.baseUrl}/api/payment/create-order'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phone': phone}),
-    );
+    final response = await ApiService.post('/api/payment/create-order', {'phone': phone});
     return jsonDecode(response.body);
   }
 
   static Future<Map<String, dynamic>> verifyPayment(String phone, Map<String, dynamic> data) async {
-    final response = await http.post(
-      Uri.parse('${ApiService.baseUrl}/api/payment/verify-payment'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({...data, 'phone': phone}),
-    );
+    final response = await ApiService.post('/api/payment/verify-payment', {...data, 'phone': phone});
     return jsonDecode(response.body);
   }
 

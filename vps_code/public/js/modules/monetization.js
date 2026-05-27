@@ -5,13 +5,10 @@ async function loadMonetization() {
     mainContent.innerHTML = UI.loader();
 
     try {
-        const [configRes, statsRes] = await Promise.all([
-            fetch('/api/admin/config/payment_settings'),
-            fetch('/api/admin/monetization/stats')
+        const [configData, statsData] = await Promise.all([
+            API.getConfig('payment_settings'),
+            API.getMonetizationStats()
         ]);
-
-        const configData = await configRes.json();
-        const statsData = await statsRes.json();
 
         let settings = configData.config || {};
         // Ensure activeGateway is set to razorpay by default if missing
@@ -23,10 +20,10 @@ async function loadMonetization() {
             <div class="space-y-10 animate-fade pb-20">
                 <!-- Primary Revenue Cards -->
                 <div class="grid grid-cols-4 gap-6">
-                    ${UI.card('Gross Revenue', '₹' + s.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500')}
-                    ${UI.card('Today Earnings', '₹' + s.todayEarnings.toLocaleString(), '24h Performance', 'text-orange-500')}
-                    ${UI.card('Monthly Revenue', '₹' + s.monthlyRevenue.toLocaleString(), 'Current Period', 'text-blue-500')}
-                    ${UI.card('Active Premium', s.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500')}
+                    ${UI.card('Gross Revenue', '₹' + s.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500', 'gross-revenue')}
+                    ${UI.card('Today Earnings', '₹' + s.todayEarnings.toLocaleString(), '24h Performance', 'text-orange-500', 'today-earnings')}
+                    ${UI.card('Monthly Revenue', '₹' + s.monthlyRevenue.toLocaleString(), 'Current Period', 'text-blue-500', 'monthly-revenue')}
+                    ${UI.card('Active Premium', s.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500', 'active-premium')}
                 </div>
 
                 <!-- Secondary Financial Metrics -->
@@ -113,10 +110,22 @@ function renderGatewayForm(active, settings) {
         const r = settings.razorpay || {};
         return `
             <div class="grid grid-cols-2 gap-4">
-                <input type="text" id="rp_key_id" value="${r.keyId || ''}" placeholder="Key ID" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="password" id="rp_key_secret" value="${r.keySecret || ''}" placeholder="Key Secret" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="text" id="rp_plan_id" value="${r.planId || ''}" placeholder="Plan ID" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="password" id="rp_webhook_secret" value="${r.webhookSecret || ''}" placeholder="Webhook Secret" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
+                <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Key ID</label>
+                    <input type="text" id="rp_key_id" value="${r.keyId || ''}" placeholder="rzp_live_..." class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                </div>
+                <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Key Secret</label>
+                    <input type="password" id="rp_key_secret" value="${r.keySecret || ''}" placeholder="••••••••" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                </div>
+                <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Plan ID</label>
+                    <input type="text" id="rp_plan_id" value="${r.planId || ''}" placeholder="plan_..." class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                </div>
+                <div>
+                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Webhook Secret</label>
+                    <input type="password" id="rp_webhook_secret" value="${r.webhookSecret || ''}" placeholder="••••••••" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                </div>
             </div>
         `;
     }
@@ -141,10 +150,10 @@ function renderGatewayForm(active, settings) {
 async function loadPaymentHistory(page = 1, search = '') {
     const container = document.getElementById('historyTable');
     try {
-        const res = await fetch(`/api/admin/monetization/history?page=${page}&search=${search}`);
-        const data = await res.json();
+        const data = await API.getPaymentHistory(page);
+        const filtered = search ? data.transactions.filter(t => t.userPhone.includes(search) || t.orderId.includes(search)) : data.transactions;
 
-        const rows = data.transactions.map(t => `
+        const rows = filtered.map(t => `
             <tr class="hover:bg-white/[0.01]">
                 <td class="p-6">
                     <p class="text-white text-xs font-bold">${t.userPhone}</p>
@@ -173,7 +182,9 @@ function updateRevenueRealtime(data) {
 
     // Secondary
     document.querySelectorAll('.glass .text-xl').forEach(el => {
-        const label = el.previousElementSibling.innerText;
+        const labelEl = el.previousElementSibling;
+        if (!labelEl) return;
+        const label = labelEl.innerText;
         if (label === 'TOP GATEWAY') el.innerText = data.topGateway.toUpperCase();
         if (label === 'AVG ARPU') el.innerText = '₹' + data.arpu;
         if (label === 'FAILED TODAY') el.innerText = data.failedToday;
@@ -192,7 +203,7 @@ function appendFinanceActivity(data) {
     div.innerHTML = `
         <div class="flex justify-between items-start">
             <div>
-                <span class="text-emerald-500 font-black">SUCCESSFUL_PAYMENT</span>
+                <span class="text-emerald-500 font-black">${data.type.toUpperCase()}</span>
                 <p class="text-white mt-1">User ${data.userPhone.replace(/(\d{3})\d{4}(\d{3})/, '$1****$2')} paid ₹${data.amount}</p>
                 <p class="text-slate-500 text-[8px] mt-0.5">VIA ${data.gateway.toUpperCase()}</p>
             </div>
@@ -209,47 +220,51 @@ function updateCardValue(id, val) {
 }
 
 async function toggleGateway(gateway) {
-    const res = await fetch('/api/admin/config/payment_settings');
-    const data = await res.json();
-    const settings = data.config || {};
-    settings.activeGateway = gateway;
+    try {
+        const data = await API.getConfig('payment_settings');
+        const settings = data.config || {};
+        settings.activeGateway = gateway;
 
-    await fetch('/api/admin/config/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'payment_settings', value: settings })
-    });
-    loadMonetization();
+        await API.updateConfig('payment_settings', settings);
+        showSystemToast("Gateway Switched", `Switched to ${gateway.toUpperCase()}`, 'bg-emerald-500');
+        loadMonetization();
+    } catch (e) {
+        showSystemToast("Switch Failed", "Could not change gateway", 'bg-red-500');
+    }
 }
 
 async function savePaymentSettings(activeGateway) {
-    // Collect from current form
-    const settings = {
-        activeGateway: activeGateway,
-        razorpay: {
-            keyId: document.getElementById('rp_key_id')?.value,
-            keySecret: document.getElementById('rp_key_secret')?.value,
-            planId: document.getElementById('rp_plan_id')?.value,
-            webhookSecret: document.getElementById('rp_webhook_secret')?.value
-        },
-        phonepe: {
-            merchantId: document.getElementById('pp_merchant_id')?.value,
-            saltKey: document.getElementById('pp_salt_key')?.value,
-            saltIndex: document.getElementById('pp_salt_index')?.value,
-            webhookSecret: document.getElementById('pp_webhook_secret')?.value,
-            env: document.getElementById('pp_env')?.value
-        }
-    };
-
     try {
-        await fetch('/api/admin/config/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: 'payment_settings', value: settings })
-        });
-        alert("Finance Infrastructure Synchronized");
+        // First fetch current settings to preserve other gateway keys
+        const data = await API.getConfig('payment_settings');
+        const settings = data.config || { activeGateway: 'razorpay' };
+
+        // Only update the active gateway fields
+        if (activeGateway === 'razorpay') {
+            settings.razorpay = {
+                keyId: document.getElementById('rp_key_id')?.value,
+                keySecret: document.getElementById('rp_key_secret')?.value,
+                planId: document.getElementById('rp_plan_id')?.value,
+                webhookSecret: document.getElementById('rp_webhook_secret')?.value
+            };
+        } else if (activeGateway === 'phonepe') {
+            settings.phonepe = {
+                merchantId: document.getElementById('pp_merchant_id')?.value,
+                saltKey: document.getElementById('pp_salt_key')?.value,
+                saltIndex: document.getElementById('pp_salt_index')?.value,
+                webhookSecret: document.getElementById('pp_webhook_secret')?.value,
+                env: document.getElementById('pp_env')?.value
+            };
+        }
+
+        settings.activeGateway = activeGateway;
+
+        await API.updateConfig('payment_settings', settings);
+        showSystemToast("Infrastructure Updated", "Payment credentials saved successfully", 'bg-emerald-500');
         loadMonetization();
-    } catch (err) { alert("Sync Failed"); }
+    } catch (err) {
+        showSystemToast("Sync Failed", "Could not save credentials", 'bg-red-500');
+    }
 }
 
 async function searchHistory() {

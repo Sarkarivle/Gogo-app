@@ -49,13 +49,13 @@ class AnalyticsService {
 
     init(io) {
         this.io = io;
-        console.log('📊 Analytics Service v2 (Deduplicated) Initialized');
+        console.log('📊 Analytics Service Optimized');
 
         // Initial load of unique funnel metrics from DB
         this.refreshUniqueMetrics();
 
-        // Broadcast to admins every 2 seconds
-        setInterval(() => this.broadcastMetrics(), 2000);
+        // Broadcast to admins every 15 seconds (Increased from 5s)
+        setInterval(() => this.broadcastMetrics(), 15000);
 
         // Reset live throughput every minute
         setInterval(() => {
@@ -78,8 +78,8 @@ class AnalyticsService {
             }
         }, 60000);
 
-        // Refresh unique metrics periodically (every 5 mins)
-        setInterval(() => this.refreshUniqueMetrics(), 300000);
+        // Refresh unique metrics periodically (every 15 mins)
+        setInterval(() => this.refreshUniqueMetrics(), 900000);
     }
 
     resetLiveActivity() {
@@ -147,6 +147,10 @@ class AnalyticsService {
         if (!this.io) return;
 
         try {
+            // Check if there are any admins connected before doing expensive DB calls
+            const adminRoom = this.io.sockets.adapter.rooms.get('admin');
+            if (!adminRoom || adminRoom.size === 0) return;
+
             const onlineCount = await User.countDocuments({ isOnline: true });
 
             const serverHealth = {
@@ -172,7 +176,7 @@ class AnalyticsService {
                 timestamp: new Date()
             };
 
-            this.io.emit('admin_metrics_update', liveMetrics);
+            this.io.to('admin').emit('admin_metrics_update', liveMetrics);
         } catch (e) {
             console.error('Analytics Broadcast Error:', e);
         }

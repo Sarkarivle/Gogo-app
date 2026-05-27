@@ -126,44 +126,28 @@ const API = {
             body: JSON.stringify(data)
         });
     },
-    async getAuditLogs() {
-        const data = await this.request('/api/admin/audit-logs');
-        return Array.isArray(data) ? data : (data.logs || []);
+    async getMonitoringData() {
+        return await this.request('/api/admin/monitoring/sockets');
     },
-    async getMonetizationStats() {
-        return await this.request('/api/admin/monetization/stats');
+    async getAnalyticsDetailed() {
+        return await this.request('/api/admin/analytics/detailed');
     },
-    async getPaymentHistory(page = 1) {
-        return await this.request(`/api/admin/monetization/history?page=${page}`);
+    async getAllMedia(filter = '', reportedOnly = false) {
+        return await this.request(`/api/admin/media/all?filter=${filter}&reportedOnly=${reportedOnly}`);
     },
-    async broadcastNotification(title, message) {
-        return await this.request('/api/admin/broadcast', {
-            method: 'POST',
-            body: JSON.stringify({ title, message })
-        });
-    },
-    async getConfig(key) {
-        return await this.request(`/api/admin/config/${key}`);
-    },
-    async updateConfig(key, value) {
-        return await this.request('/api/admin/config/update', {
-            method: 'POST',
-            body: JSON.stringify({ key, value })
-        });
-    },
-    async getAllNews() {
-        return await this.request('/api/admin/news');
-    },
-    async addNews(data) {
-        return await this.request('/api/admin/news', {
+    async deleteMedia(data) {
+        return await this.request('/api/admin/media/delete', {
             method: 'POST',
             body: JSON.stringify(data)
         });
     },
-    async updateNews(id, data) {
-        return await this.request(`/api/admin/news/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify(data)
+    async getFeatureFlags() {
+        return await this.request('/api/admin/feature-flags');
+    },
+    async toggleFeatureFlag(key, isEnabled) {
+        return await this.request('/api/admin/feature-flags/toggle', {
+            method: 'POST',
+            body: JSON.stringify({ key, isEnabled })
         });
     },
     async deleteNews(id) {

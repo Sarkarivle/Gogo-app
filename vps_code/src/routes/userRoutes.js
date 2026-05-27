@@ -4,20 +4,23 @@ const UserController = require('../controllers/UserController');
 const ContactController = require('../controllers/ContactController');
 const PolicyController = require('../controllers/PolicyController');
 const NewsController = require('../controllers/NewsController');
+const { isUser } = require('../middleware/auth');
 
 router.post('/login', UserController.login);
-router.get('/profile/:phone', UserController.getProfile);
 router.post('/register', UserController.register);
-router.post('/update-location', UserController.updateLocation);
-router.post('/update-profile', UserController.updateProfile);
-router.post('/update-premium', UserController.updatePremium);
-router.post('/report', UserController.reportUser);
-router.post('/update-fcm', UserController.updateFcmToken);
-router.post('/verify-request', UserController.submitVerification);
-router.get('/discover', UserController.getDiscover);
-router.post('/track-event', UserController.trackEvent);
-router.post('/deactivate', UserController.deactivateAccount);
-router.post('/reactivate', UserController.reactivateAccount);
+
+// Protected Routes
+router.get('/profile/:phone', isUser, UserController.getProfile);
+router.post('/update-location', isUser, UserController.updateLocation);
+router.post('/update-profile', isUser, UserController.updateProfile);
+router.post('/update-premium', isUser, UserController.updatePremium);
+router.post('/report', isUser, UserController.reportUser);
+router.post('/update-fcm', isUser, UserController.updateFcmToken);
+router.post('/verify-request', isUser, UserController.submitVerification);
+router.get('/discover', isUser, UserController.getDiscover);
+router.post('/track-event', UserController.trackEvent); // Unprotected for login analytics
+router.post('/deactivate', isUser, UserController.deactivateAccount);
+router.post('/reactivate', isUser, UserController.reactivateAccount);
 
 // Contact & Policies
 router.post('/contact-us', ContactController.submitMessage);

@@ -91,16 +91,28 @@ class RandomRtcService {
     isInitialized = true;
   }
 
-  Future<RTCSessionDescription> createOffer() async {
-    RTCSessionDescription offer = await _peerConnection!.createOffer();
-    await _peerConnection!.setLocalDescription(offer);
-    return offer;
+  Future<RTCSessionDescription?> createOffer() async {
+    try {
+      if (_peerConnection == null) return null;
+      RTCSessionDescription offer = await _peerConnection!.createOffer();
+      await _peerConnection!.setLocalDescription(offer);
+      return offer;
+    } catch (e) {
+      debugPrint("[RTC] Create Offer Error: $e");
+      return null;
+    }
   }
 
-  Future<RTCSessionDescription> createAnswer() async {
-    RTCSessionDescription answer = await _peerConnection!.createAnswer();
-    await _peerConnection!.setLocalDescription(answer);
-    return answer;
+  Future<RTCSessionDescription?> createAnswer() async {
+    try {
+      if (_peerConnection == null) return null;
+      RTCSessionDescription answer = await _peerConnection!.createAnswer();
+      await _peerConnection!.setLocalDescription(answer);
+      return answer;
+    } catch (e) {
+      debugPrint("[RTC] Create Answer Error: $e");
+      return null;
+    }
   }
 
   Future<void> setRemoteDescription(RTCSessionDescription description) async {

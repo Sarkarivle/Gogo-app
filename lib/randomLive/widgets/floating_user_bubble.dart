@@ -24,7 +24,7 @@ class _FloatingUserBubbleState extends State<FloatingUserBubble> with SingleTick
     _left = _random.nextDouble() * 350;
     _size = 6.0 + _random.nextDouble() * 4.0;
     
-    final colors = [Colors.blueAccent, Colors.pinkAccent, Colors.purpleAccent, Colors.greenAccent];
+    final colors = [Colors.orangeAccent, Colors.amberAccent, Colors.white70, Colors.deepOrangeAccent];
     _color = colors[_random.nextInt(colors.length)];
     
     _controller = AnimationController(

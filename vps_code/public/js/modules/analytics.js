@@ -5,8 +5,7 @@ async function loadAnalytics() {
     mainContent.innerHTML = UI.loader();
 
     try {
-        const res = await fetch('/api/admin/analytics/detailed');
-        const data = await res.json();
+        const data = await API.getAnalyticsDetailed();
 
         const fm = data.funnelMetrics || { onboardingConv: 0, trialConv: 0, premiumConv: 0, overallROI: 0 };
         const fr = data.funnelRaw || { app_open: 0, login_page_open: 0, trial_page_open: 0, premium_activated: 0 };

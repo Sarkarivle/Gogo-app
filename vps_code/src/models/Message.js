@@ -12,7 +12,10 @@ const MessageSchema = new mongoose.Schema({
     isOpened: { type: Boolean, default: false },
     isDelivered: { type: Boolean, default: false },
     isEdited: { type: Boolean, default: false },
+    editedAt: Date,
     isDeletedForEveryone: { type: Boolean, default: false },
+    deletedAt: Date,
+    deletedBy: { type: [String], default: [] },
 
     metadata: mongoose.Schema.Types.Mixed,
 
@@ -26,5 +29,7 @@ const MessageSchema = new mongoose.Schema({
 
 // Index for pagination and fast retrieval
 MessageSchema.index({ roomId: 1, timestamp: -1 });
+MessageSchema.index({ receiverPhone: 1, isDelivered: 1 });
+MessageSchema.index({ roomId: 1, receiverPhone: 1, isOpened: 1 });
 
 module.exports = mongoose.model('Message', MessageSchema);

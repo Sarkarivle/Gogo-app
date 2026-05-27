@@ -5,8 +5,7 @@ async function loadTrialOffer() {
     mainContent.innerHTML = UI.loader();
 
     try {
-        const res = await fetch('/api/admin/config/trial_offer_settings');
-        const data = await res.json();
+        const data = await API.getConfig('trial_offer_settings');
 
         let settings = data.config || {
             amount: 1,
@@ -112,12 +111,7 @@ async function saveTrialSettings() {
     };
 
     try {
-        const res = await fetch('/api/admin/config/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: 'trial_offer_settings', value: settings })
-        });
-        const data = await res.json();
+        const data = await API.updateConfig('trial_offer_settings', settings);
         if (data.success) {
             alert("Trial Settings Updated Successfully");
             loadTrialOffer();

@@ -6,8 +6,7 @@ async function loadMonitoring() {
 
     try {
         const statsRes = await API.getStats();
-        const monitorRes = await fetch('/api/admin/monitoring/sockets');
-        const monitor = await monitorRes.json();
+        const monitor = await API.getMonitoringData();
         const s = statsRes.stats;
 
         mainContent.innerHTML = `

@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class ProfileRepository {
@@ -61,7 +60,9 @@ class ProfileRepository {
 
       final uri = Uri.parse('${ApiService.baseUrl}/api/user/discover').replace(queryParameters: queryParams);
       
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+      // Use ApiService instead of direct http to include security headers automatically
+      final endpoint = uri.toString().replaceFirst(ApiService.baseUrl, '');
+      final response = await ApiService.get(endpoint);
 
       if (response.statusCode == 200) {
         try {

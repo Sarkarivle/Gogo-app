@@ -82,17 +82,10 @@ async function submitNewAdmin() {
     if(!username || !password) return alert("All fields required");
 
     try {
-        // We use the createAdmin endpoint. Note: The current createAdmin endpoint
-        // in AdminController requires a 'secret'.
-        const res = await fetch('/api/admin/create-initial-admin', {
+        const data = await API.request('/api/admin/create-initial-admin', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API.getToken()}`
-            },
             body: JSON.stringify({ username, password, role, secret: 'GOGO_INIT_SECRET_99' })
         });
-        const data = await res.json();
         if(data.success) {
             UI.modal.hide();
             loadAdmins();

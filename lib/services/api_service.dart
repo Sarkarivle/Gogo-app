@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://72.61.170.181';
+  static const String baseUrl = 'https://api.gogodatings.com';
   static const String mediaToken = 'GOGO_SECURE_ACCESS_2024_PROD';
 
   /// Wraps a media URL with a security token for access
@@ -26,10 +27,14 @@ class ApiService {
   }
 
   static Future<Map<String, String>> _getHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'x-gogo-secret': mediaToken,
+      if (token != null) 'Authorization': 'Bearer $token',
     };
   }
 
@@ -45,6 +50,10 @@ class ApiService {
         body: jsonEncode(body),
       ).timeout(const Duration(seconds: 30));
       
+      if (response.statusCode == 401) {
+        _handleUnauthorized();
+      }
+      
       return response;
     } catch (e) {
       rethrow;
@@ -59,10 +68,22 @@ class ApiService {
         Uri.parse(url),
         headers: headers,
       ).timeout(const Duration(seconds: 20));
+      
+      if (response.statusCode == 401) {
+        _handleUnauthorized();
+      }
+      
       return response;
     } catch (e) {
       rethrow;
     }
+  }
+
+  static void _handleUnauthorized() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('user_data');
+    // Navigate to login if context is available via a navigator key or stream
   }
   
   static Future<http.StreamedResponse> multipart(String endpoint, String filePath, String fieldName, Map<String, String> fields) async {

@@ -54,7 +54,22 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 const SizedBox(height: 8),
                 const Text('Duniya ko batao ki aap real ho. Blue Tick paane ke liye ek selfie upload karein.', style: TextStyle(color: Colors.white70, fontSize: 13)),
                 const SizedBox(height: 15),
-                TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const VerificationPage())), style: TextButton.styleFrom(backgroundColor: Colors.blueAccent, padding: const EdgeInsets.symmetric(horizontal: 20)), child: const Text('Start Verification', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                TextButton(
+                  onPressed: (currentUser!['verificationSubmitted'] == true) 
+                    ? null 
+                    : () async { 
+                        final res = await Navigator.push(context, MaterialPageRoute(builder: (c) => const VerificationPage()));
+                        if (res == true) _loadUserData();
+                      }, 
+                  style: TextButton.styleFrom(
+                    backgroundColor: (currentUser!['verificationSubmitted'] == true) ? Colors.white10 : Colors.blueAccent, 
+                    padding: const EdgeInsets.symmetric(horizontal: 20)
+                  ), 
+                  child: Text(
+                    (currentUser!['verificationSubmitted'] == true) ? 'Submitted' : 'Start Verification', 
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+                  )
+                ),
               ]),
             ),
           ],

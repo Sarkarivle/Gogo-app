@@ -121,26 +121,36 @@ exports.handleNextPartner = async (io, socket, data) => {
 
 exports.handleSignaling = async (io, socket, data, type) => {
     const { roomId, targetId, ...payload } = data;
+    if (!roomId) return;
 
-    if (type === 'offer') {
-        await RandomRoom.updateOne({ roomId }, { status: 'connected' });
+    try {
+        if (type === 'offer') {
+            await RandomRoom.updateOne({ roomId }, { status: 'connected' });
+        }
+        // Emit to room (partner will receive)
+        socket.to(roomId).emit(`random_${type}`, payload);
+    } catch (e) {
+        console.error(`[RandomMatch] Signaling Error (${type}):`, e);
     }
-
-    // Emit to room (partner will receive)
-    socket.to(roomId).emit(`random_${type}`, payload);
 };
 
 exports.handleBlock = async (io, socket, data) => {
     const { roomId, targetId } = data;
-    console.log(`[RandomMatch] User blocked in room ${roomId}. Target: ${targetId}`);
+    if (!roomId) return;
 
-    // Notify target
-    socket.to(roomId).emit('random_partner_blocked', {
-        message: "You have been blocked by the partner."
-    });
+    try {
+        console.log(`[RandomMatch] User blocked in room ${roomId}. Target: ${targetId}`);
 
-    // Cleanup room
-    await RandomRoom.deleteOne({ roomId });
+        // Notify target
+        socket.to(roomId).emit('random_partner_blocked', {
+            message: "You have been blocked by the partner."
+        });
+
+        // Cleanup room
+        await RandomRoom.deleteOne({ roomId });
+    } catch (e) {
+        console.error("[RandomMatch] handleBlock Error:", e);
+    }
 };
 
 exports.performGlobalCleanup = async () => {

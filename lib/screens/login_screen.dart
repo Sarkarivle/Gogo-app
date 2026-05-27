@@ -232,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
       final response = await ApiService.post('/api/user/login', {'phone': phone});
       final data = jsonDecode(response.body);
       if (data['success'] == true) {
-        _saveUserAndGoHome(data['user']);
+        _saveUserAndGoHome(data['user'], data['token']);
       } else {
         final regResponse = await ApiService.post('/api/user/register', {
           'phone': phone,
@@ -243,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
         });
         final regData = jsonDecode(regResponse.body);
         if (regData['success'] == true) {
-          _saveUserAndGoHome(regData['user']);
+          _saveUserAndGoHome(regData['user'], regData['token']);
         } else {
           _showSnackBar('Registration failed. Please try later.');
         }
@@ -259,9 +259,12 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
     }
   }
 
-  Future<void> _saveUserAndGoHome(dynamic userData) async {
+  Future<void> _saveUserAndGoHome(dynamic userData, String? token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_data', jsonEncode(userData));
+    if (token != null) {
+      await prefs.setString('auth_token', token);
+    }
     await NotificationService.updateTokenToServer();
     if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LocationPermissionScreen()));
   }

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import '../services/api_service.dart';
 import 'cancel_membership_screen.dart';
 import 'onboarding/trial_onboarding_screen.dart';
@@ -36,9 +35,7 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
 
       // Fetch latest from server
       try {
-        final response = await http.get(
-          Uri.parse('${ApiService.baseUrl}/api/user/profile/${localData['phone']}')
-        );
+        final response = await ApiService.get('/api/user/profile/${localData['phone']}');
         if (response.statusCode == 200) {
           final freshData = jsonDecode(response.body)['user'];
           await prefs.setString('user_data', jsonEncode(freshData));

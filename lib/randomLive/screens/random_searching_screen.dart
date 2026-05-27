@@ -8,22 +8,16 @@ class RandomSearchingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> randomNames = ["RAVI", "DEV", "USER_92", "KUNAL", "AMAN", "SIMRAN", "PRIYA", "SAM"];
+    final List<String> randomNames = ["RAHUL", "AMIT", "SANDEEP", "VIKRAM", "ANKIT", "SUMIT", "ROHIT", "DEEPAK"];
 
     return Scaffold(
-      body: Container(
+      backgroundColor: const Color(0xFF0F0F0F),
+      body: SizedBox(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
-          ),
-        ),
         child: Stack(
           children: [
-            // Floating Names (Glowing Circles)
+            // Floating Names (Branded Colors)
             ...randomNames.map((name) => FloatingUserBubble(name: name)),
 
             Column(
@@ -31,28 +25,26 @@ class RandomSearchingScreen extends StatelessWidget {
               children: [
                 const Spacer(),
                 
-                // Live Radar Pulse Center
+                // Live Radar Pulse Center (Branded)
                 const OrbitSearchingAnimation(),
                 
                 const SizedBox(height: 60),
                 
                 const Text(
-                  "Finding Live Match",
+                  "Finding Your Match",
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 26,
-                    fontFamily: 'Inter',
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.0,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
+                const Text(
                   "आपके लिए लाइव पार्टनर खोजा जा रहा है...",
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontSize: 16,
-                    fontFamily: 'Inter',
+                    color: Colors.white54,
+                    fontSize: 15,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -61,38 +53,31 @@ class RandomSearchingScreen extends StatelessWidget {
                 
                 // Premium Bottom Glass Card
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-                  padding: const EdgeInsets.all(24),
+                  margin: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: Colors.white.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 20,
-                      )
-                    ],
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
                   ),
                   child: Row(
                     children: [
                       const SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.orangeAccent),
                         ),
                       ),
-                      const SizedBox(width: 20),
-                      Expanded(
+                      const SizedBox(width: 16),
+                      const Expanded(
                         child: Text(
                           "Best live match dhunda ja raha hai...",
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8), 
-                            fontSize: 14,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w400,
+                            color: Colors.white38, 
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                             fontStyle: FontStyle.italic
                           ),
                         ),
@@ -102,19 +87,20 @@ class RandomSearchingScreen extends StatelessWidget {
                 ),
                 
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 40),
+                  padding: const EdgeInsets.only(bottom: 80),
                   child: TextButton(
                     onPressed: () {
-                      // Small delay to prevent accidental multi-clicks during transition
                       RandomRoomService().endCall(context);
                     },
-                    child: Text(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.redAccent.withValues(alpha: 0.5),
+                    ),
+                    child: const Text(
                       "CANCEL SEARCH", 
                       style: TextStyle(
-                        color: Colors.redAccent.withValues(alpha: 0.7),
-                        fontFamily: 'Inter',
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.0,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                        fontSize: 13,
                       )
                     ),
                   ),

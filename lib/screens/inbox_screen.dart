@@ -145,10 +145,14 @@ class InboxScreenState extends State<InboxScreen> {
 
     if (eventName == 'receive_message') {
       _applyLocalUpdate(data);
+      // Clear typing indicator for this partner as soon as message arrives
+      if (data['senderPhone'] != null) {
+        SocketService().setTyping(data['senderPhone'], false);
+      }
     }
 
     if (_inboxUpdateDebounce?.isActive ?? false) _inboxUpdateDebounce!.cancel();
-    _inboxUpdateDebounce = Timer(const Duration(seconds: 5), () {
+    _inboxUpdateDebounce = Timer(const Duration(milliseconds: 1500), () {
       if (mounted) _fetchInbox();
     });
   }
@@ -193,6 +197,9 @@ class InboxScreenState extends State<InboxScreen> {
           }
           _hasMore = fetchedChats.length >= 20;
         });
+        
+        // Prefetch top 5 chats for instant opening
+        _prefetchTopChats();
       }
     } catch (e) {
       debugPrint("Inbox Fetch Error: $e");
@@ -203,6 +210,15 @@ class InboxScreenState extends State<InboxScreen> {
           _isLoadingMore = false;
         });
       }
+    }
+  }
+
+  void _prefetchTopChats() {
+    if (_currentUser == null) return;
+    // Prefetch first 5 chats that have messages
+    final chatsToPrefetch = _chats.take(5);
+    for (var chat in chatsToPrefetch) {
+      _chatRepository.prefetchHistory(_currentUser!['phone'], chat['phone']);
     }
   }
 
@@ -513,6 +529,27 @@ class InboxScreenState extends State<InboxScreen> {
             final bool isBlocked = chat['isBlocked'] == true;
             final bool isDeactivated = chat['accountStatus'] == 'Deactivated' || chat['isDeactivated'] == true;
 
+            // Location Logic for Inbox
+            String locName = "";
+            final area = chat['area']?.toString() ?? "";
+            final city = chat['city']?.toString() ?? "";
+            if (area.isNotEmpty && area.toLowerCase() != "unknown") {
+              locName = area;
+            } else if (city.isNotEmpty && city.toLowerCase() != "unknown") {
+              locName = city;
+            }
+
+            String cleanDist = (chat['dist_str'] ?? '')
+                .replaceAll('Within ', '')
+                .replaceAll('Under ', '');
+            
+            String displayLocation = cleanDist;
+            if (locName.isNotEmpty && cleanDist.toLowerCase() != "unknown" && cleanDist.isNotEmpty) {
+              displayLocation = "$cleanDist, $locName";
+            } else if (locName.isNotEmpty) {
+              displayLocation = locName;
+            }
+
             return ListTile(
               onTap: () => _openChat(chat),
               onLongPress: () => _showChatActions(chat),
@@ -563,7 +600,7 @@ class InboxScreenState extends State<InboxScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Text(chat['dist_str'] ?? '', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                      Text(displayLocation, style: const TextStyle(color: Colors.white38, fontSize: 11)),
                       if (isOnline) ...[
                         const Text(" • ", style: TextStyle(color: Colors.white24)),
                         const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.w800)),

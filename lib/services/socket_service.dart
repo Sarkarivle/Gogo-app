@@ -47,7 +47,10 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
-  void _connectSocket() {
+  void _connectSocket() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+
     _socket?.dispose();
     _socket = io.io(ApiService.baseUrl, <String, dynamic>{
       'transports': ['websocket'],
@@ -56,6 +59,7 @@ class SocketService with WidgetsBindingObserver {
       'reconnectionAttempts': 50,
       'reconnectionDelay': 2000,
       'timeout': 10000,
+      'auth': token != null ? {'token': token} : null,
     });
 
     _socket!.onConnect((_) {
@@ -83,38 +87,30 @@ class SocketService with WidgetsBindingObserver {
       onlineUsers.value = updated;
     });
 
-    _socket!.on('display_typing', (data) {
-      final phone = data['phone'];
-      if (phone != null) {
-        final updated = Map<String, bool>.from(typingUsers.value);
-        updated[phone] = true;
-        typingUsers.value = updated;
-      }
-    });
-
-    _socket!.on('hide_typing', (data) {
-      final phone = data['phone'];
-      if (phone != null) {
-        final updated = Map<String, bool>.from(typingUsers.value);
-        updated[phone] = false;
-        typingUsers.value = updated;
-      }
-    });
+    _socket!.on('display_typing', (data) => _setTypingStatus(data['phone'], true));
+    _socket!.on('hide_typing', (data) => _setTypingStatus(data['phone'], false));
 
     _socket!.on('receive_message', (data) {
+      // Clear typing status for the sender when a message is received
+      if (data['senderPhone'] != null) {
+        _setTypingStatus(data['senderPhone'], false);
+      }
+
       _messageController.add(data);
       _eventController.add({'event': 'receive_message', 'data': data});
 
-      // Show local notification if user is NOT in the active room
       if (_activeRoomId != data['roomId']) {
         NotificationService.showLocalNotificationFromSocket(data);
       }
     });
     
     _socket!.on('message_delivered', (data) => _eventController.add({'event': 'message_delivered', 'data': data}));
+    _socket!.on('pending_messages_delivered', (data) => _eventController.add({'event': 'pending_messages_delivered', 'data': data}));
+    _socket!.on('global_delivery_update', (data) => _eventController.add({'event': 'global_delivery_update', 'data': data}));
     _socket!.on('message_opened', (data) => _eventController.add({'event': 'message_opened', 'data': data}));
     _socket!.on('chat_seen_update', (data) => _eventController.add({'event': 'chat_seen_update', 'data': data}));
     _socket!.on('message_deleted', (data) => _eventController.add({'event': 'message_deleted', 'data': data}));
+    _socket!.on('message_deleted_global', (data) => _eventController.add({'event': 'message_deleted', 'data': data}));
     _socket!.on('message_edited', (data) => _eventController.add({'event': 'message_edited', 'data': data}));
     _socket!.on('message_deleted_for_everyone', (data) => _eventController.add({'event': 'message_deleted_for_everyone', 'data': data}));
     _socket!.on('moderation_state_updated', (data) => _eventController.add({'event': 'moderation_state_updated', 'data': data}));
@@ -212,7 +208,7 @@ class SocketService with WidgetsBindingObserver {
   void updateCurrentUser(String phone) {
     if (_currentUserPhone != phone) {
       _currentUserPhone = phone;
-      _setOnline();
+      _connectSocket(); // Reconnect to refresh token and identity
       
       // Re-bind premium update listener for new phone
       if (_socket != null) {
@@ -225,11 +221,16 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
-  void setTyping(String phone, bool isTyping) {
+  void _setTypingStatus(String? phone, bool isTyping) {
+    if (phone == null) return;
+    // Normalize phone key (remove non-numeric chars) to ensure consistency across events
+    final normalizedPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
     final updated = Map<String, bool>.from(typingUsers.value);
-    updated[phone] = isTyping;
+    updated[normalizedPhone] = isTyping;
     typingUsers.value = updated;
   }
+
+  void setTyping(String phone, bool isTyping) => _setTypingStatus(phone, isTyping);
 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);

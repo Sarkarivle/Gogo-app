@@ -5,8 +5,7 @@ async function loadFeatureFlags() {
     mainContent.innerHTML = UI.loader();
 
     try {
-        const res = await fetch('/api/admin/feature-flags');
-        const flags = await res.json();
+        const flags = await API.getFeatureFlags();
 
         const rows = flags.map(f => `
             <tr class="hover:bg-white/[0.01]">
@@ -45,11 +44,7 @@ async function loadFeatureFlags() {
 
 async function toggleFlag(key, isEnabled) {
     try {
-        await fetch('/api/admin/feature-flags/toggle', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ key, isEnabled })
-        });
+        await API.toggleFeatureFlag(key, isEnabled);
         loadFeatureFlags();
     } catch (e) { alert("Failed to toggle flag"); }
 }
@@ -75,9 +70,8 @@ async function saveNewFlag() {
     const description = document.getElementById('newFlagDesc').value;
     if (!name || !key) return alert("Required fields missing");
 
-    await fetch('/api/admin/feature-flags/toggle', {
+    await API.request('/api/admin/feature-flags/toggle', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ name, key, description, isEnabled: false })
     });
     UI.modal.hide();

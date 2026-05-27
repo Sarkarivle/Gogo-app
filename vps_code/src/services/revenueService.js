@@ -9,10 +9,10 @@ class RevenueService {
 
     init(io) {
         this.io = io;
-        console.log('💰 Revenue & Financial Analytics Service Initialized');
+        console.log('💰 Revenue Service Optimized');
 
-        // Broadcast financial updates every 5 seconds
-        setInterval(() => this.broadcastFinancials(), 5000);
+        // Broadcast financial updates every 30 seconds (Increased from 5s)
+        setInterval(() => this.broadcastFinancials(), 30000);
     }
 
     async trackPaymentEvent(type, data) {
@@ -95,8 +95,12 @@ class RevenueService {
     async broadcastFinancials() {
         if (!this.io) return;
         try {
+            // Check if there are any admins connected
+            const adminRoom = this.io.sockets.adapter.rooms.get('admin');
+            if (!adminRoom || adminRoom.size === 0) return;
+
             const metrics = await this.getFinancialMetrics();
-            this.io.emit('admin_revenue_update', metrics);
+            this.io.to('admin').emit('admin_revenue_update', metrics);
         } catch (e) {
             console.error('Revenue Broadcast Error:', e);
         }

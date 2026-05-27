@@ -11,8 +11,7 @@ async function loadMedia(filter = 'all', reportedOnly = false) {
     mainContent.innerHTML = UI.loader();
 
     try {
-        const res = await fetch(`/api/admin/media/all?filter=${filter}&reportedOnly=${reportedOnly}`);
-        const data = await res.json();
+        const data = await API.getAllMedia(filter, reportedOnly);
 
         if (!data.success) throw new Error("Failed to fetch media");
 
@@ -122,12 +121,7 @@ async function deleteMedia(url, type, owner) {
     if (!confirm("Are you certain you want to purge this media from the server? This action is irreversible.")) return;
 
     try {
-        const res = await fetch('/api/admin/media/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, type, owner })
-        });
-        const data = await res.json();
+        const data = await API.deleteMedia({ url, type, owner });
         if (data.success) loadMedia(currentMediaFilter, reportedOnlyFilter);
         else alert("Purge failed");
     } catch (e) {

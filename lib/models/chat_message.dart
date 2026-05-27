@@ -53,7 +53,7 @@ class ChatMessage {
 
   factory ChatMessage.fromJson(Map<String, dynamic> json, String myPhone) {
     return ChatMessage(
-      id: json['_id'],
+      id: (json['_id'] ?? json['id'] ?? json['messageId'])?.toString(),
       localId: json['localId']?.toString(),
       text: json['message'],
       imageUrl: json['imageUrl'] != null ? ApiService.getSecureUrl(json['imageUrl']) : null,

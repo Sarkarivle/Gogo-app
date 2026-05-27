@@ -13,6 +13,8 @@ import 'inbox_screen.dart';
 import 'my_profile_screen.dart';
 import '../randomLive/screens/random_live_intro_screen.dart';
 
+import '../services/notification_service.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -107,6 +109,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _initHomeScreen() async {
+    // Initialize Notifications here (Play Store Policy compliant - Engage user first)
+    await NotificationService.initialize();
+
     currentUser = await _userRepository.getCurrentUser();
     if (currentUser != null) {
       SocketService().updateCurrentUser(currentUser!['phone']);
@@ -328,9 +333,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     return Container(
       height: 60,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFFFF4B2B), Color(0xFFFF416C), Color(0xFF8E2DE2)], begin: Alignment.centerLeft, end: Alignment.centerRight),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFC107), Color(0xFFFF9800)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [BoxShadow(color: Colors.purple.withValues(alpha: 0.4), blurRadius: 15, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withValues(alpha: 0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.1),
+            blurRadius: 0,
+            spreadRadius: -2,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -342,7 +363,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
               MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
             );
           }, 
-          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.videocam_rounded, color: Colors.white, size: 28), SizedBox(width: 12), Text('Start Live Video', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 0.5))])
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center, 
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.bolt_rounded, color: Colors.black, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'START LIVE MATCH',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

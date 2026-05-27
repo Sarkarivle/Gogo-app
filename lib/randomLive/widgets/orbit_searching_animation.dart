@@ -50,8 +50,8 @@ class _OrbitSearchingAnimationState extends State<OrbitSearchingAnimation>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.blueAccent.withValues(alpha: 1.0 - progress),
-                    width: 2,
+                    color: Colors.orangeAccent.withValues(alpha: 0.8 * (1.0 - progress)),
+                    width: 1.5,
                   ),
                 ),
               );
@@ -60,9 +60,9 @@ class _OrbitSearchingAnimationState extends State<OrbitSearchingAnimation>
         }),
 
         // Orbits with Rotating Nodes
-        _buildOrbit(radius: 70, speed: 1.0, color: Colors.blueAccent),
-        _buildOrbit(radius: 110, speed: -0.6, color: Colors.purpleAccent),
-        _buildOrbit(radius: 150, speed: 0.4, color: Colors.pinkAccent),
+        _buildOrbit(radius: 70, speed: 1.0, color: Colors.orangeAccent),
+        _buildOrbit(radius: 110, speed: -0.6, color: Colors.amberAccent),
+        _buildOrbit(radius: 150, speed: 0.4, color: Colors.orange),
         
         // Center Scanner
         _buildCenterScanner(),
@@ -81,20 +81,20 @@ class _OrbitSearchingAnimationState extends State<OrbitSearchingAnimation>
             Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: color.withValues(alpha: 0.1), width: 1),
+                border: Border.all(color: color.withValues(alpha: 0.05), width: 1),
               ),
             ),
             Positioned(
               top: 0,
               left: radius - 6,
               child: Container(
-                width: 12,
-                height: 12,
+                width: 8,
+                height: 8,
                 decoration: BoxDecoration(
                   color: color,
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: color, blurRadius: 12, spreadRadius: 3),
+                    BoxShadow(color: color, blurRadius: 10, spreadRadius: 2),
                   ],
                 ),
               ),
@@ -107,22 +107,22 @@ class _OrbitSearchingAnimationState extends State<OrbitSearchingAnimation>
 
   Widget _buildCenterScanner() {
     return Container(
-      width: 80,
-      height: 80,
+      width: 70,
+      height: 70,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [Colors.white, Colors.blue.withValues(alpha: 0.8)],
+        gradient: const RadialGradient(
+          colors: [Colors.orangeAccent, Colors.deepOrange],
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.blueAccent.withValues(alpha: 0.5), 
+            color: Colors.orangeAccent.withValues(alpha: 0.4), 
             blurRadius: 30, 
-            spreadRadius: 5
+            spreadRadius: 2
           ),
         ],
       ),
-      child: const Icon(Icons.radar_rounded, color: Colors.white, size: 40),
+      child: const Icon(Icons.radar_rounded, color: Colors.black, size: 36),
     );
   }
 }

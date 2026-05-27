@@ -37,12 +37,25 @@ class _VerificationPageState extends State<VerificationPage> {
       final prefs = await SharedPreferences.getInstance();
       final user = jsonDecode(prefs.getString('user_data')!);
       
-      // Upload image using protected ApiService
-      var res = await ApiService.multipart('/api/chat/upload', _image!.path, 'image', {});
+      final phone = user['phone'];
+      final encodedPhone = Uri.encodeComponent(phone);
+      final url = '${ApiService.baseUrl}/api/chat/upload?phone=$encodedPhone';
+      
+      var request = http.MultipartRequest('POST', Uri.parse(url));
+      final token = prefs.getString('auth_token');
+      request.headers['Accept'] = 'application/json';
+      request.headers['x-gogo-secret'] = ApiService.mediaToken;
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      
+      request.fields['phone'] = phone;
+      request.fields['type'] = 'verification';
+      request.files.add(await http.MultipartFile.fromPath('image', _image!.path));
+      
+      var streamedRes = await request.send().timeout(const Duration(seconds: 40));
+      var res = await http.Response.fromStream(streamedRes);
       
       if (res.statusCode == 200) {
-        var resBody = await http.Response.fromStream(res);
-        var data = jsonDecode(resBody.body);
+        var data = jsonDecode(res.body);
         String selfieUrl = ApiService.getSecureUrl(data['imageUrl']);
 
         // Submit verification request using protected ApiService
@@ -52,9 +65,18 @@ class _VerificationPageState extends State<VerificationPage> {
         });
 
         if (response.statusCode == 200) {
+          // Update local status to reflect submission
+          final prefs = await SharedPreferences.getInstance();
+          final userDataStr = prefs.getString('user_data');
+          if (userDataStr != null) {
+            Map<String, dynamic> userData = jsonDecode(userDataStr);
+            userData['verificationSubmitted'] = true;
+            await prefs.setString('user_data', jsonEncode(userData));
+          }
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verification submitted! Admin will review it.')));
-            Navigator.pop(context);
+            Navigator.pop(context, true); // Return true to trigger refresh
           }
         }
       }

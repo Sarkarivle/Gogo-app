@@ -41,28 +41,22 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
+      backgroundColor: const Color(0xFF0F0F0F),
+      body: SizedBox(
         width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.0,
-            colors: [Color(0xFF2C3E50), Color(0xFF000000)],
-          ),
-        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             AnimatedBuilder(
               animation: _controller,
               builder: (context, child) {
-                final double offset = 120 * (1 - _mergeAnimation.value);
+                final double offset = 100 * (1 - _mergeAnimation.value);
                 return ScaleTransition(
                   scale: _pulseAnimation,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Glow Pulse
+                      // Glow Pulse (Orange)
                       if (_controller.value > 0.6)
                         Container(
                           width: 180,
@@ -71,7 +65,7 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.pinkAccent.withValues(alpha: 0.3),
+                                color: Colors.orangeAccent.withValues(alpha: 0.15),
                                 blurRadius: 60,
                                 spreadRadius: 20,
                               ),
@@ -81,15 +75,15 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
                       
                       Transform.translate(
                         offset: Offset(-offset, 0),
-                        child: _buildAvatar(Icons.person, Colors.blueAccent),
+                        child: _buildAvatar(Icons.person_rounded, Colors.orangeAccent),
                       ),
                       Transform.translate(
                         offset: Offset(offset, 0),
-                        child: _buildAvatar(Icons.person_pin, Colors.pinkAccent),
+                        child: _buildAvatar(Icons.face_retouching_natural_rounded, Colors.amberAccent),
                       ),
                       
                       if (_controller.value > 0.5)
-                        const Icon(Icons.favorite, color: Colors.amber, size: 40),
+                        const Icon(Icons.flash_on_rounded, color: Colors.orangeAccent, size: 40),
                     ],
                   ),
                 );
@@ -97,24 +91,22 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
             ),
             const SizedBox(height: 80),
             const Text(
-              "मैच मिल गया 🧡",
+              "Great Match! 🧡",
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 32,
-                fontFamily: 'Inter',
+                fontSize: 26,
                 fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
+                letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(height: 15),
-            Text(
-              "वीडियो कॉल शुरू की जा रही है...",
+            const SizedBox(height: 12),
+            const Text(
+              "मैच मिल गया, कॉल शुरू हो रही है...",
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 18,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.2
+                color: Colors.white38,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
               ),
             ),
           ],
@@ -125,17 +117,17 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
 
   Widget _buildAvatar(IconData icon, Color color) {
     return Container(
-      width: 110,
-      height: 110,
+      width: 100,
+      height: 100,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: const Color(0xFF1A1A1A),
         shape: BoxShape.circle,
-        border: Border.all(color: color, width: 4),
+        border: Border.all(color: color, width: 3),
         boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 15)
+          BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 20)
         ],
       ),
-      child: Icon(icon, color: Colors.white, size: 55),
+      child: Icon(icon, color: Colors.white70, size: 50),
     );
   }
 }

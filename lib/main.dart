@@ -9,7 +9,6 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/news_home_screen.dart';
 import 'screens/onboarding/location_permission_screen.dart';
-import 'services/notification_service.dart';
 import 'services/socket_service.dart';
 import 'services/call_service.dart';
 import 'services/user_repository.dart';
@@ -17,7 +16,6 @@ import 'services/user_repository.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await NotificationService.initialize();
   await AppVisibilityCoordinator().init();
   
   // Initialize Global Socket Service
@@ -33,12 +31,13 @@ void main() async {
   
   final prefs = await SharedPreferences.getInstance();
   final userDataStr = prefs.getString('user_data');
+  final authToken = prefs.getString('auth_token');
   
   Widget initialScreen = const LoginScreen();
   
   if (AppVisibilityCoordinator().isHidden) {
     initialScreen = const NewsHomeScreen();
-  } else if (userDataStr != null) {
+  } else if (userDataStr != null && authToken != null) {
     final userData = jsonDecode(userDataStr);
     // Agar hasCompletedOnboarding false hai ya missing hai, toh onboarding dikhao
     if (userData['hasCompletedOnboarding'] == true) {
@@ -142,6 +141,7 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
     // Clear local data
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_data');
+    await prefs.remove('auth_token');
     SocketService().dispose();
 
     if (MyApp.navigatorKey.currentContext == null) return;
@@ -194,6 +194,12 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
   void _handleProfileSync(Map<String, dynamic> data) async {
     final context = MyApp.navigatorKey.currentContext;
     if (context == null) return;
+
+    // Ignore routine updates like location or generic syncs without changes
+    if (data['type'] == 'LOCATION_UPDATE' || 
+        (!data.containsKey('isPremium') && !data.containsKey('isVerified') && !data.containsKey('fullUser'))) {
+      return;
+    }
 
     // Determine the message based on changes
     String title = "Account Updated";

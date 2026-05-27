@@ -173,8 +173,17 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       locName = widget.city;
     }
 
-    String cleanDistance = widget.distance.replaceAll(' away', '');
-    String locationDisplay = locName.isNotEmpty ? "$locName, $cleanDistance" : cleanDistance;
+    String cleanDistance = widget.distance
+        .replaceAll(' away', '')
+        .replaceAll('Within ', '')
+        .replaceAll('Under ', '');
+    String locationDisplay = "";
+    
+    if (cleanDistance.isNotEmpty && cleanDistance.toLowerCase() != "unknown") {
+      locationDisplay = locName.isNotEmpty ? "$cleanDistance, $locName" : cleanDistance;
+    } else {
+      locationDisplay = locName;
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),

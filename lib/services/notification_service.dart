@@ -19,7 +19,12 @@ class NotificationService {
   // Prevent duplicate notifications within a short window
   static final Set<String> _recentlyShownIds = {};
 
+  static bool _isInitialized = false;
+
   static Future<void> initialize() async {
+    if (_isInitialized) return;
+    _isInitialized = true;
+
     // 1. Request Permission
     await _messaging.requestPermission(
       alert: true,

@@ -8,141 +8,147 @@ const { updateConversationSummary, resetUnreadCount } = require('../utils/chatUt
 const path = require('path');
 const fs = require('fs');
 
-/**
- * Helper to calculate distance for privacy
- */
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const p1Lat = parseFloat(lat1);
-    const p1Lon = parseFloat(lon1);
-    const p2Lat = parseFloat(lat2);
-    const p2Lon = parseFloat(lon2);
-
-    // Check if any coordinate is missing or essentially zero
-    if (!p1Lat || !p1Lon || !p2Lat || !p2Lon) return "";
-
-    const R = 6371; // km
-    const dLat = (p2Lat - p1Lat) * Math.PI / 180;
-    const dLon = (p2Lon - p1Lon) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(p1Lat * Math.PI / 180) * Math.cos(p2Lat * Math.PI / 180) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const d = R * c;
-
-    // Estimated distance labels for privacy
-    if (d < 1) return "Within 1 km";
-    return `${d.toFixed(1)} km`;
-}
+const normalize = (p) => p ? String(p).replace(/[^0-9]/g, '') : '';
 
 exports.getInbox = async (req, res) => {
     try {
-        const phone = req.params.phone;
-        const { page = 1, limit = 50 } = req.query;
-        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const phone = normalize(req.params.phone);
+        const page = Math.max(1, parseInt(req.query.page || 1));
+        const limit = Math.max(1, parseInt(req.query.limit || 50));
+        const skip = (page - 1) * limit;
 
-        const currentUser = await User.findOne({ phone }, 'lat lng location');
+        // 1. Fetch conversations sorted by last message timestamp with pagination
+        const [conversations, allMetadata] = await Promise.all([
+            Conversation.find({ userPhone: phone })
+                .sort({ 'lastMessage.timestamp': -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            ConversationMetadata.find({ phone }).lean()
+        ]);
 
-        const allMetadata = await ConversationMetadata.find({ phone });
         const metaMap = {};
         allMetadata.forEach(m => metaMap[m.partnerPhone] = m);
 
-        // Fetch optimized conversations
-        const conversations = await Conversation.find({ userPhone: phone }).lean();
-
-        // If inbox is empty, it might be because migration hasn't run.
-        // We'll return success with empty array, but the developer should run /api/chat/migrate-inbox once.
-
-        // Filter and Safety Check
+        // 2. Filter out hidden conversations if they haven't received a new message since clearing
         const visibleConversations = conversations.filter(c => {
-            if (!c.lastMessage) return false; // Skip if no message content
-
+            if (!c.lastMessage) return false;
             const meta = metaMap[c.partnerPhone];
-            if (!meta) return true;
-            if (meta.isHidden) {
-                const lastMsgTime = new Date(c.lastMessage.timestamp || 0).getTime();
-                const clearedAtTime = new Date(meta.lastClearedAt || 0).getTime();
-                return lastMsgTime > clearedAtTime;
+            if (meta && meta.isHidden) {
+                return new Date(c.lastMessage.timestamp || 0).getTime() > new Date(meta.lastClearedAt || 0).getTime();
             }
             return true;
         });
 
-        const sortedVisible = visibleConversations.sort((a, b) => {
-            const timeA = new Date(a.lastMessage?.timestamp || 0).getTime();
-            const timeB = new Date(b.lastMessage?.timestamp || 0).getTime();
-            return timeB - timeA;
-        });
+        const partnerPhones = visibleConversations.map(c => c.partnerPhone);
 
-        const pagedConversations = sortedVisible.slice(skip, skip + parseInt(limit));
-        const totalUnreadCount = visibleConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+        // 3. Fetch partners and blocks in parallel
+        const [partners, blocks] = await Promise.all([
+            User.find({ phone: { $in: partnerPhones } }, 'phone name isOnline isVerified city area').lean(),
+            Block.find({
+                $or: [
+                    { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
+                    { blockerPhone: { $in: partnerPhones }, blockedPhone: phone }
+                ]
+            }).lean()
+        ]);
 
-        const partnerPhones = pagedConversations.map(c => c.partnerPhone);
-        const partnerUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name lat lng location position city area isOnline isVerified');
         const userMap = {};
-        partnerUsers.forEach(u => userMap[u.phone] = u);
+        partners.forEach(u => userMap[u.phone] = u);
 
-        const blocks = await Block.find({
-            $or: [
-                { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
-                { blockerPhone: { $in: partnerPhones }, blockedPhone: phone }
-            ]
-        });
-
-        const chats = pagedConversations.map((conv) => {
-            const m = conv.lastMessage || {};
+        const chats = visibleConversations.map(conv => {
             const other = conv.partnerPhone;
-            const otherUser = userMap[other] || {};
-            const meta = metaMap[other] || {};
+            const u = userMap[other] || {};
+            const block = blocks.find(b => (b.blockerPhone === phone && b.blockedPhone === other) || (b.blockerPhone === other && b.blockedPhone === phone));
 
-            const blockInfo = blocks.find(b =>
-                (b.blockerPhone === phone && b.blockedPhone === other) ||
-                (b.blockerPhone === other && b.blockedPhone === phone)
-            );
-
-            // Smart Location Fallback
-            const myLat = currentUser?.lat || (currentUser?.location?.coordinates ? currentUser.location.coordinates[1] : null);
-            const myLng = currentUser?.lng || (currentUser?.location?.coordinates ? currentUser.location.coordinates[0] : null);
-            const otherLat = otherUser.lat || (otherUser.location?.coordinates ? otherUser.location.coordinates[1] : null);
-            const otherLng = otherUser.lng || (otherUser.location?.coordinates ? otherUser.location.coordinates[0] : null);
-
-            const distLabel = calculateDistance(myLat, myLng, otherLat, otherLng);
-
-            // Clean Area/City from "Unknown" strings
-            const cleanArea = (otherUser.area && otherUser.area.toLowerCase() !== 'unknown') ? otherUser.area : '';
-            const cleanCity = (otherUser.city && otherUser.city.toLowerCase() !== 'unknown') ? otherUser.city : '';
-
-            // Priority: Area/Village > City > Nearby
-            const locationLabel = cleanArea || cleanCity || "Nearby";
+            const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
+            const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
 
             return {
                 phone: other,
-                msg: m.type === 'audio' ? '🎵 Voice Message' : (m.message || (m.imageUrl ? '📷 Image' : '')),
-                time: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-                timestamp: m.timestamp || new Date(),
-                name: otherUser.name || 'User',
-                pos: otherUser.position || 'Any',
-                distance: distLabel,
-                city: locationLabel,
-                area: '',
+                msg: conv.lastMessage.message,
+                type: conv.lastMessage.type,
+                timestamp: conv.lastMessage.timestamp,
+                name: u.name || 'User',
                 unread: conv.unreadCount || 0,
-                isOnline: otherUser.isOnline || false,
-                isVerified: otherUser.isVerified || false,
-                isMuted: meta.isMuted || false,
-                isFavourite: meta.isFavourite || false,
-                isBlocked: !!blockInfo,
-                iBlocked: blockInfo?.blockerPhone === phone
+                isOnline: u.isOnline || false,
+                isVerified: u.isVerified || false,
+                isBlocked: !!block,
+                iBlocked: block?.blockerPhone === phone,
+                city: cleanArea || cleanCity || 'Nearby'
             };
         });
 
-        res.json({ totalUnread: totalUnreadCount, chats });
+        // 4. Calculate total unread (Optional: this could be cached or kept in User model for speed)
+        const totalUnread = await Conversation.aggregate([
+            { $match: { userPhone: phone } },
+            { $group: { _id: null, total: { $sum: "$unreadCount" } } }
+        ]);
+
+        res.json({
+            totalUnread: totalUnread.length > 0 ? totalUnread[0].total : 0,
+            chats
+        });
     } catch (e) {
-        console.error("GET_INBOX_ERROR:", e);
-        res.status(500).json({ totalUnread: 0, chats: [], error: e.message });
+        res.status(500).json({ chats: [], totalUnread: 0 });
     }
+};
+
+exports.getChatHistory = async (req, res) => {
+    try {
+        const p1 = normalize(req.params.p1);
+        const p2 = normalize(req.params.p2);
+        const { page = 1, limit = 50 } = req.query;
+        const roomId = [p1, p2].sort().join('_');
+
+        const chats = await Message.find({ roomId, deletedBy: { $ne: p1 } })
+            .sort({ timestamp: -1 })
+            .skip((parseInt(page) - 1) * parseInt(limit))
+            .limit(parseInt(limit));
+
+        res.json(chats.reverse());
+    } catch (e) { res.status(500).json([]); }
+};
+
+exports.handleFileUpload = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false });
+        const fileUrl = `/api/media/${req.file.filename}`;
+        const phone = normalize(req.body.phone || req.query.phone);
+        const type = req.body.type || req.query.type;
+
+        if (phone && (type === 'image' || type === 'video')) {
+            await new RecentPhoto({ phone, imageUrl: fileUrl }).save();
+        }
+        res.json({ success: true, imageUrl: fileUrl });
+    } catch (err) { res.status(500).json({ success: false }); }
+};
+
+exports.serveSecureMedia = async (req, res) => {
+    try {
+        const filePath = path.join(__dirname, '../../uploads', req.params.filename);
+        const MASTER_SECRET = process.env.MASTER_SECRET || 'GOGO_SECURE_ACCESS_2024_PROD';
+        if (req.headers['x-gogo-secret'] !== MASTER_SECRET && req.query.token !== MASTER_SECRET) {
+            return res.status(403).send("Unauthorized");
+        }
+        if (fs.existsSync(filePath)) res.sendFile(filePath);
+        else res.status(404).send("Not found");
+    } catch (e) { res.status(500).send("Error"); }
+};
+
+exports.markSeen = async (req, res) => {
+    try {
+        const m = normalize(req.body.myPhone), o = normalize(req.body.otherPhone);
+        await Message.updateMany({ roomId: [m, o].sort().join('_'), receiverPhone: m, isOpened: false }, { isOpened: true, isDelivered: true });
+        await resetUnreadCount(m, o);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.updateMetadata = async (req, res) => {
     try {
         const { phone, partnerPhone, isMuted, isFavourite, isHidden } = req.body;
+        const p = normalize(phone), pp = normalize(partnerPhone);
         const update = {};
         if (isMuted !== undefined) update.isMuted = isMuted;
         if (isFavourite !== undefined) update.isFavourite = isFavourite;
@@ -150,241 +156,82 @@ exports.updateMetadata = async (req, res) => {
             update.isHidden = isHidden;
             if (isHidden) update.lastClearedAt = new Date();
         }
-
-        const meta = await ConversationMetadata.findOneAndUpdate(
-            { phone, partnerPhone },
-            update,
-            { upsert: true, new: true }
-        );
-
+        const meta = await ConversationMetadata.findOneAndUpdate({ phone: p, partnerPhone: pp }, update, { upsert: true, new: true });
         res.json({ success: true, meta });
-    } catch (e) {
-        res.status(500).json({ success: false });
-    }
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.blockUser = async (req, res) => {
     try {
-        const { blockerPhone, blockedPhone, reason, isReported } = req.body;
-        await Block.findOneAndUpdate(
-            { blockerPhone, blockedPhone },
-            { reason, isReported, timestamp: new Date() },
-            { upsert: true, new: true }
-        );
-
-        const roomId = [blockerPhone, blockedPhone].sort().join('_');
-        const systemMsg = new Message({
-            roomId,
-            senderPhone: blockerPhone,
-            receiverPhone: blockedPhone,
-            message: `You blocked this user`,
-            type: 'block_event'
-        });
-        await systemMsg.save();
-        await updateConversationSummary(systemMsg);
-        res.json({ success: true, message: "User blocked" });
-    } catch (e) {
-        res.status(500).json({ success: false });
-    }
+        const b1 = normalize(req.body.blockerPhone), b2 = normalize(req.body.blockedPhone);
+        await Block.findOneAndUpdate({ blockerPhone: b1, blockedPhone: b2 }, { reason: req.body.reason, timestamp: new Date() }, { upsert: true });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.unblockUser = async (req, res) => {
     try {
-        const { blockerPhone, blockedPhone } = req.body;
-        await Block.findOneAndDelete({ blockerPhone, blockedPhone });
-
-        const roomId = [blockerPhone, blockedPhone].sort().join('_');
-        const systemMsg = new Message({
-            roomId,
-            senderPhone: blockerPhone,
-            receiverPhone: blockedPhone,
-            message: `Unblocked`,
-            type: 'unblock_event'
-        });
-        await systemMsg.save();
-        await updateConversationSummary(systemMsg);
-        res.json({ success: true, message: "User unblocked" });
-    } catch (e) {
-        res.status(500).json({ success: false });
-    }
+        const b1 = normalize(req.body.blockerPhone), b2 = normalize(req.body.blockedPhone);
+        await Block.findOneAndDelete({ blockerPhone: b1, blockedPhone: b2 });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.checkBlock = async (req, res) => {
     try {
-        const { p1, p2 } = req.params;
-        const blockRecord = await Block.findOne({
-            $or: [
-                { blockerPhone: p1, blockedPhone: p2 },
-                { blockerPhone: p2, blockedPhone: p1 }
-            ]
-        });
-        res.json({
-            success: true,
-            isBlocked: !!blockRecord,
-            blockerPhone: blockRecord ? blockRecord.blockerPhone : null
-        });
-    } catch (e) {
-        res.status(500).json({ success: false });
-    }
-};
-
-exports.markSeen = async (req, res) => {
-    try {
-        const { myPhone, otherPhone } = req.body;
-        const roomId = [myPhone, otherPhone].sort().join('_');
-        await Message.updateMany(
-            { roomId, receiverPhone: myPhone, isOpened: false, isViewOnce: false },
-            { isOpened: true, isDelivered: true }
-        );
-        await resetUnreadCount(myPhone, otherPhone);
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ success: false });
-    }
-};
-
-exports.handleFileUpload = async (req, res) => {
-    try {
-        console.log(`📂 Processing upload for phone: ${req.body.phone}`);
-        if (!req.file) {
-            console.error("❌ No file received in request");
-            return res.status(400).json({ success: false, message: "No file received" });
-        }
-
-        console.log(`✅ File received: ${req.file.filename} (${req.file.size} bytes)`);
-
-        // Build relative URL to ensure client can prepend its own baseUrl
-        const fileUrl = `/api/media/${req.file.filename}`;
-
-        const { phone, type } = req.body;
-        if (phone) {
-            try {
-                // If app explicitly says it's an image or video, trust it and save to RecentPhoto
-                if (type === 'image' || type === 'video') {
-                    const newRecent = new RecentPhoto({ phone: phone, imageUrl: fileUrl });
-                    await newRecent.save();
-                    console.log(`📸 Saved to RecentPhoto: ${fileUrl} (App Type: ${type})`);
-                } else {
-                    console.log(`🚫 Skipped RecentPhoto: ${fileUrl} (App Type: ${type}) - Not a photo or video`);
-                }
-            } catch (saveErr) {
-                console.error("⚠️ Error saving recent photo record:", saveErr);
-            }
-        }
-        res.json({ success: true, imageUrl: fileUrl });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-};
-
-exports.serveSecureMedia = async (req, res) => {
-    try {
-        const { filename } = req.params;
-        const filePath = path.join(__dirname, '../../uploads', filename);
-
-        // Professional Security Check
-        const appSecret = req.headers['x-gogo-secret'];
-        const urlToken = req.query.token;
-        const MASTER_SECRET = 'GOGO_SECURE_ACCESS_2024_PROD';
-
-        if (appSecret !== MASTER_SECRET && urlToken !== MASTER_SECRET) {
-            return res.status(403).send("Unauthorized Access: This asset belongs to GoGo Private Infrastructure.");
-        }
-
-        if (fs.existsSync(filePath)) {
-            res.sendFile(filePath);
-        } else {
-            res.status(404).send("Media not found");
-        }
-    } catch (e) {
-        res.status(500).send("Server error");
-    }
+        const p1 = normalize(req.params.p1), p2 = normalize(req.params.p2);
+        const b = await Block.findOne({ $or: [{ blockerPhone: p1, blockedPhone: p2 }, { blockerPhone: p2, blockedPhone: p1 }] });
+        res.json({ success: true, isBlocked: !!b, blockerPhone: b ? b.blockerPhone : null });
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.getRecentPhotos = async (req, res) => {
     try {
-        const { phone } = req.params;
-        // Fetch all recent records for this user (filtering is already done during save)
-        const photos = await RecentPhoto.find({ phone }).sort({ timestamp: -1 }).limit(20);
-        res.json({ success: true, photos });
+        res.json({ success: true, photos: await RecentPhoto.find({ phone: normalize(req.params.phone) }).sort({ timestamp: -1 }).limit(20) });
+    } catch (e) { res.status(500).json({ success: false }); }
+};
+
+exports.getBlockedList = async (req, res) => {
+    try {
+        const phone = normalize(req.params.phone);
+        const blocks = await Block.find({ blockerPhone: phone }).lean();
+        const partnerPhones = blocks.map(b => b.blockedPhone);
+
+        const blockedUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name profileImages').lean();
+
+        const result = blockedUsers.map(u => ({
+            phone: u.phone,
+            name: u.name,
+            profileImage: u.profileImages && u.profileImages.length > 0 ? u.profileImages[0] : null
+        }));
+
+        res.json({ success: true, blockedUsers: result });
     } catch (e) {
-        res.status(500).json({ success: false, photos: [] });
+        res.status(500).json({ success: false, message: e.message });
     }
 };
 
 exports.deletePhoto = async (req, res) => {
     try {
-        const { messageId } = req.params;
-        const photo = await RecentPhoto.findById(messageId);
-        if (!photo) return res.json({ success: true, message: "Not found" });
-        const imageUrl = photo.imageUrl;
-        await RecentPhoto.findByIdAndDelete(messageId);
-        try {
-            const fileName = imageUrl.split('/').pop();
-            const filePath = path.join(process.cwd(), 'uploads', fileName);
-            if (fs.existsSync(filePath)) await fs.promises.unlink(filePath);
-        } catch (fErr) {}
+        const photo = await RecentPhoto.findById(req.params.messageId);
+        if (photo) {
+            const filePath = path.join(process.cwd(), 'uploads', photo.imageUrl.split('/').pop());
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            await RecentPhoto.findByIdAndDelete(req.params.messageId);
+        }
         res.json({ success: true });
-    } catch (e) {
-        res.json({ success: true });
-    }
+    } catch (e) { res.json({ success: true }); }
 };
 
 exports.deleteRecentPhotoByUrl = async (req, res) => {
     try {
-        let { phone, imageUrl } = req.body;
-
-        // Clean URL: Strip token if present
-        const cleanUrl = imageUrl.split('?')[0];
-
-        // Find by either the tokenized version (unlikely in DB) or cleaned version
-        const photo = await RecentPhoto.findOne({
-            phone,
-            $or: [{ imageUrl: cleanUrl }, { imageUrl: imageUrl }]
-        });
-
-        if (!photo) {
-            return res.status(404).json({ success: false, message: "Photo not found in database" });
+        const phone = normalize(req.body.phone), url = req.body.imageUrl.split('?')[0];
+        const photo = await RecentPhoto.findOne({ phone, imageUrl: url });
+        if (photo) {
+            const filePath = path.join(process.cwd(), 'uploads', url.split('/').pop());
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            await RecentPhoto.deleteOne({ _id: photo._id });
         }
-
-        // 1. Delete from Database
-        await RecentPhoto.deleteOne({ _id: photo._id });
-
-        // 2. Delete from Server Storage
-        try {
-            // Ensure we extract only the actual filename without any query params
-            const fileName = cleanUrl.split('/').pop();
-            const filePath = path.join(process.cwd(), 'uploads', fileName);
-            if (fs.existsSync(filePath)) {
-                await fs.promises.unlink(filePath);
-                console.log(`✅ File deleted: ${fileName}`);
-            }
-        } catch (fErr) {
-            console.error("❌ File deletion error:", fErr);
-        }
-
-        res.json({ success: true, message: "Photo permanently deleted from server and database" });
-    } catch (e) {
-        console.error("DELETE_PHOTO_ERROR:", e);
-        res.status(500).json({ success: false, error: e.message });
-    }
-};
-
-exports.getChatHistory = async (req, res) => {
-    try {
-        const { p1, p2 } = req.params;
-        const { page = 1, limit = 50 } = req.query;
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const roomId = [p1, p2].sort().join('_');
-        const chats = await Message.find({ roomId })
-            .sort({ timestamp: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        res.json(chats.reverse());
-    } catch (e) {
-        console.error("GET_CHAT_HISTORY_ERROR:", e);
-        res.status(500).json([]);
-    }
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 };

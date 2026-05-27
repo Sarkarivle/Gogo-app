@@ -1,4 +1,4 @@
-const socket = io();
+let socket;
 const mainContent = document.getElementById('mainContent');
 
 async function init() {
@@ -45,6 +45,12 @@ async function init() {
         });
         return;
     }
+
+    // Initialize Socket with Token
+    socket = io({
+        auth: { token: token },
+        transports: ['websocket']
+    });
 
     // If token exists, Show the UI
     if(sidebar) {
@@ -126,6 +132,13 @@ async function init() {
         const activeMod = localStorage.getItem('activeModule');
         if (activeMod === 'monetization' && typeof appendFinanceActivity === 'function') {
             appendFinanceActivity(data);
+        }
+    });
+
+    socket.on('connect_error', (err) => {
+        console.error("Socket Connection Error:", err.message);
+        if (err.message === "Auth error") {
+            API.clearToken();
         }
     });
 }

@@ -14,7 +14,7 @@ import '../../main.dart';
 
 enum RandomRoomState { idle, searching, matched, inCall }
 
-class RandomRoomService {
+class RandomRoomService with WidgetsBindingObserver {
   static final RandomRoomService _instance = RandomRoomService._internal();
   factory RandomRoomService() => _instance;
   RandomRoomService._internal();
@@ -34,6 +34,23 @@ class RandomRoomService {
     RandomSocketService().init();
     _socketSub?.cancel();
     _socketSub = RandomSocketService().eventStream.listen(_handleSocketEvent);
+    
+    // Listen for app lifecycle to cut call on background
+    WidgetsBinding.instance.removeObserver(this);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (this.state.value == RandomRoomState.inCall || this.state.value == RandomRoomState.matched) {
+        debugPrint("[RandomRoom] App moved to background. Cutting call.");
+        final context = MyApp.navigatorKey.currentContext;
+        if (context != null) {
+          endCall(context);
+        }
+      }
+    }
   }
 
   void startSearch(BuildContext context) {
@@ -122,10 +139,12 @@ class RandomRoomService {
 
     if (role == 'caller') {
       final offer = await RandomRtcService().createOffer();
-      RandomSocketService().emitOffer(currentRoomId!, partnerId!, {
-        'sdp': offer.sdp,
-        'type': offer.type,
-      });
+      if (offer != null) {
+        RandomSocketService().emitOffer(currentRoomId!, partnerId!, {
+          'sdp': offer.sdp,
+          'type': offer.type,
+        });
+      }
     }
     state.value = RandomRoomState.inCall;
   }
@@ -145,10 +164,12 @@ class RandomRoomService {
     final offer = RTCSessionDescription(offerData['sdp'], offerData['type']);
     await RandomRtcService().setRemoteDescription(offer);
     final answer = await RandomRtcService().createAnswer();
-    RandomSocketService().emitAnswer(currentRoomId!, partnerId!, {
-      'sdp': answer.sdp,
-      'type': answer.type,
-    });
+    if (answer != null) {
+      RandomSocketService().emitAnswer(currentRoomId!, partnerId!, {
+        'sdp': answer.sdp,
+        'type': answer.type,
+      });
+    }
   }
 
   void _onAnswerReceived(dynamic answerData) async {
@@ -234,7 +255,7 @@ class RandomRoomService {
     final String? pId = partnerId;
     final String? rId = currentRoomId;
     
-    debugPrint("[RandomRoom] Block and Exit triggered.");
+    debugPrint("[RandomRoom] Block and Exit triggered. Redirecting to Search.");
 
     if (myPhone != null && pId != null) {
       // 1. Backend Block Relation
@@ -250,8 +271,20 @@ class RandomRoomService {
         RandomSocketService().emitBlock(rId, pId);
       }
       
-      // 3. Full Cleanup & Exit
-      endCall(context);
+      // 3. Inform partner & backend room cleanup
+      RandomSocketService().leaveRoom(myPhone);
+      
+      // 4. Full RTC & Local State Cleanup
+      _cleanupFull();
+      
+      // 5. Direct to Search Screen
+      if (context.mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const RandomSearchingScreen()),
+        );
+        startSearch(context);
+      }
     }
   }
 
@@ -269,6 +302,7 @@ class RandomRoomService {
 
   void dispose() {
     _socketSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _cleanupFull();
   }
 }

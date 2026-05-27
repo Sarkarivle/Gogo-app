@@ -18,5 +18,8 @@ const RandomRoomSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 RandomRoomSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+RandomRoomSchema.index({ hostId: 1 });
+RandomRoomSchema.index({ guestId: 1 });
+RandomRoomSchema.index({ status: 1 });
 
 module.exports = mongoose.model('RandomRoom', RandomRoomSchema);

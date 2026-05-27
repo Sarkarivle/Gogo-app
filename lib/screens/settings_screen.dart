@@ -8,6 +8,8 @@ import '../services/app_visibility_coordinator.dart';
 import 'login_screen.dart';
 import 'premium_settings_screen.dart';
 import 'contact_us_screen.dart';
+import 'blocked_users_screen.dart';
+import 'verification_screen.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -119,9 +121,9 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         SettingsRowItem(
           icon: Icons.verified_user_outlined,
-          title: 'KYC Verification',
+          title: 'Face KYC Verification',
           subtitle: 'Verify your identity',
-          onTap: () {},
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const VerificationPage())),
         ),
         SettingsRowItem(
           icon: Icons.receipt_long_outlined,
@@ -133,7 +135,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: Icons.block_flipped,
           title: 'Blocked Users',
           subtitle: 'Manage restricted contacts',
-          onTap: () {},
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const BlockedUsersScreen())),
         ),
         SettingsRowItem(
           icon: Icons.star_outline_rounded,
@@ -198,8 +200,8 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         SettingsDangerRow(
           icon: Icons.no_accounts_outlined,
-          title: 'Deactivate Account',
-          subtitle: 'delete your account',
+          title: 'Delete Account',
+          subtitle: 'Deactivate Your Account',
           color: Colors.orangeAccent,
           onTap: () => _showDeactivateModal(context),
         ),
@@ -263,26 +265,26 @@ class _SettingsPageState extends State<SettingsPage> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.orangeAccent.withValues(alpha: 0.1),
+                color: Colors.redAccent.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 40),
+              child: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 40),
             ),
             const SizedBox(height: 24),
             const Text(
-              'Deactivate Account?',
+              'Delete Account?',
               style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 12),
             Text(
-              'This will temporarily hide your profile.',
+              'Isse aapka account permanet delete ho jayega',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
             ),
             const SizedBox(height: 32),
-            _buildWarningItem('Your profile will disappear from App'),
-            _buildWarningItem('Nobody will see your profile in feed'),
-            _buildWarningItem('Reactivate anytime by logging back in'),
+            _buildWarningItem('Aapka Gogo account & data delete kar diya jayega'),
+            _buildWarningItem('Gogo par aapki profile nahi dikhegi'),
+            _buildWarningItem('Login karke aap dowara se account ko activate kar sakte ho'),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
@@ -293,13 +295,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 elevation: 0,
               ),
-              child: const Text('No. dont deactivate my acount', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              child: const Text('No. dont delete my acount', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
             ),
             const SizedBox(height: 20),
             TextButton(
               onPressed: () => _handleDeactivation(context),
               style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 56)),
-              child: Text('Yes Deactivate my account', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w700)),
+              child: Text('Yes Delete my account', style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.7), fontWeight: FontWeight.w700)),
             ),
             const SizedBox(height: 20),
           ],
@@ -365,7 +367,7 @@ class _SettingsPageState extends State<SettingsPage> {
         backgroundColor: const Color(0xFF1A1A1A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
-          'Your Gogo acccont has been deactivated',
+          'Your Gogo acccont has been deleted',
           style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
@@ -373,9 +375,9 @@ class _SettingsPageState extends State<SettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDialogBullet("ab aapka gogo account kisi ko nahi dikhega"),
+            _buildDialogBullet("Ab aapka gogo account kisi ko nahi dikhega"),
             const SizedBox(height: 12),
-            _buildDialogBullet("gogo account ko login karke reactivate bhi kar sakte ho"),
+            _buildDialogBullet("Gogo account ko login karke reactivate bhi kar sakte ho"),
           ],
         ),
         actions: [

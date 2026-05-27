@@ -27,7 +27,7 @@ const UserSchema = new mongoose.Schema({
     lastLocationUpdate: { type: Date, default: Date.now },
 
     // Status & Moderation
-    isPremium: { type: Boolean, default: false },
+    isPremium: { type: Boolean, default: false, index: true },
     premiumExpiry: { type: Date },
     premiumPlan: { type: String }, // e.g., 'Monthly Gold'
     isVerified: { type: Boolean, default: false }, // Blue tick status
@@ -87,8 +87,8 @@ const UserSchema = new mongoose.Schema({
         premiumPlan: String,
         subscriptionStatus: String
     },
-    isOnline: { type: Boolean, default: false },
-    lastSeen: { type: Date, default: Date.now },
+    isOnline: { type: Boolean, default: false, index: true },
+    lastSeen: { type: Date, default: Date.now, index: true },
     hasCompletedOnboarding: { type: Boolean, default: false },
 
     // Security & Tracking
@@ -110,5 +110,8 @@ const UserSchema = new mongoose.Schema({
 // Index for search
 UserSchema.index({ location: '2dsphere' });
 UserSchema.index({ name: 'text', phone: 'text', city: 'text' });
+UserSchema.index({ createdAt: -1 });
+UserSchema.index({ isBanned: 1, isDeactivated: 1 });
+UserSchema.index({ isPremium: -1, lastSeen: -1 });
 
 module.exports = mongoose.model('User', UserSchema);

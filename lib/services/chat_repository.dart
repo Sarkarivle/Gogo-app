@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/chat_message.dart';
 import 'api_service.dart';
 import 'socket_service.dart';
@@ -19,21 +20,31 @@ class ChatRepository {
     required String otherPhone,
     int page = 1,
     int limit = 30,
+    bool forceRefresh = false,
   }) async {
     final String cacheKey = '${myPhone}_$otherPhone';
     
-    // Return cached data for page 1 for instant loading
-    if (page == 1 && _chatCache.containsKey(cacheKey)) {
-      _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit); // Background refresh
+    // Return cached data for page 1 for instant loading unless forced
+    if (page == 1 && _chatCache.containsKey(cacheKey) && !forceRefresh) {
+      // If we have data, still do a background refresh but don't await it
+      _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit);
       return _chatCache[cacheKey]!;
     }
 
     return await _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit, page: page);
   }
 
+  /// Prefetch chat history into memory cache
+  void prefetchHistory(String myPhone, String otherPhone) {
+    final String cacheKey = '${myPhone}_$otherPhone';
+    if (!_chatCache.containsKey(cacheKey)) {
+      _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, 30);
+    }
+  }
+
   Future<List<ChatMessage>> _fetchAndCacheHistory(String myPhone, String otherPhone, String cacheKey, int limit, {int page = 1}) async {
     try {
-      final response = await ApiService.get('/api/admin/chat-history/$myPhone/$otherPhone?page=$page&limit=$limit');
+      final response = await ApiService.get('/api/chat/history/$myPhone/$otherPhone?page=$page&limit=$limit');
       if (response.statusCode == 200) {
         final List<dynamic> history = jsonDecode(response.body);
         final messages = history.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
@@ -97,32 +108,38 @@ class ChatRepository {
 
   Future<String?> uploadMedia(File file, String phone, String type) async {
     try {
-      final fileName = file.path.split('/').last;
-      debugPrint("📤 [CHAT_UPLOAD] Starting upload: $fileName for $phone, type: $type");
+      debugPrint("📤 [CHAT_UPLOAD] Starting upload: ${file.path.split('/').last} for $phone, type: $type");
       
       if (!file.existsSync()) {
         debugPrint("🚨 [CHAT_UPLOAD] File does not exist at: ${file.path}");
         return null;
       }
 
-      var request = http.MultipartRequest('POST', Uri.parse('${ApiService.baseUrl}/api/chat/upload'));
+      final encodedPhone = Uri.encodeComponent(phone);
+      final url = '${ApiService.baseUrl}/api/chat/upload?phone=$encodedPhone';
+      debugPrint("📡 [CHAT_UPLOAD] URL: $url");
+
+      var request = http.MultipartRequest('POST', Uri.parse(url));
       
-      // Add Headers
+      // Get headers from ApiService to ensure consistency
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      
       request.headers['Accept'] = 'application/json';
       request.headers['x-gogo-secret'] = ApiService.mediaToken;
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
       
-      // Add Fields
       request.fields['phone'] = phone;
       request.fields['type'] = type;
       
-      // Add File
       request.files.add(await http.MultipartFile.fromPath(
         'image', 
         file.path,
-        filename: fileName
+        filename: file.path.split('/').last
       ));
       
-      debugPrint("📡 [CHAT_UPLOAD] Sending Request to: ${request.url}");
       var streamedResponse = await request.send().timeout(const Duration(seconds: 40));
       var response = await http.Response.fromStream(streamedResponse);
       
@@ -134,16 +151,14 @@ class ChatRepository {
         if (data['success'] == true && data['imageUrl'] != null) {
           debugPrint("✅ [CHAT_UPLOAD] Success: ${data['imageUrl']}");
           return data['imageUrl'];
-        } else {
-          debugPrint("⚠️ [CHAT_UPLOAD] Server returned success:false or null imageUrl: $data");
         }
       } else {
-        debugPrint("❌ [CHAT_UPLOAD] Server error: ${response.statusCode} - ${response.body}");
+        debugPrint("❌ [CHAT_UPLOAD] Server returned ${response.statusCode}");
       }
       return null;
     } catch (e, stack) {
       debugPrint("🚨 [CHAT_UPLOAD] Exception: $e");
-      debugPrint("🚨 [CHAT_UPLOAD] StackTrace: $stack");
+      debugPrint("🚨 [CHAT_UPLOAD] Stack: $stack");
       return null;
     }
   }
@@ -189,6 +204,14 @@ class ChatRepository {
 
   void markChatSeen(String myPhone, String otherPhone) {
     SocketService().emit('mark_chat_seen', {'myPhone': myPhone, 'otherPhone': otherPhone});
+  }
+
+  void deleteMessage(String messageId, {required String deleteType, required String myPhone, required String otherPhone}) {
+    if (deleteType == 'everyone') {
+      deleteMessageForEveryone(messageId, myPhone, otherPhone);
+    } else {
+      deleteMessageForMe(messageId, myPhone, otherPhone);
+    }
   }
 
   void deleteMessageForEveryone(String messageId, String myPhone, String otherPhone) {

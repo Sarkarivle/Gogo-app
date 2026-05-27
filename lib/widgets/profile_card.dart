@@ -45,11 +45,16 @@ class ProfileCard extends StatelessWidget {
       locName = safeCity;
     }
 
-    String cleanDistance = distance.replaceAll(' away', '');
+    String cleanDistance = distance
+        .replaceAll(' away', '')
+        .replaceAll('Within ', '')
+        .replaceAll('Under ', '');
+
     String locationDisplay = cleanDistance;
+    
     if (locName.isNotEmpty) {
-      if (cleanDistance.isNotEmpty) {
-        locationDisplay = "$locName, $cleanDistance";
+      if (cleanDistance.isNotEmpty && cleanDistance.toLowerCase() != "unknown") {
+        locationDisplay = "$cleanDistance, $locName";
       } else {
         locationDisplay = locName;
       }

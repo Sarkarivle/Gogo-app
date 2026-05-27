@@ -17,13 +17,22 @@ if (fs.existsSync(serviceAccountPath)) {
 exports.sendPushNotification = async (token, title, body, extraData = {}) => {
     if (!admin.apps.length || !token) return;
 
+    const data = {
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+        type: "chat",
+        ...extraData
+    };
+
+    // FCM requires all data values to be strings
+    Object.keys(data).forEach(key => {
+        if (data[key] !== null && data[key] !== undefined) {
+            data[key] = String(data[key]);
+        }
+    });
+
     const message = {
         notification: { title, body },
-        data: {
-            click_action: "FLUTTER_NOTIFICATION_CLICK",
-            type: "chat",
-            ...extraData
-        },
+        data: data,
         token: token
     };
 

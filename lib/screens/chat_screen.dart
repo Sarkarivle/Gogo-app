@@ -74,6 +74,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _blockerPhone;
   Map<String, dynamic>? currentUser;
   Timer? _typingTimer;
+  final ValueNotifier<bool> _isOtherUserTyping = ValueNotifier(false);
+  Timer? _hideTypingTimer;
+  final ValueNotifier<String?> _firstUnreadMessageId = ValueNotifier(null);
+  Timer? _unreadTagTimer;
   
   StreamSubscription? _socketMsgSub;
   StreamSubscription? _socketEventSub;
@@ -93,6 +97,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     
     _scrollController.addListener(_onScroll);
     SocketService().typingUsers.addListener(_handleTypingScroll);
+    SocketService().typingUsers.addListener(_updateOtherUserTyping);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == ui.AppLifecycleState.resumed) {
+      // Re-join room and refresh history to get missed real-time messages
+      final roomId = _getRoomId();
+      SocketService().joinRoom(roomId);
+      _fetchChatHistory(forceRefresh: true);
+      _chatRepository.markChatSeen(currentUser!['phone'], widget.receiverPhone);
+    }
+  }
+
+  void _initializeFirstUnread() {
+    try {
+      final firstUnread = _messages.firstWhere((m) => !m.isMe && !m.isOpened && !m.isDeletedForEveryone);
+      _firstUnreadMessageId.value = firstUnread.id;
+      
+      _unreadTagTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) _firstUnreadMessageId.value = null;
+      });
+    } catch (_) {
+      _firstUnreadMessageId.value = null;
+    }
   }
 
   void _onTextChanged() {
@@ -115,15 +144,29 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     SocketService().typingUsers.removeListener(_handleTypingScroll);
+    SocketService().typingUsers.removeListener(_updateOtherUserTyping);
     SocketService().leaveRoom();
     WidgetsBinding.instance.removeObserver(this);
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
+    _hideTypingTimer?.cancel();
+    _unreadTagTimer?.cancel();
     _socketMsgSub?.cancel();
     _socketEventSub?.cancel();
     super.dispose();
+  }
+
+  void _updateOtherUserTyping() {
+    if (!mounted) return;
+    final bool isTyping = SocketService().typingUsers.value[widget.receiverPhone] ?? false;
+    if (isTyping) {
+      _hideTypingTimer?.cancel();
+      _isOtherUserTyping.value = true;
+    } else {
+      _isOtherUserTyping.value = false;
+    }
   }
 
   @override
@@ -136,14 +179,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     final userData = prefs.getString('user_data');
     if (userData != null) {
-      currentUser = jsonDecode(userData);
+      if (mounted) {
+        setState(() {
+          currentUser = jsonDecode(userData);
+        });
+      }
       final roomId = _getRoomId();
       SocketService().joinRoom(roomId);
+      
+      // History fetch karne se pehle seen mark karein aur thoda wait karein
       _chatRepository.markChatSeen(currentUser!['phone'], widget.receiverPhone);
       NotificationService.clearUnreadForSender(widget.receiverPhone);
     }
-    _checkBlockStatus();
-    _fetchChatHistory();
+    await _checkBlockStatus();
+    await _fetchChatHistory(); // Load from cache (instant)
+    _fetchChatHistory(forceRefresh: true); // Load fresh in background
   }
 
   void _listenToSocket() {
@@ -169,8 +219,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             }
             break;
           case 'message_delivered':
-            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
-            if (idx != -1) _messages[idx].status = MessageStatus.delivered;
+            final idxDelivered = _messages.indexWhere((m) => m.id != null && m.id.toString() == data['messageId']?.toString());
+            if (idxDelivered != -1) {
+              setState(() {
+                _messages[idxDelivered].status = MessageStatus.delivered;
+              });
+            }
+            break;
+          case 'pending_messages_delivered':
+          case 'global_delivery_update':
+            // Update all my outgoing messages to delivered if the other person just came online
+            if (data ['phone'] == widget.receiverPhone || data['receiverPhone'] == widget.receiverPhone) {
+              setState(() {
+                for (var m in _messages) {
+                  if (m.isMe && m.status == MessageStatus.sent) {
+                    m.status = MessageStatus.delivered;
+                  }
+                }
+              });
+            }
             break;
           case 'message_opened':
             final idx = _messages.indexWhere((m) => m.id == data['messageId']);
@@ -187,23 +254,39 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               if (m.isMe) m.status = MessageStatus.seen;
             }
             break;
-          case 'message_deleted_for_everyone':
-            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
-            if (idx != -1) {
-              _messages[idx].isDeletedForEveryone = true;
-              _messages[idx].imageUrl = null;
-              _messages[idx].audioUrl = null;
-            }
-            break;
           case 'message_deleted':
-            _messages.removeWhere((m) => m.id == data['messageId']);
+            final msgId = (data['messageId'] ?? data['_id'])?.toString();
+            final isEveryone = data['isDeletedForEveryone'] ?? false;
+            if (msgId == null) return;
+
+            setState(() {
+              if (isEveryone) {
+                final idx = _messages.indexWhere((m) => m.id != null && m.id.toString() == msgId.toString());
+                if (idx != -1) {
+                  _messages[idx].isDeletedForEveryone = true;
+                  _messages[idx].text = "This message was deleted";
+                  _messages[idx].imageUrl = null;
+                  _messages[idx].audioUrl = null;
+                  _messages[idx].status = MessageStatus.sent;
+                } else {
+                  _fetchChatHistory(); 
+                }
+              } else {
+                _messages.removeWhere((m) => m.id?.toString() == msgId.toString() || (m.localId != null && m.localId.toString() == data['localId']?.toString()));
+              }
+            });
             break;
           case 'message_edited':
-            final idx = _messages.indexWhere((m) => m.id == data['messageId']);
-            if (idx != -1) {
-              _messages[idx].text = data['newText'];
-              _messages[idx].isEdited = true;
-            }
+            final msgIdEdit = (data['messageId'] ?? data['_id'])?.toString();
+            if (msgIdEdit == null) return;
+
+            setState(() {
+              final idx = _messages.indexWhere((m) => m.id != null && m.id.toString() == msgIdEdit.toString());
+              if (idx != -1) {
+                _messages[idx].text = data['newText'];
+                _messages[idx].isEdited = true;
+              }
+            });
             break;
           case 'chat_status_update':
             _checkBlockStatus();
@@ -236,28 +319,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _handleIncomingMessage(dynamic data) {
     if (!mounted) return;
     
-    debugPrint("📥 [CHAT_SOCKET] Incoming message: $data");
     final newMessage = ChatMessage.fromJson(data, currentUser?['phone'] ?? '');
     
     setState(() {
+      // 1. If it's my message, find the optimistic version and update/replace it
       if (newMessage.isMe) {
         final existingIndex = _messages.indexWhere((m) => 
-          (m.localId != null && m.localId == data['localId'])
+          (m.localId != null && m.localId.toString() == data['localId']?.toString()) ||
+          (m.id != null && m.id == newMessage.id)
         );
         
         if (existingIndex != -1) {
-          newMessage.localFilePath = _messages[existingIndex].localFilePath;
-          _messages.removeAt(existingIndex);
-        } else {
-          _messages.removeWhere((m) => 
-            (m.status == MessageStatus.sending && m.type == newMessage.type)
-          );
+          final existing = _messages[existingIndex];
+          newMessage.localFilePath = existing.localFilePath;
+          _messages[existingIndex] = newMessage;
+          return;
         }
       }
       
-      if (!_messages.any((m) => m.id == newMessage.id)) {
+      // 2. Avoid duplicates
+      final dupIndex = _messages.indexWhere((m) => m.id != null && m.id == newMessage.id);
+      if (dupIndex != -1) {
+        _messages[dupIndex] = newMessage;
+      } else {
         _messages.add(newMessage);
+        // Ensure sorting if message arrived out of order (though rare for single chat)
+        _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        
         if (!newMessage.isMe) {
+          _hideTypingTimer?.cancel();
+          _isOtherUserTyping.value = false;
           SocketService().setTyping(widget.receiverPhone, false);
           if (!newMessage.isViewOnce) {
             _chatRepository.markOpened(newMessage.id!, currentUser!['phone'], widget.receiverPhone);
@@ -268,12 +359,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _scrollToBottom();
   }
 
-  Future<void> _fetchChatHistory({bool loadMore = false}) async {
+  Future<void> _fetchChatHistory({bool loadMore = false, bool forceRefresh = false}) async {
     if (currentUser == null || (loadMore && !_hasMoreHistory)) return;
     
     if (loadMore) {
       setState(() => _isLoadingMore = true);
-    } else {
+    } else if (!forceRefresh) {
       setState(() => _isLoadingHistory = true);
     }
 
@@ -283,7 +374,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         myPhone: currentUser!['phone'],
         otherPhone: widget.receiverPhone,
         page: page,
-        limit: 30
+        limit: 30,
+        forceRefresh: forceRefresh,
       );
       
       if (mounted) {
@@ -307,6 +399,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         });
 
         if (!loadMore) {
+          _initializeFirstUnread();
           _scrollToBottom(immediate: true);
         }
       }
@@ -386,6 +479,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
     _scrollToBottom();
 
+    if (_isBlocked) return;
+
+    _typingTimer?.cancel();
+    _typingTimer = null;
+    SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+
     _chatRepository.sendMessage(
       senderPhone: currentUser!['phone'],
       receiverPhone: widget.receiverPhone,
@@ -455,6 +554,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         });
       }
       
+      _typingTimer?.cancel();
+      _typingTimer = null; 
+      SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+
       _chatRepository.sendMessage(
         senderPhone: currentUser!['phone'],
         receiverPhone: widget.receiverPhone,
@@ -551,9 +654,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     valueListenable: SocketService().onlineUsers,
                     builder: (context, onlineMap, _) {
                       final bool isOnline = onlineMap[widget.receiverPhone] ?? false;
+                      String cleanDist = widget.distance
+                          .replaceAll(' away', '')
+                          .replaceAll('Within ', '')
+                          .replaceAll('Under ', '');
                       return Row(
                         children: [
-                          Text(widget.distance.replaceAll(' away', ''), style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                          Text(cleanDist, style: const TextStyle(fontSize: 11, color: Colors.white54)),
                           if (isOnline) ...[
                             const SizedBox(width: 6),
                             const Text('● Online', style: TextStyle(fontSize: 11, color: Colors.greenAccent, fontWeight: FontWeight.w800)),
@@ -580,10 +687,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildMessageList() {
-    return ValueListenableBuilder<Map<String, bool>>(
-      valueListenable: SocketService().typingUsers,
-      builder: (context, typingMap, _) {
-        final bool isTyping = typingMap[widget.receiverPhone] ?? false;
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isOtherUserTyping,
+      builder: (context, isTyping, _) {
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -637,9 +743,44 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildMessageBubble(ChatMessage msg) {
-    if (msg.isDeletedForEveryone) return const SizedBox.shrink();
-    if (msg.type == 'block_event' || msg.type == 'unblock_event' || msg.type == 'reactivation_event') {
+    // 1. New Unread Message Tag Logic
+    return ValueListenableBuilder<String?>(
+      valueListenable: _firstUnreadMessageId,
+      builder: (context, firstUnreadId, child) {
+        bool isFirstUnread = firstUnreadId != null && msg.id == firstUnreadId;
+        return _buildBubbleContentWithTag(msg, isFirstUnread, firstUnreadId);
+      },
+    );
+  }
+
+  Widget _buildBubbleContentWithTag(ChatMessage msg, bool isFirstUnread, String? firstUnreadId) {
+    if (msg.isDeletedForEveryone) {
       return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.block_flipped, color: Colors.white24, size: 14),
+              const SizedBox(width: 8),
+              Text(
+                msg.isMe ? "You deleted this message" : "This message was deleted",
+                style: const TextStyle(color: Colors.white24, fontSize: 12, fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget bubbleContent;
+    if (msg.type == 'block_event' || msg.type == 'unblock_event' || msg.type == 'reactivation_event') {
+      bubbleContent = Center(
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 10),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -653,35 +794,72 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ),
       );
-    }
-    if (msg.type == 'call_log') return _buildCallLogBubble(msg);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
-        onLongPress: () => _showContextMenu(msg),
-        child: Align(
-          alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: Column(
-            crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              if (msg.replyToId != null) _buildReplyPreview(msg),
-              Container(
-                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                padding: EdgeInsets.symmetric(horizontal: msg.isViewOnce && !msg.isOpened ? 12 : 14, vertical: msg.isViewOnce && !msg.isOpened ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(msg.isMe ? 18 : 0), bottomRight: Radius.circular(msg.isMe ? 0 : 18)),
+    } else if (msg.type == 'call_log') {
+      bubbleContent = _buildCallLogBubble(msg);
+    } else {
+      bubbleContent = Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: GestureDetector(
+          onLongPress: () => _showContextMenu(msg),
+          child: Align(
+            alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
+            child: Column(
+              crossAxisAlignment: msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                if (msg.replyToId != null) _buildReplyPreview(msg),
+                Container(
+                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                  padding: EdgeInsets.symmetric(horizontal: msg.isViewOnce && !msg.isOpened ? 12 : 14, vertical: msg.isViewOnce && !msg.isOpened ? 8 : 10),
+                  decoration: BoxDecoration(
+                    color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A),
+                    borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(msg.isMe ? 18 : 0), bottomRight: Radius.circular(msg.isMe ? 0 : 18)),
+                  ),
+                  child: _buildBubbleContent(msg),
                 ),
-                child: _buildBubbleContent(msg),
-              ),
-              const SizedBox(height: 4),
-              Row(mainAxisSize: MainAxisSize.min, children: [Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white38, fontSize: 10)), if (msg.isMe) ...[const SizedBox(width: 4), _buildStatusIcon(msg.status)]])
-            ],
+                const SizedBox(height: 4),
+                Row(mainAxisSize: MainAxisSize.min, children: [Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white38, fontSize: 10)), if (msg.isMe) ...[const SizedBox(width: 4), _buildStatusIcon(msg.status)]])
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    }
+
+    if (isFirstUnread) {
+      return Column(
+        children: [
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: firstUnreadId != null 
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.orangeAccent.withValues(alpha: 0.2), indent: 20, endIndent: 10)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.orangeAccent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3), width: 0.5),
+                        ),
+                        child: const Text(
+                          "New Unread Messages",
+                          style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Colors.orangeAccent.withValues(alpha: 0.2), indent: 10, endIndent: 20)),
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity, height: 0),
+          ),
+          bubbleContent,
+        ],
+      );
+    }
+    return bubbleContent;
   }
 
   Widget _buildBubbleContent(ChatMessage msg) {
@@ -806,13 +984,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         children: [
           if (_isBlocked || _isRecipientDeactivated) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(_isRecipientDeactivated ? "Account Deactivated" : (_blockerPhone == currentUser?['phone'] ? "You blocked this user" : "Chat Blocked"), style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))),
           if (_replyingToMessage != null) _buildReplyInputBar(),
+          if (_editingMessageId != null) _buildEditInputBar(),
           Row(
             children: [
               GestureDetector(onTap: (_isBlocked || _isRecipientDeactivated) ? null : () => _showMediaPopup(), child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orangeAccent.withValues(alpha: 0.1), shape: BoxShape.circle), child: const Icon(Icons.add_rounded, color: Colors.orangeAccent, size: 28))),
               const SizedBox(width: 12),
-              Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16), height: 50, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(25)), child: TextField(controller: _messageController, enabled: !_isBlocked && !_isRecipientDeactivated, onChanged: (v) => _handleTypingStatus(), onSubmitted: (v) => _sendMessage(), style: const TextStyle(color: Colors.white, fontSize: 15), decoration: const InputDecoration(hintText: 'Type message...', hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none)))),
+              Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16), height: 50, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(25)), child: TextField(controller: _messageController, enabled: !_isRecipientDeactivated, onChanged: (v) => _handleTypingStatus(), onSubmitted: (v) => _sendMessage(), style: const TextStyle(color: Colors.white, fontSize: 15), decoration: const InputDecoration(hintText: 'Type message...', hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none)))),
               const SizedBox(width: 12),
-              GestureDetector(onTap: _messageController.text.trim().isEmpty ? _handleMicClick : _sendMessage, child: Container(padding: const EdgeInsets.all(10), decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: Icon(_messageController.text.trim().isEmpty ? Icons.mic_rounded : Icons.send_rounded, color: Colors.black, size: 24))),
+              GestureDetector(onTap: _messageController.text.trim().isEmpty ? ((_isBlocked || _isRecipientDeactivated) ? null : _handleMicClick) : _sendMessage, child: Container(padding: const EdgeInsets.all(10), decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: Icon(_messageController.text.trim().isEmpty ? Icons.mic_rounded : Icons.send_rounded, color: Colors.black, size: 24))),
             ],
           ),
         ],
@@ -822,6 +1001,27 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Widget _buildReplyInputBar() {
     return Container(padding: const EdgeInsets.all(10), margin: const EdgeInsets.only(bottom: 8), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12)), child: Row(children: [Container(width: 4, height: 35, color: Colors.orangeAccent), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(_replyingToMessage!.isMe ? 'You' : widget.name, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)), Text(_replyingToMessage!.text ?? 'Media', style: const TextStyle(color: Colors.white70, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)])), IconButton(icon: const Icon(Icons.close, size: 20, color: Colors.white38), onPressed: () => setState(() => _replyingToMessage = null))]));
+  }
+
+  Widget _buildEditInputBar() {
+    return Container(
+      padding: const EdgeInsets.all(10), 
+      margin: const EdgeInsets.only(bottom: 8), 
+      decoration: BoxDecoration(color: Colors.orangeAccent.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)), 
+      child: Row(
+        children: [
+          const Icon(Icons.edit_rounded, color: Colors.orangeAccent, size: 18), 
+          const SizedBox(width: 12), 
+          const Expanded(child: Text("Editing Message", style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold))), 
+          IconButton(icon: const Icon(Icons.close, size: 20, color: Colors.white38), onPressed: () {
+            setState(() {
+              _editingMessageId = null;
+              _messageController.clear();
+            });
+          })
+        ]
+      )
+    );
   }
 
   void _handleMicClick() async {
@@ -857,9 +1057,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _handleTypingStatus() {
-    SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    if (_isBlocked || _isRecipientDeactivated) return;
+    
+    // Throttle typing emits to once every 2 seconds
+    if (_typingTimer == null || !_typingTimer!.isActive) {
+       SocketService().emit('typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    }
+
     _typingTimer?.cancel();
-    _typingTimer = Timer(const Duration(seconds: 2), () => SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}));
+    _typingTimer = Timer(const Duration(seconds: 2), () {
+       SocketService().emit('stop_typing', {'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone});
+    });
   }
 
   void _initiateCall({required bool isVideo}) async {
@@ -919,7 +1127,80 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _showContextMenu(ChatMessage msg) {
-    showModalBottomSheet(context: context, backgroundColor: Colors.transparent, builder: (_) => Container(decoration: const BoxDecoration(color: Color(0xFF1A1A1A), borderRadius: BorderRadius.vertical(top: Radius.circular(25))), child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [const SizedBox(height: 12), ListTile(leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent), title: const Text('Reply', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); setState(() => _replyingToMessage = msg); }), ListTile(leading: const Icon(Icons.copy_rounded, color: Colors.orangeAccent), title: const Text('Copy', style: TextStyle(color: Colors.white)), onTap: () { Clipboard.setData(ClipboardData(text: msg.text ?? '')); Navigator.pop(context); }), if (msg.isMe && !msg.isDeletedForEveryone) ListTile(leading: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent), title: const Text('Delete for everyone', style: TextStyle(color: Colors.redAccent)), onTap: () { Navigator.pop(context); SocketService().emit('delete_message_for_everyone', {'messageId': msg.id, 'myPhone': currentUser!['phone'], 'otherPhone': widget.receiverPhone}); })]))));
+    if (msg.isDeletedForEveryone) return;
+    
+    showModalBottomSheet(
+      context: context, 
+      backgroundColor: Colors.transparent, 
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1A), 
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25))
+        ), 
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min, 
+            children: [
+              const SizedBox(height: 12), 
+              ListTile(
+                leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent), 
+                title: const Text('Reply', style: TextStyle(color: Colors.white)), 
+                onTap: () { Navigator.pop(context); setState(() => _replyingToMessage = msg); }
+              ), 
+              if (msg.type == 'text') ListTile(
+                leading: const Icon(Icons.copy_rounded, color: Colors.orangeAccent), 
+                title: const Text('Copy', style: TextStyle(color: Colors.white)), 
+                onTap: () { Clipboard.setData(ClipboardData(text: msg.text ?? '')); Navigator.pop(context); }
+              ),
+              if (msg.isMe && msg.type == 'text') ListTile(
+                leading: const Icon(Icons.edit_rounded, color: Colors.orangeAccent),
+                title: const Text('Edit Message', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _editingMessageId = msg.id;
+                    _messageController.text = msg.text ?? '';
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                title: const Text('Delete for Me', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  if (msg.id != null) {
+                    _chatRepository.deleteMessage(msg.id!, deleteType: 'me', myPhone: currentUser!['phone'], otherPhone: widget.receiverPhone);
+                  }
+                  setState(() {
+                    _messages.removeWhere((m) => (m.id != null && m.id == msg.id) || (m.localId != null && m.localId == msg.localId));
+                  });
+                },
+              ),
+              if (msg.isMe) ListTile(
+                leading: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
+                title: const Text('Delete for Everyone', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  if (msg.id != null) {
+                    _chatRepository.deleteMessage(msg.id!, deleteType: 'everyone', myPhone: currentUser!['phone'], otherPhone: widget.receiverPhone);
+                    setState(() {
+                      final idx = _messages.indexWhere((m) => m.id == msg.id);
+                      if (idx != -1) {
+                        _messages[idx].isDeletedForEveryone = true;
+                        _messages[idx].text = "This message was deleted";
+                        _messages[idx].imageUrl = null;
+                        _messages[idx].audioUrl = null;
+                      }
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+            ]
+          )
+        )
+      )
+    );
   }
 
   Widget _buildCallLogBubble(ChatMessage msg) {

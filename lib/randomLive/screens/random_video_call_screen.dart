@@ -4,6 +4,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../services/random_rtc_service.dart';
 import '../services/random_room_service.dart';
 import '../services/random_socket_service.dart';
+import '../../services/chat_repository.dart';
+import '../../services/user_repository.dart';
 
 class RandomVideoCallScreen extends StatefulWidget {
   const RandomVideoCallScreen({super.key});
@@ -19,6 +21,7 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
   bool _isVideoOff = false;
   bool _isInitialized = false;
   bool _isProcessingAction = false; // To prevent double taps
+  bool _hiSent = false;
 
   @override
   void initState() {
@@ -387,8 +390,15 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
             // Safe Community Info
             _buildInfoChip(),
             const SizedBox(height: 24),
-            // Next Button
-            _buildNextButton(),
+            // Next & Hi Buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildHiButton(),
+                const SizedBox(width: 12),
+                _buildNextButton(),
+              ],
+            ),
             const SizedBox(height: 32),
             // Compact Controls
             Row(
@@ -466,27 +476,78 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
         RandomRoomService().nextPartner(context);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0)]),
+          gradient: const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF9800)]),
           borderRadius: BorderRadius.circular(30),
           boxShadow: [
-            BoxShadow(color: const Color(0xFF8E2DE2).withValues(alpha: 0.4), blurRadius: 15, offset: const Offset(0, 5)),
+            BoxShadow(color: Colors.orangeAccent.withValues(alpha: 0.3), blurRadius: 15, offset: const Offset(0, 5)),
           ],
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.double_arrow_rounded, color: Colors.white, size: 22),
-            SizedBox(width: 10),
+            Icon(Icons.double_arrow_rounded, color: Colors.black, size: 20),
+            SizedBox(width: 8),
             Text(
-              "NEXT PARTNER",
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 0.5),
+              "NEXT",
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 0.5),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildHiButton() {
+    return GestureDetector(
+      onTap: _hiSent ? null : _sendHiToPartner,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        decoration: BoxDecoration(
+          color: _hiSent ? Colors.green.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: _hiSent ? Colors.greenAccent.withValues(alpha: 0.5) : Colors.white24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_hiSent ? Icons.check_circle_rounded : Icons.waving_hand_rounded, color: _hiSent ? Colors.greenAccent : Colors.orangeAccent, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              _hiSent ? "SENT" : "SAY HI",
+              style: TextStyle(color: _hiSent ? Colors.greenAccent : Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _sendHiToPartner() async {
+    final partnerId = RandomRoomService().partnerId;
+    if (partnerId == null || _hiSent) return;
+
+    final currentUser = await UserRepository().getCurrentUser();
+    if (currentUser == null) return;
+
+    ChatRepository().sendMessage(
+      senderPhone: currentUser['phone'],
+      receiverPhone: partnerId,
+      senderName: currentUser['name'] ?? 'User',
+      message: "Hi",
+    );
+
+    if (mounted) {
+      setState(() => _hiSent = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Hi sent to partner! You can find them in Inbox later."),
+          backgroundColor: Colors.orangeAccent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Widget _buildCompactBtn({required IconData icon, bool active = false, bool isEnd = false, required VoidCallback onTap}) {

@@ -2,79 +2,175 @@ import 'package:flutter/material.dart';
 import '../../services/permission_manager.dart';
 import '../services/random_room_service.dart';
 import 'random_searching_screen.dart';
+import '../widgets/community_guidelines_modal.dart';
 
 class RandomLiveIntroScreen extends StatelessWidget {
   const RandomLiveIntroScreen({super.key});
 
+  void _showGuidelines(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => CommunityGuidelinesModal(
+        onAccept: () => _handleStartMatching(context),
+      ),
+    );
+  }
+
+  void _handleStartMatching(BuildContext context) async {
+    final bool hasPermissions = await PermissionManager().checkAndRequestCallPermissions(
+      context, 
+      isVideo: true
+    );
+
+    if (hasPermissions && context.mounted) {
+      RandomRoomService().init();
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const RandomSearchingScreen()),
+      );
+      RandomRoomService().startSearch(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF1a2a6c), Color(0xFFb21f1f), Color(0xFFfdbb2d)],
+      backgroundColor: const Color(0xFF0F0F0F),
+      body: Stack(
+        children: [
+          // Background Aesthetic
+          Positioned(
+            top: -100,
+            right: -50,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.orangeAccent.withValues(alpha: 0.05),
+              ),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.bolt, size: 100, color: Colors.yellowAccent),
-            const SizedBox(height: 20),
-            const Text(
-              "Random Live Video",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w600,
+          
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Spacer(),
+                  
+                  // Central Icon
+                  Container(
+                    padding: const EdgeInsets.all(30),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.2), width: 2),
+                    ),
+                    child: const Icon(Icons.bolt_rounded, size: 80, color: Colors.orangeAccent),
+                  ),
+                  
+                  const SizedBox(height: 40),
+                  
+                  const Text(
+                    "Live Video Chat",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -1,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  const Text(
+                    "Connect with real people instantly across the globe. 100% private & secure.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 16,
+                      height: 1.5,
+                    ),
+                  ),
+                  
+                  const Spacer(),
+                  
+                  // Start Button
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Container(
+                      height: 54,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFC107), Color(0xFFFF9800)],
+                        ),
+                        borderRadius: BorderRadius.circular(27),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.orangeAccent.withValues(alpha: 0.2),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          )
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(27),
+                          onTap: () => _showGuidelines(context),
+                          child: const Center(
+                            child: Text(
+                              "START MATCHING",
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 30),
+                  
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.security_rounded, color: Colors.greenAccent, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Safe & Encrypted Connection",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 40),
+                ],
               ),
             ),
-            const SizedBox(height: 10),
-            const Text(
-              "Connect with people instantly!",
-              style: TextStyle(color: Colors.white70, fontSize: 18, fontFamily: 'Inter'),
+          ),
+          
+          Positioned(
+            top: 50,
+            left: 20,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
+              onPressed: () => Navigator.pop(context),
             ),
-            const SizedBox(height: 60),
-            ElevatedButton(
-              onPressed: () async {
-                // 1. Check Camera & Mic Permissions first
-                final bool hasPermissions = await PermissionManager().checkAndRequestCallPermissions(
-                  context, 
-                  isVideo: true
-                );
-
-                if (hasPermissions && context.mounted) {
-                  // 2. If granted, proceed to matching
-                  RandomRoomService().init();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RandomSearchingScreen()),
-                  );
-                  RandomRoomService().startSearch(context);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.redAccent,
-                padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                elevation: 10,
-              ),
-              child: const Text(
-                "START MATCHING",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Inter'),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              "100% Secure & Realtime",
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12, fontFamily: 'Inter'),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
