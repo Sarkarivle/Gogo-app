@@ -2,7 +2,25 @@ async function loadMonetization() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Financial Operations & Monetization";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Loading State
+    mainContent.innerHTML = `
+        <div class="space-y-10 animate-fade pb-20">
+            <div class="grid grid-cols-4 gap-6">
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+            </div>
+            <div class="grid grid-cols-4 gap-6">
+                ${Array(4).fill('<div class="glass p-6 rounded-3xl skeleton h-20"></div>').join('')}
+            </div>
+            <div class="grid grid-cols-2 gap-10">
+                <div class="skeleton h-[30rem] rounded-[3rem]"></div>
+                <div class="skeleton h-[30rem] rounded-[3rem]"></div>
+            </div>
+        </div>
+    `;
 
     try {
         const [configData, gpConfigData, statsData] = await Promise.all([
@@ -145,7 +163,7 @@ async function loadMonetization() {
                         </div>
                     </div>
                     <div id="historyTable">
-                        ${UI.loader()}
+                        ${UI.skeletonTable(5)}
                     </div>
                 </div>
             </div>

@@ -2,7 +2,17 @@ async function loadTrialOffer() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Trial Offer Management";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Offer View
+    mainContent.innerHTML = `
+        <div class="space-y-10 animate-fade max-w-4xl mx-auto pb-20">
+            <div class="grid grid-cols-2 gap-6">
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+            </div>
+            <div class="skeleton h-[40rem] rounded-[3rem]"></div>
+        </div>
+    `;
 
     try {
         const data = await API.getConfig('trial_offer_settings');

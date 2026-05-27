@@ -2,7 +2,7 @@ async function loadVerifications() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Identity Verification Center";
-    mainContent.innerHTML = UI.loader();
+    mainContent.innerHTML = UI.skeletonGrid(6);
 
     try {
         const reqs = await API.getVerificationRequests();

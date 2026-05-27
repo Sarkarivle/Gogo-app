@@ -1,5 +1,4 @@
 let socket;
-const mainContent = document.getElementById('mainContent');
 
 async function init() {
     console.log("🚀 System Initializing...");
@@ -10,39 +9,43 @@ async function init() {
 
     if (!token || token === 'null' || token === 'undefined') {
         console.log("🔒 No valid token found. Showing login.");
-        // UI already hidden by default in HTML
-        loginOverlay.classList.remove('hidden');
-        loginOverlay.style.display = 'flex';
+        if (loginOverlay) {
+            loginOverlay.classList.remove('hidden');
+            loginOverlay.style.display = 'flex';
+        }
 
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
-            const btn = document.getElementById('loginBtn');
-            const err = document.getElementById('loginError');
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const user = document.getElementById('username').value;
+                const pass = document.getElementById('password').value;
+                const btn = document.getElementById('loginBtn');
+                const err = document.getElementById('loginError');
 
-            btn.disabled = true;
-            btn.innerText = 'AUTHENTICATING...';
-            err.classList.add('hidden');
+                btn.disabled = true;
+                btn.innerText = 'AUTHENTICATING...';
+                err.classList.add('hidden');
 
-            try {
-                const res = await API.login(user, pass);
-                if (res.success) {
-                    console.log("✅ Authenticated Successfully");
-                    window.location.reload();
-                } else {
-                    err.innerText = res.message || 'Authentication failed';
+                try {
+                    const res = await API.login(user, pass);
+                    if (res.success) {
+                        console.log("✅ Authenticated Successfully");
+                        window.location.reload();
+                    } else {
+                        err.innerText = res.message || 'Authentication failed';
+                        err.classList.remove('hidden');
+                    }
+                } catch (e) {
+                    console.error("Login Error:", e);
+                    err.innerText = "Server connection failed";
                     err.classList.remove('hidden');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = 'AUTHENTICATE';
                 }
-            } catch (e) {
-                console.error("Login Error:", e);
-                err.innerText = "Server connection failed";
-                err.classList.remove('hidden');
-            } finally {
-                btn.disabled = false;
-                btn.innerText = 'AUTHENTICATE';
-            }
-        });
+            });
+        }
         return;
     }
 
@@ -61,8 +64,10 @@ async function init() {
         mainWrapper.classList.remove('hidden');
         mainWrapper.classList.add('flex');
     }
-    loginOverlay.classList.add('hidden');
-    loginOverlay.style.display = 'none';
+    if (loginOverlay) {
+        loginOverlay.classList.add('hidden');
+        loginOverlay.style.display = 'none';
+    }
 
     // Update Profile UI
     const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}');
@@ -76,9 +81,11 @@ async function init() {
         if(avatarEl) avatarEl.innerText = adminUser.username[0].toUpperCase();
     }
 
-    // Initial module
-    const lastMod = localStorage.getItem('activeModule') || 'dashboard';
-    await changeModule(lastMod);
+    // Initial module - Wrapped in timeout to ensure DOM is fully ready
+    setTimeout(async () => {
+        const lastMod = localStorage.getItem('activeModule') || 'dashboard';
+        await changeModule(lastMod);
+    }, 50);
 
     // Listen for realtime production metrics
     socket.on('admin_metrics_update', (data) => {

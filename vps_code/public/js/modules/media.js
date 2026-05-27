@@ -8,7 +8,7 @@ async function loadMedia(filter = 'all', reportedOnly = false) {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Media Governance & Privacy Vault";
-    mainContent.innerHTML = UI.loader();
+    mainContent.innerHTML = UI.skeletonMediaGrid();
 
     try {
         const data = await API.getAllMedia(filter, reportedOnly);

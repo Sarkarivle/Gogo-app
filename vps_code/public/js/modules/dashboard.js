@@ -2,7 +2,22 @@ async function loadDashboard() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Command Dashboard";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Loading State
+    mainContent.innerHTML = `
+        <div class="space-y-10">
+            <div class="grid grid-cols-4 gap-6">
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+            </div>
+            <div class="grid grid-cols-3 gap-6">
+                <div class="glass p-8 rounded-[2.5rem] col-span-2 h-80 skeleton"></div>
+                <div class="glass p-8 rounded-[2.5rem] h-80 skeleton"></div>
+            </div>
+        </div>
+    `;
 
     try {
         const res = await API.getStats();

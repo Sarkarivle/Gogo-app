@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shimmer/shimmer.dart';
 import '../services/socket_service.dart';
 import '../services/profile_repository.dart';
 import '../services/user_repository.dart';
@@ -493,9 +494,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   itemCount: _profiles.length + (_isLoadingMore ? 2 : 0),
                   itemBuilder: (context, i) {
                     if (i >= _profiles.length) {
-                      return Container(
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(20)),
-                        child: const Center(child: CircularProgressIndicator(color: Colors.orangeAccent, strokeWidth: 2)),
+                      return Shimmer.fromColors(
+                        baseColor: Colors.white.withValues(alpha: 0.05),
+                        highlightColor: Colors.white.withValues(alpha: 0.1),
+                        child: Container(
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                        ),
                       );
                     }
 
@@ -523,8 +527,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   },
                 ),
           if (_isLoadingProfiles)
-            const Center(child: CircularProgressIndicator(color: Colors.orangeAccent)),
+            _buildSkeletonGrid(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSkeletonGrid() {
+    return Shimmer.fromColors(
+      baseColor: Colors.white.withValues(alpha: 0.05),
+      highlightColor: Colors.white.withValues(alpha: 0.1),
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.68,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+        ),
+        itemCount: 6,
+        itemBuilder: (_, _) => Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
       ),
     );
   }

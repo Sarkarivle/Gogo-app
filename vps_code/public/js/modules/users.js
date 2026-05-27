@@ -13,7 +13,7 @@ async function loadUsers(search = '') {
                     <button onclick="loadUsers()" class="glass p-4 rounded-2xl hover:bg-white/5 transition"><i class="fas fa-sync-alt"></i></button>
                 </div>
             </div>
-            <div id="userTableContainer">${UI.loader()}</div>
+            <div id="userTableContainer">${UI.skeletonTable(10)}</div>
         </div>
     `;
 
@@ -215,7 +215,7 @@ async function sendDirectNotify(phone) {
 }
 
 async function loadUserSecurity(phone) {
-    UI.modal.setDynamicContent(UI.loader());
+    UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const data = await API.getUserFull(phone);
         const u = data.user;
@@ -287,7 +287,7 @@ async function loadUserSecurity(phone) {
 }
 
 async function loadUserFinance(phone) {
-    UI.modal.setDynamicContent(UI.loader());
+    UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const data = await API.getUserFull(phone);
         const sub = data.subscription;
@@ -343,7 +343,7 @@ async function loadUserFinance(phone) {
 }
 
 async function loadUserMedia(phone) {
-    UI.modal.setDynamicContent(UI.loader());
+    UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const data = await API.getUserFull(phone);
         const u = data.user;
@@ -392,7 +392,7 @@ async function confirmUserAction(phone, type) {
 }
 
 async function loadUserInbox(phone) {
-    UI.modal.setDynamicContent(UI.loader());
+    UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const chats = await API.getUserInboxes(phone);
         const content = `
@@ -416,7 +416,7 @@ async function loadUserInbox(phone) {
 }
 
 async function loadFullChat(p1, p2) {
-    UI.modal.setDynamicContent(UI.loader());
+    UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const logs = await API.getChatHistory(p1, p2);
         const content = `

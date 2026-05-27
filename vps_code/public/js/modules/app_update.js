@@ -15,7 +15,27 @@ const AppUpdateModule = {
     },
 
     async init() {
-        document.getElementById('mainContent').innerHTML = UI.loader();
+        document.getElementById('mainContent').innerHTML = `
+            <div class="space-y-8">
+                <div class="flex justify-between items-end">
+                    <div class="space-y-2">
+                        <div class="skeleton h-8 w-64"></div>
+                        <div class="skeleton h-4 w-96"></div>
+                    </div>
+                    <div class="skeleton h-14 w-40 rounded-2xl"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-8">
+                    <div class="col-span-2 space-y-8">
+                        <div class="skeleton h-80 w-full rounded-[2.5rem]"></div>
+                        <div class="skeleton h-64 w-full rounded-[2.5rem]"></div>
+                    </div>
+                    <div class="space-y-8">
+                        <div class="skeleton h-96 w-full rounded-[2.5rem]"></div>
+                        <div class="skeleton h-64 w-full rounded-[2.5rem]"></div>
+                    </div>
+                </div>
+            </div>
+        `;
         await this.fetchConfig();
         this.render();
     },

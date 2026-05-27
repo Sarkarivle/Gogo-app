@@ -97,7 +97,18 @@ exports.getUserFullProfile = async (req, res) => {
 exports.updateUserStatus = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const user = await User.findOneAndUpdate(phoneQuery(phone), req.body, { new: true });
+        // Security: Whitelist allowed fields to prevent accidental or malicious escalation
+        const allowedUpdates = [
+            'accountStatus', 'isBanned', 'isPremium', 'premiumExpiry',
+            'isVerified', 'isDeactivated', 'name', 'bio', 'gender'
+        ];
+
+        const filteredUpdate = {};
+        allowedUpdates.forEach(key => {
+            if (req.body[key] !== undefined) filteredUpdate[key] = req.body[key];
+        });
+
+        const user = await User.findOneAndUpdate(phoneQuery(phone), filteredUpdate, { new: true });
         if (!user) return res.status(404).json({ success: false });
         const io = req.app.get('socketio');
         if (io) {

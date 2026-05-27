@@ -6,7 +6,8 @@ const { normalize } = require('../utils/phoneUtils');
 const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 exports.findPartner = async (io, socket, data) => {
-    const userId = normalize(data.userId || socket.userPhone);
+    // Security: Strictly use socket.userPhone to prevent identity spoofing
+    const userId = socket.userPhone;
     if (!userId) return;
 
     try {
@@ -92,9 +93,9 @@ exports.findPartner = async (io, socket, data) => {
     }
 };
 
-exports.leaveRoom = async (io, socket, userId) => {
+exports.leaveRoom = async (io, socket) => {
     try {
-        const normalizedId = normalize(userId || socket.userPhone);
+        const normalizedId = socket.userPhone;
         if (!normalizedId) return;
 
         const room = await RandomRoom.findOne({
@@ -123,16 +124,21 @@ exports.leaveRoom = async (io, socket, userId) => {
 };
 
 exports.handleNextPartner = async (io, socket, data) => {
-    const userId = normalize(data.userId || socket.userPhone);
-    await exports.leaveRoom(io, socket, userId);
+    await exports.leaveRoom(io, socket);
     socket.emit('random_searching_again');
 };
 
 exports.handleSignaling = async (io, socket, data, type) => {
-    const { roomId, targetId, ...payload } = data;
+    const { roomId, ...payload } = data;
     if (!roomId) return;
 
     try {
+        // Security: Check if the socket is actually in the room it's trying to signal to
+        if (!socket.rooms.has(roomId)) {
+            console.warn(`Unauthorized signaling attempt by ${socket.userPhone} to room ${roomId}`);
+            return;
+        }
+
         if (type === 'offer') {
             await RandomRoom.updateOne({ roomId }, { status: 'connected' });
         }
@@ -143,11 +149,14 @@ exports.handleSignaling = async (io, socket, data, type) => {
 };
 
 exports.handleBlock = async (io, socket, data) => {
-    const { roomId, targetId } = data;
+    const { roomId } = data;
     if (!roomId) return;
 
     try {
-        console.log(`[RandomMatch] User blocked in room ${roomId}. Target: ${targetId}`);
+        // Security: Check if the socket is in the room
+        if (!socket.rooms.has(roomId)) return;
+
+        console.log(`[RandomMatch] User blocked in room ${roomId}.`);
 
         socket.to(roomId).emit('random_partner_blocked', {
             message: "You have been blocked by the partner."

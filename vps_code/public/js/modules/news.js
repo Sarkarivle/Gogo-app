@@ -8,7 +8,20 @@ const NewsModule = {
     news: [],
 
     async init() {
-        document.getElementById('mainContent').innerHTML = UI.loader();
+        document.getElementById('mainContent').innerHTML = `
+            <div class="animate-fade space-y-8">
+                <div class="flex justify-between items-end">
+                    <div class="space-y-2">
+                        <div class="skeleton h-8 w-64"></div>
+                        <div class="skeleton h-4 w-96"></div>
+                    </div>
+                    <div class="skeleton h-14 w-40 rounded-2xl"></div>
+                </div>
+                <div class="space-y-6">
+                    ${Array(5).fill('<div class="skeleton h-32 w-full rounded-3xl"></div>').join('')}
+                </div>
+            </div>
+        `;
         await this.fetchNews();
         this.render();
     },

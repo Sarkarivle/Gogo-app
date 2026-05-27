@@ -79,6 +79,15 @@ app.use('/api/chat', require('./src/routes/chatRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
 app.use('/api/payment', require('./src/routes/paymentRoutes'));
 
+// --- GLOBAL ERROR HANDLING (PREVENTS CRASHES) ---
+process.on('uncaughtException', (err) => {
+    console.error('❌ FATAL: Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ FATAL: Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const phoneToSockets = new Map();
 
 io.on('connection', (socket) => {
@@ -96,7 +105,8 @@ io.on('connection', (socket) => {
     }
 
     socket.on('set_online', (phone) => {
-        const normalized = normalize(phone) || myPhone;
+        // Security: Use myPhone from socket to prevent spoofing other users
+        const normalized = myPhone;
         if (!normalized) return;
 
         User.findOneAndUpdate({ phone: normalized }, { isOnline: true, lastSeen: new Date() }).then(() => {
@@ -109,8 +119,8 @@ io.on('connection', (socket) => {
                         senders.forEach(s => io.to(`user_${normalize(s)}`).emit('global_delivery_update', { receiverPhone: normalized }));
                     });
                 }
-            });
-        }).catch(() => {});
+            }).catch(e => console.error("set_online updateMany error:", e));
+        }).catch(e => console.error("set_online findOneAndUpdate error:", e));
     });
 
     socket.on('typing', (data) => {
@@ -125,50 +135,51 @@ io.on('connection', (socket) => {
 
     // --- CALLING SYSTEM ---
     socket.on('initiate_call', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('incoming_call', { callerPhone: myPhone, callerName: data.callerName, isVideo: data.isVideo });
+        const other = normalizePhone(data.targetPhone || data.receiverPhone);
+        if (other) io.to(`user_${other}`).emit('incoming_call', { callerPhone: myPhone, callerName: data.callerName, isVideo: data.isVideo });
     });
 
     socket.on('call_ringing', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('call_ringing');
+        const other = normalizePhone(data.targetPhone || data.callerPhone);
+        if (other) io.to(`user_${other}`).emit('call_ringing', { receiverPhone: myPhone });
     });
 
     socket.on('accept_call', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('call_accepted');
+        const other = normalizePhone(data.targetPhone || data.callerPhone);
+        if (other) io.to(`user_${other}`).emit('call_accepted', { receiverPhone: myPhone });
     });
 
     socket.on('reject_call', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('call_rejected');
+        const other = normalizePhone(data.targetPhone || data.callerPhone);
+        if (other) io.to(`user_${other}`).emit('call_rejected', { receiverPhone: myPhone, reason: data.reason });
     });
 
     socket.on('end_call', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('call_ended');
+        const other = normalizePhone(data.targetPhone || data.otherPhone);
+        if (other) io.to(`user_${other}`).emit('call_ended', { by: myPhone });
     });
 
     socket.on('sdp_offer', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('sdp_offer', { offer: data.offer });
+        const other = normalizePhone(data.targetPhone || data.otherPhone);
+        if (other) io.to(`user_${other}`).emit('sdp_offer', { offer: data.offer, sdp: data.sdp, from: myPhone });
     });
 
     socket.on('sdp_answer', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('sdp_answer', { answer: data.answer });
+        const other = normalizePhone(data.targetPhone || data.otherPhone);
+        if (other) io.to(`user_${other}`).emit('sdp_answer', { answer: data.answer, sdp: data.sdp, from: myPhone });
     });
 
     socket.on('ice_candidate', (data) => {
-        const other = normalizePhone(data.targetPhone);
-        io.to(`user_${other}`).emit('ice_candidate', { candidate: data.candidate });
+        const other = normalizePhone(data.targetPhone || data.otherPhone);
+        if (other) io.to(`user_${other}`).emit('ice_candidate', { candidate: data.candidate, from: myPhone });
     });
 
     socket.on('mark_opened', async (data) => {
         try {
             const { messageId, otherPhone } = data;
             const msg = await Message.findById(messageId);
-            if (msg) {
+            // Security: Ensure only the receiver can mark a message as opened
+            if (msg && normalizePhone(msg.receiverPhone) === myPhone) {
                 msg.isOpened = true;
                 msg.isDelivered = true;
                 if (msg.isViewOnce) {
@@ -179,15 +190,23 @@ io.on('connection', (socket) => {
                 const roomId = getRoomId(myPhone, otherPhone);
                 io.to(roomId).emit('message_opened', { messageId, roomId });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("mark_opened error:", e);
+        }
     });
 
     socket.on('delete_message', async (data) => {
         try {
             const { messageId, otherPhone } = data;
-            await Message.findByIdAndUpdate(messageId, { $addToSet: { deletedBy: myPhone } });
-            io.to(`user_${myPhone}`).emit('message_deleted', { messageId, roomId: getRoomId(myPhone, otherPhone), isDeletedForEveryone: false });
-        } catch (e) {}
+            const msg = await Message.findById(messageId);
+            // Security: Ensure the user is part of the conversation before deleting
+            if (msg && (normalizePhone(msg.senderPhone) === myPhone || normalizePhone(msg.receiverPhone) === myPhone)) {
+                await Message.findByIdAndUpdate(messageId, { $addToSet: { deletedBy: myPhone } });
+                io.to(`user_${myPhone}`).emit('message_deleted', { messageId, roomId: getRoomId(myPhone, otherPhone), isDeletedForEveryone: false });
+            }
+        } catch (e) {
+            console.error("delete_message error:", e);
+        }
     });
 
     socket.on('delete_message_for_everyone', async (data) => {
@@ -204,7 +223,9 @@ io.on('connection', (socket) => {
                 updateConversationSummary(msg);
                 io.to(roomId).emit('message_deleted', { messageId, roomId, isDeletedForEveryone: true });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("delete_message_for_everyone error:", e);
+        }
     });
 
     socket.on('edit_message', async (data) => {
@@ -220,7 +241,9 @@ io.on('connection', (socket) => {
                 updateConversationSummary(msg);
                 io.to(roomId).emit('message_edited', { messageId, roomId, newText });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("edit_message error:", e);
+        }
     });
 
     socket.on('block_user', async (data) => {
@@ -239,7 +262,9 @@ io.on('connection', (socket) => {
 
             io.to(roomId).emit('moderation_state_updated', { roomId, isBlocked: true, blockerPhone: b1 });
             io.to(roomId).emit('receive_message', eventMsg);
-        } catch (e) {}
+        } catch (e) {
+            console.error("block_user error:", e);
+        }
     });
 
     socket.on('unblock_user', async (data) => {
@@ -258,7 +283,9 @@ io.on('connection', (socket) => {
 
             io.to(roomId).emit('moderation_state_updated', { roomId, isBlocked: false, blockerPhone: null });
             io.to(roomId).emit('receive_message', eventMsg);
-        } catch (e) {}
+        } catch (e) {
+            console.error("unblock_user error:", e);
+        }
     });
 
     socket.on('send_message', async (data, callback) => {
@@ -303,12 +330,21 @@ io.on('connection', (socket) => {
             await resetUnreadCount(myPhone, other);
             socket.to(roomId).emit('chat_seen_update', { by: myPhone });
             io.to(`user_${other}`).emit('unread_update', { phone: myPhone, unreadCount: 0 });
-        } catch (e) {}
+        } catch (e) {
+            console.error("mark_chat_seen error:", e);
+        }
     });
 
     socket.on('join_room', (roomId) => {
         if (!roomId) return;
         const parts = roomId.split('_').map(p => normalizePhone(p));
+
+        // Security: Only allow joining rooms that the user is actually a part of
+        if (!parts.includes(myPhone)) {
+            console.warn(`Unauthorized room join attempt by ${myPhone} to ${roomId}`);
+            return;
+        }
+
         const cleanRoomId = parts.sort().join('_');
         socket.join(cleanRoomId);
 
@@ -319,6 +355,15 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- RANDOM MATCHING SYSTEM ---
+    socket.on('find_partner', (data) => randomMatchController.findPartner(io, socket, data));
+    socket.on('leave_random_room', () => randomMatchController.leaveRoom(io, socket));
+    socket.on('next_partner', (data) => randomMatchController.handleNextPartner(io, socket, data));
+    socket.on('random_offer', (data) => randomMatchController.handleSignaling(io, socket, data, 'offer'));
+    socket.on('random_answer', (data) => randomMatchController.handleSignaling(io, socket, data, 'answer'));
+    socket.on('random_candidate', (data) => randomMatchController.handleSignaling(io, socket, data, 'candidate'));
+    socket.on('random_block', (data) => randomMatchController.handleBlock(io, socket, data));
+
     socket.on('disconnect', () => {
         if (myPhone) {
             const sockets = phoneToSockets.get(myPhone);
@@ -328,7 +373,7 @@ io.on('connection', (socket) => {
                     phoneToSockets.delete(myPhone);
                     User.findOneAndUpdate({ phone: myPhone }, { isOnline: false }).then(() => {
                         io.emit('user_status_change', { phone: myPhone, isOnline: false });
-                    }).catch(() => {});
+                    }).catch(e => console.error("Disconnect status update error:", e));
                 }
             }
         }

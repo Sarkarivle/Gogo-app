@@ -2,7 +2,14 @@ async function loadPolicies() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Policy Infrastructure";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Policy View
+    mainContent.innerHTML = `
+        <div class="max-w-4xl glass p-10 rounded-[3rem] space-y-8 animate-fade mx-auto">
+            <div class="skeleton h-8 w-64 mb-6"></div>
+            ${Array(5).fill('<div class="space-y-2"><div class="skeleton h-3 w-32"></div><div class="skeleton h-14 w-full rounded-2xl"></div></div>').join('')}
+        </div>
+    `;
 
     try {
         const data = await API.getPolicies();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/news_article.dart';
@@ -106,9 +107,17 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
                       itemCount: _news.length + (_hasMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == _news.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+                          return Shimmer.fromColors(
+                            baseColor: Colors.white.withValues(alpha: 0.05),
+                            highlightColor: Colors.white.withValues(alpha: 0.1),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 20),
+                              height: 200,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
                           );
                         }
                         return _buildNewsCard(_news[index]);
@@ -234,15 +243,19 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
   }
 
   Widget _buildShimmerEffect() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: 5,
-      itemBuilder: (context, index) => Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        height: 300,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(20),
+    return Shimmer.fromColors(
+      baseColor: Colors.white.withValues(alpha: 0.05),
+      highlightColor: Colors.white.withValues(alpha: 0.1),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: 5,
+        itemBuilder: (context, index) => Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          height: 300,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
       ),
     );

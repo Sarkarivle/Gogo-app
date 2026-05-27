@@ -2,7 +2,7 @@ async function loadFeatureFlags() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "System Feature Toggles";
-    mainContent.innerHTML = UI.loader();
+    mainContent.innerHTML = UI.skeletonTable(6);
 
     try {
         const flags = await API.getFeatureFlags();

@@ -56,7 +56,10 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
 exports.submitVerification = async (req, res) => {
     try {
-        const { phone, selfieUrl } = req.body;
+        let phone = req.body.phone;
+        // Security: Use phone from token for users
+        if (req.user && !req.user.role) phone = req.user.phone;
+        const { selfieUrl } = req.body;
         const normalizedPhone = normalize(phone);
         await VerificationRequest.findOneAndUpdate(
             { userPhone: normalizedPhone },
@@ -156,7 +159,10 @@ exports.login = async (req, res) => {
 
 exports.reportUser = async (req, res) => {
     try {
-        const { reporterPhone, reportedPhone, category, description, reportType } = req.body;
+        let { reporterPhone, reportedPhone, category, description, reportType } = req.body;
+        // Security: Ensure reporter is the logged-in user
+        if (req.user && !req.user.role) reporterPhone = req.user.phone;
+
         const report = new Report({
             reporterPhone: normalize(reporterPhone),
             reportedPhone: normalize(reportedPhone),
@@ -279,6 +285,12 @@ exports.updateProfile = async (req, res) => {
 
 exports.updatePremium = async (req, res) => {
     try {
+        // Security: This route should ONLY be callable by admins.
+        // Regular users must go through PaymentController / Webhooks.
+        if (req.user && !req.user.role) {
+            return res.status(403).json({ success: false, message: "Unauthorized. Use payment gateway." });
+        }
+
         const { phone, isPremium } = req.body;
         const normalizedPhone = normalize(phone);
         const updatedUser = await User.findOneAndUpdate({ phone: normalizedPhone }, { isPremium, lastSeen: new Date() }, { new: true });

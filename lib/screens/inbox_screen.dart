@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shimmer/shimmer.dart';
 import '../services/socket_service.dart';
 import '../services/chat_repository.dart';
 import '../services/premium_service.dart';
@@ -261,7 +262,7 @@ class InboxScreenState extends State<InboxScreen> {
               _buildFavouritesSection(),
               const Divider(color: Colors.white10, height: 1),
               if (_isLoading && _chats.isEmpty)
-                const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)))
+                _buildSkeletonList()
               else if (filteredChats.isEmpty)
                 _buildEmptyState()
               else
@@ -272,12 +273,44 @@ class InboxScreenState extends State<InboxScreen> {
                   separatorBuilder: (c, i) => const Divider(color: Colors.white10, height: 1),
                   itemBuilder: (context, index) {
                     if (index == filteredChats.length) {
-                      return const Padding(padding: EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)));
+                      return Shimmer.fromColors(
+                        baseColor: Colors.white.withValues(alpha: 0.05),
+                        highlightColor: Colors.white.withValues(alpha: 0.1),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          leading: const CircleAvatar(radius: 28, backgroundColor: Colors.white),
+                          title: Container(height: 15, width: 100, color: Colors.white),
+                        ),
+                      );
                     }
                     final chat = filteredChats[index];
                     return _buildChatItem(chat, key: ValueKey(chat['phone']));
                   },
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonList() {
+    return Shimmer.fromColors(
+      baseColor: Colors.white.withValues(alpha: 0.05),
+      highlightColor: Colors.white.withValues(alpha: 0.1),
+      child: ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: 8,
+        itemBuilder: (_, _) => ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: const CircleAvatar(radius: 28, backgroundColor: Colors.white),
+          title: Container(height: 15, width: 100, color: Colors.white, margin: const EdgeInsets.only(bottom: 8)),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(height: 10, width: 150, color: Colors.white, margin: const EdgeInsets.only(bottom: 4)),
+              Container(height: 10, width: 200, color: Colors.white),
             ],
           ),
         ),

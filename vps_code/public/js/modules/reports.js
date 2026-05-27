@@ -2,7 +2,7 @@ async function loadReports() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Security Incidents";
-    mainContent.innerHTML = UI.loader();
+    mainContent.innerHTML = UI.skeletonTable(12);
 
     try {
         const reports = await API.getReports();

@@ -2,7 +2,19 @@ async function loadAdmins() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Admin Staff Management";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Grid Loading
+    mainContent.innerHTML = `
+        <div class="space-y-8 animate-fade">
+            <div class="flex justify-between items-center">
+                <div class="skeleton h-10 w-64"></div>
+                <div class="skeleton h-12 w-32 rounded-xl"></div>
+            </div>
+            <div class="grid grid-cols-3 gap-6">
+                ${Array(6).fill('<div class="skeleton h-24 w-full rounded-[2rem]"></div>').join('')}
+            </div>
+        </div>
+    `;
 
     try {
         const admins = await API.getAdmins();

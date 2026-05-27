@@ -142,7 +142,13 @@ exports.handleFileUpload = async (req, res) => {
 
 exports.serveSecureMedia = async (req, res) => {
     try {
-        const filePath = path.join(__dirname, '../../uploads', req.params.filename);
+        const filename = req.params.filename;
+        // Security: Prevent path traversal (e.g. ../../etc/passwd)
+        if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return res.status(403).send("Invalid filename");
+        }
+
+        const filePath = path.join(__dirname, '../../uploads', filename);
         const MASTER_SECRET = process.env.MASTER_SECRET || 'GOGO_SECURE_ACCESS_2024_PROD';
         const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
 
@@ -174,7 +180,12 @@ exports.serveSecureMedia = async (req, res) => {
 
 exports.markSeen = async (req, res) => {
     try {
-        const m = normalize(req.body.myPhone), o = normalize(req.body.otherPhone);
+        let m = req.body.myPhone;
+        // Security: Ensure user can only mark their own chats as seen
+        if (req.user && !req.user.role) m = req.user.phone;
+
+        m = normalize(m);
+        const o = normalize(req.body.otherPhone);
         const phoneVariations = [m, `+91${m}`, `91${m}`];
 
         await Message.updateMany({
@@ -193,7 +204,10 @@ exports.markSeen = async (req, res) => {
 
 exports.updateMetadata = async (req, res) => {
     try {
-        const { phone, partnerPhone, isMuted, isFavourite, isHidden } = req.body;
+        let { phone, partnerPhone, isMuted, isFavourite, isHidden } = req.body;
+        // Security: Ensure user can only update their own metadata
+        if (req.user && !req.user.role) phone = req.user.phone;
+
         const p = normalize(phone), pp = normalize(partnerPhone);
         const update = {};
         if (isMuted !== undefined) update.isMuted = isMuted;
@@ -209,7 +223,12 @@ exports.updateMetadata = async (req, res) => {
 
 exports.blockUser = async (req, res) => {
     try {
-        const b1 = normalize(req.body.blockerPhone), b2 = normalize(req.body.blockedPhone);
+        let b1 = req.body.blockerPhone;
+        // Security: Ensure user can only block as themselves
+        if (req.user && !req.user.role) b1 = req.user.phone;
+
+        b1 = normalize(b1);
+        const b2 = normalize(req.body.blockedPhone);
         await Block.findOneAndUpdate({ blockerPhone: b1, blockedPhone: b2 }, { reason: req.body.reason, timestamp: new Date() }, { upsert: true });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
@@ -217,7 +236,12 @@ exports.blockUser = async (req, res) => {
 
 exports.unblockUser = async (req, res) => {
     try {
-        const b1 = normalize(req.body.blockerPhone), b2 = normalize(req.body.blockedPhone);
+        let b1 = req.body.blockerPhone;
+        // Security: Ensure user can only unblock as themselves
+        if (req.user && !req.user.role) b1 = req.user.phone;
+
+        b1 = normalize(b1);
+        const b2 = normalize(req.body.blockedPhone);
         await Block.findOneAndDelete({ blockerPhone: b1, blockedPhone: b2 });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }

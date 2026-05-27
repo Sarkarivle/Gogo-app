@@ -2,7 +2,22 @@ async function loadAnalytics() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Business Intelligence & Analytics";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Analytics View
+    mainContent.innerHTML = `
+        <div class="space-y-10 animate-fade">
+            <div class="grid grid-cols-4 gap-6">
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+            </div>
+            <div class="grid grid-cols-2 gap-10">
+                <div class="skeleton h-[30rem] rounded-[3rem]"></div>
+                <div class="skeleton h-[30rem] rounded-[3rem]"></div>
+            </div>
+        </div>
+    `;
 
     try {
         const data = await API.getAnalyticsDetailed();

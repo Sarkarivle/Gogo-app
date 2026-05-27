@@ -62,7 +62,7 @@ async function updateConversationSummary(message) {
             })
         ]);
     } catch (e) {
-        // Silent error in production
+        console.error("updateConversationSummary error:", e);
     }
 }
 
@@ -74,7 +74,9 @@ async function resetUnreadCount(userPhone, partnerPhone) {
             { userPhone: uPhone, partnerPhone: pPhone },
             { $set: { unreadCount: 0 } }
         );
-    } catch (e) {}
+    } catch (e) {
+        console.error("resetUnreadCount error:", e);
+    }
 }
 
 module.exports = { updateConversationSummary, resetUnreadCount };

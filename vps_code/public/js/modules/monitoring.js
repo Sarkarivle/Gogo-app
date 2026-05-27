@@ -2,7 +2,22 @@ async function loadMonitoring() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Realtime System Monitoring";
-    mainContent.innerHTML = UI.loader();
+
+    // Skeleton Loading State
+    mainContent.innerHTML = `
+        <div class="space-y-10 animate-fade">
+            <div class="grid grid-cols-4 gap-6">
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+            </div>
+            <div class="grid grid-cols-2 gap-10">
+                <div class="glass p-10 rounded-[3rem] h-80 skeleton"></div>
+                <div class="glass p-10 rounded-[3rem] h-80 skeleton"></div>
+            </div>
+        </div>
+    `;
 
     try {
         const statsRes = await API.getStats();
