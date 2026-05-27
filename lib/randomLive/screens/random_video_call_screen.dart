@@ -142,7 +142,7 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
                 const SizedBox(height: 16),
                 const Text(
                   "Leave Random Call?",
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -491,7 +491,7 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
             SizedBox(width: 8),
             Text(
               "NEXT",
-              style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 0.5),
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800, fontSize: 15, letterSpacing: 0.5),
             ),
           ],
         ),
@@ -516,7 +516,7 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
             const SizedBox(width: 8),
             Text(
               _hiSent ? "SENT" : "SAY HI",
-              style: TextStyle(color: _hiSent ? Colors.greenAccent : Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 0.5),
+              style: TextStyle(color: _hiSent ? Colors.greenAccent : Colors.white, fontWeight: FontWeight.w800, fontSize: 15, letterSpacing: 0.5),
             ),
           ],
         ),

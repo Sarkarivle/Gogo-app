@@ -60,7 +60,7 @@ class AppVisibilityCoordinator {
                 backgroundColor: Colors.orange,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Yes, Hide App', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900)),
+              child: const Text('Yes, Hide App', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)),
             ),
           ],
         ),

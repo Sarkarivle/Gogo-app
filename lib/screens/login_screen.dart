@@ -300,7 +300,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      Text(_showOTPView ? 'GoGo - Gay Dating' : 'Welcome to GoGo', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white)),
+                      Text(_showOTPView ? 'GoGo - Gay Dating' : 'Welcome to GoGo', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
                       const SizedBox(height: 10),
                       Text(
                         _showOTPView 

@@ -96,7 +96,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.orangeAccent, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Blocked Users', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1)),
+        title: const Text('Blocked Users', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1)),
         centerTitle: true,
       ),
       body: _isLoading
@@ -189,7 +189,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             ),
             child: const Text(
               'Unblock',
-              style: TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.w900),
+              style: TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.w800),
             ),
           ),
         ],

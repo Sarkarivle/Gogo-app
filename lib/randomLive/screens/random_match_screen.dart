@@ -95,7 +95,7 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 26,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 letterSpacing: 0.5,
               ),
             ),

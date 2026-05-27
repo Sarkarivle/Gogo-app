@@ -380,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                 style: TextStyle(
                   color: Colors.black,
                   fontSize: 16,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 0.5,
                 ),
               ),

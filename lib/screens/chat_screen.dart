@@ -733,7 +733,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
         child: const Column(
           children: [
-            Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.security_rounded, color: Colors.orangeAccent, size: 14), SizedBox(width: 8), Text("Keep your community safe", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5))]),
+            Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.security_rounded, color: Colors.orangeAccent, size: 14), SizedBox(width: 8), Text("Keep your community safe", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5))]),
             SizedBox(height: 6),
             Text("If any user asks for money, please report them immediately using the safety tools.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w500, height: 1.4)),
           ],
@@ -952,7 +952,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 children: [
                   const Icon(Icons.looks_one_rounded, color: Colors.white, size: 36), 
                   const SizedBox(height: 10), 
-                  const Text('1 PHOTO', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1))
+                  const Text('1 PHOTO', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1))
                 ]
               )
             ]

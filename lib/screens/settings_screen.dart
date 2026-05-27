@@ -89,7 +89,7 @@ class _SettingsPageState extends State<SettingsPage> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1)),
+        title: const Text('Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1)),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -228,7 +228,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         Text(
           'V 2.6.5',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
         const SizedBox(height: 8),
         Text(
@@ -273,7 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 24),
             const Text(
               'Delete Account?',
-              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             Text(
@@ -295,7 +295,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 elevation: 0,
               ),
-              child: const Text('No. dont delete my acount', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              child: const Text('No. dont delete my acount', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             ),
             const SizedBox(height: 20),
             TextButton(
@@ -445,8 +445,8 @@ class SettingsHeaderCard extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(32),
               child: imageUrl != null 
-                ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => Center(child: Text(name[0].toUpperCase(), style: const TextStyle(color: Colors.orangeAccent, fontSize: 24, fontWeight: FontWeight.w900))))
-                : Center(child: Text(name[0].toUpperCase(), style: const TextStyle(color: Colors.orangeAccent, fontSize: 24, fontWeight: FontWeight.w900))),
+                ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => Center(child: Text(name[0].toUpperCase(), style: const TextStyle(color: Colors.orangeAccent, fontSize: 24, fontWeight: FontWeight.w800))))
+                : Center(child: Text(name[0].toUpperCase(), style: const TextStyle(color: Colors.orangeAccent, fontSize: 24, fontWeight: FontWeight.w800))),
             ),
           ),
           const SizedBox(width: 16),
@@ -456,7 +456,7 @@ class SettingsHeaderCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900))),
+                    Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800))),
                     if (isPremium) ...[
                       const SizedBox(width: 8),
                       Container(
@@ -465,7 +465,7 @@ class SettingsHeaderCard extends StatelessWidget {
                           gradient: const LinearGradient(colors: [Colors.orangeAccent, Colors.deepOrange]),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text('PRO', style: TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.w900)),
+                        child: const Text('PRO', style: TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.w800)),
                       ),
                     ],
                   ],
@@ -528,7 +528,7 @@ class PremiumMembershipCard extends StatelessWidget {
                     style: const TextStyle(
                       color: Colors.orangeAccent,
                       fontSize: 12,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       letterSpacing: 1.2,
                     ),
                   ),
@@ -544,7 +544,7 @@ class PremiumMembershipCard extends StatelessWidget {
                   ),
                   child: const Text(
                     'ACTIVE',
-                    style: TextStyle(color: Colors.orangeAccent, fontSize: 9, fontWeight: FontWeight.w900),
+                    style: TextStyle(color: Colors.orangeAccent, fontSize: 9, fontWeight: FontWeight.w800),
                   ),
                 ),
             ],
@@ -552,7 +552,7 @@ class PremiumMembershipCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             isPremium ? (userData?['premiumPlanName'] ?? "आपका प्रीमियम प्लान सक्रिय है") : "प्रीमियम में अपग्रेड करें",
-            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
+            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
@@ -590,7 +590,7 @@ class PremiumMembershipCard extends StatelessWidget {
                   SizedBox(width: 10),
                   Text(
                     'Premium Settings',
-                    style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.w900),
+                    style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.w800),
                   ),
                 ],
               ),
@@ -643,7 +643,7 @@ class SettingsSectionCard extends StatelessWidget {
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.4),
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               letterSpacing: 1.5,
             ),
           ),

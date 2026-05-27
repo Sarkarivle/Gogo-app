@@ -35,8 +35,8 @@ class RandomSearchingScreen extends StatelessWidget {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -98,7 +98,7 @@ class RandomSearchingScreen extends StatelessWidget {
                     child: const Text(
                       "CANCEL SEARCH", 
                       style: TextStyle(
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         letterSpacing: 1.2,
                         fontSize: 13,
                       )

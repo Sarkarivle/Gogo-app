@@ -35,7 +35,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       body: currentUser == null ? const Center(child: CircularProgressIndicator()) : Stack(children: [
         SingleChildScrollView(padding: const EdgeInsets.symmetric(horizontal: 24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 40),
-          Text(currentUser!['name'] ?? 'User', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1)),
+          Text(currentUser!['name'] ?? 'User', style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1)),
           if (currentUser!['isVerified'] == true) 
             const Padding(padding: EdgeInsets.only(top: 4), child: Row(children: [Icon(Icons.verified, color: Colors.blueAccent, size: 20), SizedBox(width: 8), Text('Verified Profile', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold))])),
           const SizedBox(height: 8),

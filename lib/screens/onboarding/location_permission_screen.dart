@@ -183,8 +183,8 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -1,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -220,7 +220,7 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
                         )
                       : const Text(
                           "Allow Access",
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1),
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 1),
                         ),
                   ),
                 ),

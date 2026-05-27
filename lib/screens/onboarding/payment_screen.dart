@@ -297,7 +297,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     child: Icon(Icons.workspace_premium, size: 32, color: Colors.amber.shade600),
                   ),
                   const SizedBox(height: 12),
-                  const Text("Activate Gold Status", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFFFFD700), letterSpacing: -0.6)),
+                  const Text("Activate Gold Status", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFFFFD700), letterSpacing: -0.6)),
                   const SizedBox(height: 16),
                   Container(
                     width: double.infinity,
@@ -358,7 +358,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         const SizedBox(height: 8),
                         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Text("10 km के अंदर अभी तक ", style: TextStyle(color: Colors.grey.shade400, fontSize: 10.5)),
-                          Container(padding: const EdgeInsets.symmetric(horizontal: 4), decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(4)), child: Text("$_joinedCount", style: const TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w900))),
+                          Container(padding: const EdgeInsets.symmetric(horizontal: 4), decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(4)), child: Text("$_joinedCount", style: const TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w800))),
                           Text(" लोग प्रीमियम बन चुके हैं", style: TextStyle(color: Colors.grey.shade400, fontSize: 10.5)),
                         ]),
                       ],
@@ -414,7 +414,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         children: [
                           Icon(Icons.bolt_rounded, color: Colors.black, size: 24),
                           SizedBox(width: 8),
-                          Text("ACTIVATE NOW", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 0.5)),
+                          Text("ACTIVATE NOW", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5)),
                         ],
                       ),
                     ),

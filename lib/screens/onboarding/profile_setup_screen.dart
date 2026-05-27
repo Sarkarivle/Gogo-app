@@ -174,7 +174,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 _currentPage == 0 ? 'Create Profile' : 'My Position',
-                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5),
               ),
             ),
             const SizedBox(height: 40),

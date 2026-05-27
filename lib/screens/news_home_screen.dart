@@ -66,7 +66,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
         elevation: 0,
         title: const Text(
           'समाचार अपडेट',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 24),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 24),
         ),
         actions: [
           PopupMenuButton<String>(
@@ -174,7 +174,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
                           ),
                           child: Text(
                             article.category.toUpperCase(),
-                            style: const TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.w900),
+                            style: const TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.w800),
                           ),
                         ),
                         const Spacer(),

@@ -55,6 +55,64 @@ class PaymentService {
         return orderData;
     }
 
+    static async _updateUserSubscription(phone, transaction, method) {
+        const now = new Date();
+        const trialDays = (transaction.amount === 1) ? 1 : 0;
+
+        // Fetch user to calculate new expiry correctly
+        const user = await User.findOne({ phone });
+        if (!user) return null;
+
+        // Calculate new expiry: if already premium and not expired, extend from existing expiry
+        let baseDate = (user.premiumExpiry && user.premiumExpiry > now) ? user.premiumExpiry : now;
+        const newExpiry = new Date(baseDate.getTime() + (30 * 24 * 60 * 60 * 1000) + (trialDays * 24 * 60 * 60 * 1000));
+
+        const updateFields = {
+            isPremium: true,
+            premiumExpiry: newExpiry,
+            premiumPlan: transaction.amount === 1 ? '₹1 Trial Gold' : 'Monthly Gold',
+            'subscription.id': transaction.orderId,
+            'subscription.status': trialDays > 0 ? 'trial_active' : 'active',
+            'subscription.hasUsedTrial': true,
+            'subscription.startDate': now, // Start of current billing cycle
+            'subscription.nextBillingDate': newExpiry,
+            'subscription.lastPaymentDate': now,
+            'subscription.paymentMethod': method || 'UPI',
+        };
+
+        if (trialDays > 0) {
+            updateFields['subscription.trialStartDate'] = now;
+            updateFields['subscription.trialEndDate'] = new Date(now.getTime() + (1 * 24 * 60 * 60 * 1000));
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+            { phone },
+            {
+                $set: updateFields,
+                $inc: { 'subscription.totalAmountPaid': transaction.amount },
+                $push: {
+                    paymentHistory: {
+                        orderId: transaction.gatewayTransactionId || transaction.orderId,
+                        amount: transaction.amount,
+                        status: 'SUCCESS',
+                        method: method || 'UPI',
+                        timestamp: now
+                    }
+                }
+            },
+            { new: true }
+        );
+
+        analyticsService.trackPremiumUpgrade(phone);
+        revenueService.trackPaymentEvent('payment_success', {
+            userPhone: phone,
+            amount: transaction.amount,
+            gateway: transaction.gateway || 'razorpay'
+        });
+
+        return updatedUser;
+    }
+
     static async verifyPayment(phone, paymentData) {
         const provider = await this.getProvider();
         const verification = await provider.verifyPayment(paymentData);
@@ -79,54 +137,7 @@ class PaymentService {
                 return { success: true, user };
             }
 
-            // Activate Premium
-            const now = new Date();
-            const trialDays = (transaction.amount === 1) ? 1 : 0; // ₹1 is 1-day trial
-            const premiumExpiry = new Date(now.getTime() + ((30 + trialDays) * 24 * 60 * 60 * 1000));
-
-            const subUpdate = {
-                id: transaction.orderId,
-                status: trialDays > 0 ? 'trial_active' : 'active',
-                hasUsedTrial: true,
-                startDate: now,
-                nextBillingDate: premiumExpiry,
-                totalAmountPaid: transaction.amount,
-                lastPaymentDate: now,
-                paymentMethod: paymentData.method || 'UPI'
-            };
-
-            if (trialDays > 0) {
-                subUpdate.trialStartDate = now;
-                subUpdate.trialEndDate = new Date(now.getTime() + (1 * 24 * 60 * 60 * 1000));
-            }
-
-            const updatedUser = await User.findOneAndUpdate(
-                { phone },
-                {
-                    isPremium: true,
-                    premiumExpiry: premiumExpiry,
-                    premiumPlan: trialDays > 0 ? '₹1 Trial Gold' : 'Monthly Gold',
-                    subscription: subUpdate,
-                    $push: {
-                        paymentHistory: {
-                            orderId: transaction.orderId,
-                            amount: transaction.amount,
-                            status: 'SUCCESS',
-                            method: paymentData.method || 'UPI',
-                            timestamp: now
-                        }
-                    }
-                },
-                { new: true }
-            );
-
-            analyticsService.trackPremiumUpgrade(transaction.userPhone);
-            revenueService.trackPaymentEvent('payment_success', {
-                userPhone: phone,
-                amount: transaction.amount,
-                gateway: transaction.gateway
-            });
-
+            const updatedUser = await this._updateUserSubscription(phone, transaction, paymentData.method);
             return { success: true, user: updatedUser };
         }
 
@@ -144,67 +155,51 @@ class PaymentService {
 
         const result = await provider.handleWebhook(payload, signature, rawBody);
 
-        const transaction = await PaymentTransaction.findOneAndUpdate(
-            { orderId: result.orderId, status: { $ne: 'SUCCESS' } },
-            {
-                status: result.status,
-                $push: { webhookLogs: { timestamp: new Date(), payload: result.raw } }
-            },
-            { new: true }
-        );
-
-        if (!transaction) {
-            // Already processed or not found
-            const existing = await PaymentTransaction.findOne({ orderId: result.orderId });
-            return { success: !!existing, message: existing ? "Already processed" : "Transaction not found" };
-        }
-
         if (result.status === 'SUCCESS') {
-            const now = new Date();
-            const trialDays = (transaction.amount === 1) ? 1 : 0;
-            const premiumExpiry = new Date(now.getTime() + ((30 + trialDays) * 24 * 60 * 60 * 1000));
-
-            const subUpdate = {
-                id: transaction.orderId,
-                status: trialDays > 0 ? 'trial_active' : 'active',
-                hasUsedTrial: true,
-                startDate: now,
-                nextBillingDate: premiumExpiry,
-                totalAmountPaid: transaction.amount,
-                lastPaymentDate: now,
-                paymentMethod: transaction.paymentMethod || 'UPI'
-            };
-
-            if (trialDays > 0) {
-                subUpdate.trialStartDate = now;
-                subUpdate.trialEndDate = new Date(now.getTime() + (1 * 24 * 60 * 60 * 1000));
+            // Avoid duplicate processing if paymentId exists
+            if (result.paymentId) {
+                const alreadyProcessed = await User.findOne({ 'paymentHistory.orderId': result.paymentId });
+                if (alreadyProcessed) return { success: true, message: "Already processed" };
             }
 
-            await User.findOneAndUpdate(
-                { phone: transaction.userPhone },
-                {
-                    isPremium: true,
-                    premiumExpiry: premiumExpiry,
-                    premiumPlan: trialDays > 0 ? '₹1 Trial Gold' : 'Monthly Gold',
-                    subscription: subUpdate,
-                    $push: {
-                        paymentHistory: {
-                            orderId: transaction.orderId,
-                            amount: transaction.amount,
-                            status: 'SUCCESS',
-                            method: transaction.paymentMethod || 'UPI',
-                            timestamp: now
-                        }
-                    }
-                }
-            );
+            let transaction = await PaymentTransaction.findOne({ orderId: result.orderId });
 
-            analyticsService.trackPremiumUpgrade(transaction.userPhone);
-            revenueService.trackPaymentEvent('payment_success', {
-                userPhone: transaction.userPhone,
-                amount: transaction.amount,
-                gateway: transaction.gateway
-            });
+            if (!transaction) {
+                // Create transaction if it doesn't exist (e.g. background recurring payment)
+                transaction = await PaymentTransaction.create({
+                    orderId: result.paymentId || result.orderId,
+                    userPhone: result.userPhone || 'UNKNOWN',
+                    gateway: gateway,
+                    amount: result.amount || 0,
+                    status: 'SUCCESS',
+                    gatewayTransactionId: result.paymentId,
+                    metadata: result.raw
+                });
+            } else if (transaction.status !== 'SUCCESS') {
+                transaction.status = 'SUCCESS';
+                transaction.gatewayTransactionId = result.paymentId;
+                if (result.amount) transaction.amount = result.amount;
+                await transaction.save();
+            } else if (result.event === 'subscription.charged') {
+                // This is a recurring charge, create a new transaction record
+                transaction = await PaymentTransaction.create({
+                    orderId: result.paymentId, // Use paymentId as orderId for uniqueness
+                    userPhone: transaction.userPhone,
+                    gateway: gateway,
+                    amount: result.amount,
+                    status: 'SUCCESS',
+                    gatewayTransactionId: result.paymentId,
+                    metadata: result.raw
+                });
+            } else {
+                return { success: true, message: "Already processed" };
+            }
+
+            if (transaction.userPhone && transaction.userPhone !== 'UNKNOWN') {
+                await this._updateUserSubscription(transaction.userPhone, transaction, result.method);
+            } else if (result.userPhone) {
+                await this._updateUserSubscription(result.userPhone, transaction, result.method);
+            }
         }
 
         return { success: true };

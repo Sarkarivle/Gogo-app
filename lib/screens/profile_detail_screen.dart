@@ -237,7 +237,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                         children: [
                           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Row(children: [
-                              Text(widget.name, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1)),
+                              Text(widget.name, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -1)),
                               if (widget.isVerified) ...[
                                 const SizedBox(width: 8),
                                 const Icon(Icons.verified, color: Colors.blueAccent, size: 28),

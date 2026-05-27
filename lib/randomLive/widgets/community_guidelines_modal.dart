@@ -36,7 +36,7 @@ class CommunityGuidelinesModal extends StatelessWidget {
           const SizedBox(height: 24),
           const Text(
             "Community Guidelines",
-            style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+            style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 12),
           const Text(
@@ -78,7 +78,7 @@ class CommunityGuidelinesModal extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
               elevation: 0,
             ),
-            child: const Text("I AGREE & START", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            child: const Text("I AGREE & START", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           ),
           const SizedBox(height: 16),
           TextButton(

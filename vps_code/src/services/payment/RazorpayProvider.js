@@ -75,10 +75,16 @@ class RazorpayProvider extends PaymentProvider {
             throw new Error("Invalid webhook signature");
         }
 
+        const payment = payload.payload.payment ? payload.payload.payment.entity : null;
+        const subscription = payload.payload.subscription ? payload.payload.subscription.entity : null;
+
         // Return normalized event
         return {
             event: payload.event,
-            orderId: payload.payload.subscription ? payload.payload.subscription.entity.id : payload.payload.payment.entity.order_id,
+            orderId: subscription ? subscription.id : (payment ? payment.order_id : null),
+            paymentId: payment ? payment.id : null,
+            amount: payment ? (payment.amount / 100) : 0, // Convert paise to INR
+            userPhone: (payment && payment.notes) ? payment.notes.phone : (subscription && subscription.notes ? subscription.notes.phone : null),
             status: payload.event === 'subscription.charged' || payload.event === 'payment.captured' ? 'SUCCESS' : 'FAILED',
             raw: payload
         };

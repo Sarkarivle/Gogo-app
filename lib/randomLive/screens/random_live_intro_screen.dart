@@ -80,8 +80,8 @@ class RandomLiveIntroScreen extends StatelessWidget {
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -1,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
                     ),
                   ),
                   
@@ -128,7 +128,7 @@ class RandomLiveIntroScreen extends StatelessWidget {
                               style: TextStyle(
                                 color: Colors.black,
                                 fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w800,
                                 letterSpacing: 0.5,
                               ),
                             ),

@@ -134,7 +134,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                   RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(
-                      style: const TextStyle(color: Colors.black, fontSize: 24, fontWeight: FontWeight.w900, height: 1.3),
+                      style: const TextStyle(color: Colors.black, fontSize: 24, fontWeight: FontWeight.w800, height: 1.3),
                       children: [
                         TextSpan(text: currentArea, style: const TextStyle(color: Color(0xFFDAA520))),
                         const TextSpan(text: " में आपके जैसे\n"),
@@ -160,7 +160,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                     children: [
                       Text(
                         hasUsedTrial ? "₹199" : "₹1",
-                        style: const TextStyle(color: Color(0xFF1B5E20), fontSize: 90, fontWeight: FontWeight.w900, letterSpacing: -4),
+                        style: const TextStyle(color: Color(0xFF1B5E20), fontSize: 90, fontWeight: FontWeight.w800, letterSpacing: -4),
                       ),
                       if (!hasUsedTrial) ...[
                         const SizedBox(width: 4),
@@ -219,7 +219,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                   ),
                   child: Text(
                     hasUsedTrial ? "SUBSCRIBE NOW" : "PAY NOW ₹1",
-                    style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.w900),
+                    style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),

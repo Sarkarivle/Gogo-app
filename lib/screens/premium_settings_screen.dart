@@ -161,13 +161,14 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                   
                   _buildBillingRow('Subscription ID', sub['id'] ?? 'N/A'),
                   _buildBillingRow('Start Date', _formatDate(sub['startDate'])),
+                  _buildBillingRow('End Date', _formatDate(sub['nextBillingDate'])),
                   
                   if (status == 'trial_active') ...[
                     _buildBillingRow('Trial Ends On', _formatDate(sub['trialEndDate'])),
                   ],
                   
                   _buildBillingRow('Next Billing', _formatDate(sub['nextBillingDate'])),
-                  _buildBillingRow('Total Paid', '₹ ${sub['totalAmountPaid'] ?? 0}', isBold: true),
+                  _buildBillingRow('Total Amount Paid', '₹ ${sub['totalAmountPaid'] ?? 0}', isBold: true),
                   _buildBillingRow('Auto-Renew', (sub['autoRenew'] ?? true) ? 'Enabled' : 'Disabled'),
                   
                   if (sub['paymentMethod'] != null)

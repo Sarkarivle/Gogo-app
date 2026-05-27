@@ -123,7 +123,7 @@ class ProfileCard extends StatelessWidget {
                 Flexible(
                   child: Text(
                     name,
-                    style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
+                    style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 0.1, height: 1.1),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
