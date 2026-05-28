@@ -66,29 +66,41 @@ class RandomRtcService {
   Future<void> initializePeerConnection(String roomId, String targetId) async {
     if (_peerConnection != null) return;
     
-    _peerConnection = await createPeerConnection(_iceServers, _config);
+    try {
+      _peerConnection = await createPeerConnection(_iceServers, _config);
 
-    _peerConnection!.onIceCandidate = (candidate) {
-      RandomSocketService().emitCandidate(roomId, targetId, {
-        'candidate': candidate.candidate,
-        'sdpMid': candidate.sdpMid,
-        'sdpMLineIndex': candidate.sdpMLineIndex,
-      });
-    };
+      _peerConnection!.onIceCandidate = (candidate) {
+        RandomSocketService().emitCandidate(roomId, targetId, {
+          'candidate': candidate.candidate,
+          'sdpMid': candidate.sdpMid,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        });
+      };
 
-    _peerConnection!.onTrack = (event) {
-      if (event.streams.isNotEmpty) {
-        debugPrint("[RTC] Remote stream received onTrack");
-        _remoteStream = event.streams[0];
-        _remoteStreamController.add(_remoteStream);
+      _peerConnection!.onTrack = (event) {
+        if (event.streams.isNotEmpty) {
+          debugPrint("[RTC] Remote stream received onTrack");
+          _remoteStream = event.streams[0];
+          _remoteStreamController.add(_remoteStream);
+        }
+      };
+      
+      _peerConnection!.onConnectionState = (state) {
+        debugPrint("[RTC] Connection State: $state");
+      };
+
+      if (_localStream != null) {
+        for (var track in _localStream!.getTracks()) {
+          _peerConnection!.addTrack(track, _localStream!);
+        }
       }
-    };
 
-    _localStream?.getTracks().forEach((track) {
-      _peerConnection!.addTrack(track, _localStream!);
-    });
-
-    isInitialized = true;
+      isInitialized = true;
+    } catch (e) {
+      debugPrint("[RTC] PeerConnection Init Error: $e");
+      isInitialized = false;
+      rethrow;
+    }
   }
 
   Future<RTCSessionDescription?> createOffer() async {
@@ -116,19 +128,40 @@ class RandomRtcService {
   }
 
   Future<void> setRemoteDescription(RTCSessionDescription description) async {
-    if (_peerConnection == null) return;
-    await _peerConnection!.setRemoteDescription(description);
-    _remoteDescriptionSet = true;
-    for (var candidate in _remoteIceCandidates) {
-      await _peerConnection!.addCandidate(candidate);
+    if (_peerConnection == null) {
+      debugPrint("[RTC] Cannot set remote description: PeerConnection is null");
+      return;
     }
-    _remoteIceCandidates.clear();
+    
+    try {
+      await _peerConnection!.setRemoteDescription(description);
+      _remoteDescriptionSet = true;
+      debugPrint("[RTC] Remote description set successfully (${description.type})");
+      
+      for (var candidate in _remoteIceCandidates) {
+        await _peerConnection!.addCandidate(candidate);
+      }
+      _remoteIceCandidates.clear();
+    } catch (e) {
+      debugPrint("[RTC] Set Remote Description Error: $e");
+    }
   }
 
   Future<void> addCandidate(RTCIceCandidate candidate) async {
-    if (_remoteDescriptionSet && _peerConnection != null) {
-      await _peerConnection!.addCandidate(candidate);
+    if (_peerConnection == null) {
+      debugPrint("[RTC] Cannot add candidate: PeerConnection is null");
+      return;
+    }
+
+    if (_remoteDescriptionSet) {
+      try {
+        await _peerConnection!.addCandidate(candidate);
+        debugPrint("[RTC] Candidate added successfully");
+      } catch (e) {
+        debugPrint("[RTC] Add Candidate Error: $e");
+      }
     } else {
+      debugPrint("[RTC] Buffering ICE candidate because remote description not set");
       _remoteIceCandidates.add(candidate);
     }
   }

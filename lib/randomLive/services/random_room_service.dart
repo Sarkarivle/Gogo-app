@@ -11,6 +11,7 @@ import '../screens/random_video_call_screen.dart';
 import '../screens/random_live_intro_screen.dart';
 import '../../services/chat_repository.dart';
 import '../../main.dart';
+import '../../utils/phone_utils.dart';
 
 enum RandomRoomState { idle, searching, matched, inCall }
 
@@ -28,7 +29,7 @@ class RandomRoomService with WidgetsBindingObserver {
   Timer? _searchTimer;
 
   // Signaling Queue for race condition prevention
-  dynamic _pendingOffer;
+  final List<Map<String, dynamic>> _signalingQueue = [];
 
   void init() {
     RandomSocketService().init();
@@ -84,13 +85,13 @@ class RandomRoomService with WidgetsBindingObserver {
         _onPartnerLeft();
         break;
       case 'random_offer':
-        _onOfferReceived(data['offer']);
+        _queueOrProcessSignaling({'type': 'offer', 'data': data['offer']});
         break;
       case 'random_answer':
-        _onAnswerReceived(data['answer']);
+        _queueOrProcessSignaling({'type': 'answer', 'data': data['answer']});
         break;
       case 'random_candidate':
-        _onCandidateReceived(data['candidate']);
+        _queueOrProcessSignaling({'type': 'candidate', 'data': data['candidate']});
         break;
       case 'random_call_state_sync':
         remoteVideoOff.value = data['isVideoOff'] ?? false;
@@ -101,9 +102,33 @@ class RandomRoomService with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _queueOrProcessSignaling(Map<String, dynamic> msg) async {
+    if (!RandomRtcService().isInitialized || state.value != RandomRoomState.inCall) {
+      debugPrint("[RTC] Signaling (${msg['type']}) received but RTC not ready. Queuing...");
+      _signalingQueue.add(msg);
+      return;
+    }
+
+    try {
+      switch (msg['type']) {
+        case 'offer':
+          await _processOffer(msg['data']);
+          break;
+        case 'answer':
+          await _processAnswer(msg['data']);
+          break;
+        case 'candidate':
+          await _processCandidate(msg['data']);
+          break;
+      }
+    } catch (e) {
+      debugPrint("[RTC] Error processing ${msg['type']}: $e");
+    }
+  }
+
   void _onMatchFound(Map<String, dynamic> data) async {
     currentRoomId = data['roomId'];
-    partnerId = data['partnerId'];
+    partnerId = PhoneUtils.normalize(data['partnerId']);
     role = data['role'];
     state.value = RandomRoomState.matched;
 
@@ -115,6 +140,7 @@ class RandomRoomService with WidgetsBindingObserver {
       MaterialPageRoute(builder: (_) => const RandomMatchScreen()),
     );
 
+    // Give some time for animation
     await Future.delayed(const Duration(milliseconds: 2500));
     
     if (state.value != RandomRoomState.matched) return;
@@ -126,36 +152,40 @@ class RandomRoomService with WidgetsBindingObserver {
       );
     }
 
-    // Initialize RTC
-    await RandomRtcService().initLocalStream();
-    await RandomRtcService().initializePeerConnection(currentRoomId!, partnerId!);
+    state.value = RandomRoomState.inCall;
 
-    // Process pending offer if any
-    if (_pendingOffer != null) {
-      debugPrint("[RTC] Processing queued offer after initialization");
-      await _processOffer(_pendingOffer);
-      _pendingOffer = null;
-    }
+    try {
+      if (currentRoomId == null || partnerId == null) {
+        throw Exception("Room ID or Partner ID is missing");
+      }
 
-    if (role == 'caller') {
-      final offer = await RandomRtcService().createOffer();
-      if (offer != null) {
-        RandomSocketService().emitOffer(currentRoomId!, partnerId!, {
-          'sdp': offer.sdp,
-          'type': offer.type,
-        });
+      // Initialize RTC
+      await RandomRtcService().initLocalStream();
+      await RandomRtcService().initializePeerConnection(currentRoomId!, partnerId!);
+
+      // Process queued signaling messages
+      debugPrint("[RTC] Processing ${_signalingQueue.length} queued signals");
+      while (_signalingQueue.isNotEmpty) {
+        final msg = _signalingQueue.removeAt(0);
+        await _queueOrProcessSignaling(msg);
+      }
+
+      if (role == 'caller') {
+        final offer = await RandomRtcService().createOffer();
+        if (offer != null) {
+          RandomSocketService().emitOffer(currentRoomId!, partnerId!, {
+            'sdp': offer.sdp,
+            'type': offer.type,
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("[RTC] Initialization Error: $e");
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Connection Error. Trying next...")));
+        nextPartner(context);
       }
     }
-    state.value = RandomRoomState.inCall;
-  }
-
-  void _onOfferReceived(dynamic offerData) async {
-    if (!RandomRtcService().isInitialized) {
-      debugPrint("[RTC] Offer received but RTC not ready. Queuing...");
-      _pendingOffer = offerData;
-      return;
-    }
-    await _processOffer(offerData);
   }
 
   Future<void> _processOffer(dynamic offerData) async {
@@ -172,12 +202,12 @@ class RandomRoomService with WidgetsBindingObserver {
     }
   }
 
-  void _onAnswerReceived(dynamic answerData) async {
+  Future<void> _processAnswer(dynamic answerData) async {
     final answer = RTCSessionDescription(answerData['sdp'], answerData['type']);
     await RandomRtcService().setRemoteDescription(answer);
   }
 
-  void _onCandidateReceived(dynamic candidateData) async {
+  Future<void> _processCandidate(dynamic candidateData) async {
     final candidate = RTCIceCandidate(
       candidateData['candidate'],
       candidateData['sdpMid'],
@@ -291,7 +321,7 @@ class RandomRoomService with WidgetsBindingObserver {
   void _cleanupFull() {
     debugPrint("[RandomRoom] Performing Full Cleanup...");
     _searchTimer?.cancel();
-    _pendingOffer = null;
+    _signalingQueue.clear();
     RandomRtcService().dispose();
     currentRoomId = null;
     partnerId = null;

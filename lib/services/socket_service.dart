@@ -6,6 +6,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_service.dart';
 import 'premium_service.dart';
 import 'notification_service.dart';
+import '../utils/phone_utils.dart';
 
 class SocketService with WidgetsBindingObserver {
   static final SocketService _instance = SocketService._internal();
@@ -43,7 +44,7 @@ class SocketService with WidgetsBindingObserver {
     final userDataStr = prefs.getString('user_data');
     if (userDataStr != null) {
       final userData = jsonDecode(userDataStr);
-      _currentUserPhone = userData['phone'];
+      _currentUserPhone = PhoneUtils.normalize(userData['phone']);
     }
   }
 
@@ -206,14 +207,15 @@ class SocketService with WidgetsBindingObserver {
   }
 
   void updateCurrentUser(String phone) {
-    if (_currentUserPhone != phone) {
-      _currentUserPhone = phone;
+    final normalized = PhoneUtils.normalize(phone);
+    if (_currentUserPhone != normalized && normalized != null) {
+      _currentUserPhone = normalized;
       _connectSocket(); // Reconnect to refresh token and identity
       
       // Re-bind premium update listener for new phone
       if (_socket != null) {
         _socket!.off('premium_update'); // Clear old ones if any generic ones existed
-        _socket!.on('premium_update_$phone', (data) {
+        _socket!.on('premium_update_$normalized', (data) {
           PremiumService().updatePremiumStatus(true);
           _eventController.add({'event': 'premium_update', 'data': data});
         });

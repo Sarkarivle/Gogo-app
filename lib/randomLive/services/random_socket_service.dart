@@ -26,6 +26,7 @@ class RandomSocketService {
     socket.off('random_candidate');
     socket.off('random_call_state_sync');
     socket.off('random_partner_blocked');
+    socket.off('random_block'); // Added safety
 
     socket.on('random_room_created', (data) => _eventController.add({'event': 'random_room_created', 'data': data}));
     socket.on('random_match_found', (data) => _eventController.add({'event': 'random_match_found', 'data': data}));
@@ -39,15 +40,15 @@ class RandomSocketService {
   }
 
   void findPartner(String userId) {
-    SocketService().emit('random_find_partner', {'userId': userId});
+    SocketService().emit('find_partner', {'userId': userId});
   }
 
   void leaveRoom(String userId) {
-    SocketService().emit('random_leave_room', {'userId': userId});
+    SocketService().emit('leave_random_room', {'userId': userId});
   }
 
   void nextPartner(String userId) {
-    SocketService().emit('next_random_partner', {'userId': userId});
+    SocketService().emit('next_partner', {'userId': userId});
   }
 
   void emitOffer(String roomId, String targetId, dynamic offer) {
@@ -83,7 +84,7 @@ class RandomSocketService {
   }
 
   void emitBlock(String roomId, String targetId) {
-    SocketService().emit('random_partner_blocked', {
+    SocketService().emit('random_block', {
       'roomId': roomId,
       'targetId': targetId
     });

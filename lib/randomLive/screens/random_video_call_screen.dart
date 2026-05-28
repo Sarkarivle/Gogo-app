@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -22,6 +23,8 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
   bool _isInitialized = false;
   bool _isProcessingAction = false; // To prevent double taps
   bool _hiSent = false;
+  StreamSubscription? _localStreamSub;
+  StreamSubscription? _remoteStreamSub;
 
   @override
   void initState() {
@@ -38,11 +41,11 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
       if (!mounted) return;
 
       // 2. Listen for stream events
-      RandomRtcService().localStreamStream.listen((stream) {
+      _localStreamSub = RandomRtcService().localStreamStream.listen((stream) {
         if (mounted) setState(() => _localRenderer.srcObject = stream);
       });
 
-      RandomRtcService().remoteStreamStream.listen((stream) {
+      _remoteStreamSub = RandomRtcService().remoteStreamStream.listen((stream) {
         if (mounted) {
           debugPrint("[RTC] Remote stream attached to renderer");
           setState(() => _remoteRenderer.srcObject = stream);
@@ -65,6 +68,8 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
 
   @override
   void dispose() {
+    _localStreamSub?.cancel();
+    _remoteStreamSub?.cancel();
     _localRenderer.srcObject = null;
     _remoteRenderer.srcObject = null;
     _localRenderer.dispose();
