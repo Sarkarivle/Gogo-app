@@ -46,8 +46,16 @@ class AppConfigService {
 
   Map<String, dynamic>? _trackingConfig;
   Map<String, dynamic>? get trackingConfig => _trackingConfig;
+  DateTime? _lastConfigFetchTime;
 
-  Future<void> fetchReviewMode() async {
+  Future<void> fetchReviewMode({bool forceRefresh = false}) async {
+    // Cache for 10 minutes
+    if (!forceRefresh && _lastConfigFetchTime != null) {
+      if (DateTime.now().difference(_lastConfigFetchTime!) < const Duration(minutes: 10)) {
+        return;
+      }
+    }
+
     try {
       final responses = await Future.wait([
         ApiService.get('/api/payment/settings'),
@@ -63,9 +71,9 @@ class AppConfigService {
         final data = jsonDecode(responses[1].body);
         if (data['success'] == true) {
           _trackingConfig = data['config'];
-          debugPrint('Tracking Config Loaded: $_trackingConfig');
         }
       }
+      _lastConfigFetchTime = DateTime.now();
     } catch (e) {
       debugPrint('Error fetching app config: $e');
     }

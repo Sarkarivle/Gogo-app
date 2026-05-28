@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:confetti/confetti.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../../services/api_service.dart';
 import '../../services/payment_service.dart';
 import '../../services/premium_service.dart';
@@ -31,6 +32,8 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
   bool _isUpiEnabled = true;
   bool _isGooglePlayEnabled = true;
   late ConfettiController _confettiController;
+  
+  YoutubePlayerController? _youtubeController;
 
   @override
   void initState() {
@@ -41,14 +44,72 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
     _fetchPaymentSettings();
   }
 
+  void _initYoutubeVideo() {
+    final trackingConfig = AppConfigService().trackingConfig;
+    if (trackingConfig == null) return;
+    
+    String? videoId;
+
+    // 1. Try extracting from YouTube Embed Code (iframe)
+    final embedCode = trackingConfig['youtubeEmbedCode']?.toString();
+    if (embedCode != null && embedCode.isNotEmpty) {
+      if (embedCode.contains('youtube.com/embed/')) {
+        try {
+          // Extracts ID from: https://www.youtube.com/embed/XXXXXX?params... or "XXXXXX"
+          final parts = embedCode.split('youtube.com/embed/')[1];
+          videoId = parts.split(RegExp(r'[?&"]')).first;
+        } catch (e) {
+          debugPrint('Embed ID Extraction Error: $e');
+        }
+      } else if (!embedCode.contains('<iframe')) {
+        // If they just pasted the ID or URL in the embed box
+        videoId = YoutubePlayer.convertUrlToId(embedCode);
+      }
+    }
+
+    // 2. Fallback to onboardingVideoUrl (Standard URL)
+    if (videoId == null || videoId.isEmpty) {
+      final videoUrl = trackingConfig['onboardingVideoUrl']?.toString();
+      if (videoUrl != null && videoUrl.isNotEmpty) {
+        videoId = YoutubePlayer.convertUrlToId(videoUrl);
+      }
+    }
+    
+    if (videoId != null && videoId.isNotEmpty) {
+      // Re-initialize only if ID has changed or controller is null
+      if (_youtubeController == null) {
+        setState(() {
+          _youtubeController = YoutubePlayerController(
+            initialVideoId: videoId!,
+            flags: const YoutubePlayerFlags(
+              autoPlay: true,
+              mute: false,
+              loop: true,
+              disableDragSeek: true,
+              enableCaption: false,
+            ),
+          );
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _confettiController.dispose();
+    _youtubeController?.dispose();
     super.dispose();
   }
 
   Future<void> _fetchPaymentSettings() async {
     try {
+      // 1. Sync App Config & Tracking IDs (Real-time)
+      await AppConfigService().fetchReviewMode();
+      
+      // 2. Initialize Video after config is loaded
+      _initYoutubeVideo();
+
+      // 3. Fetch Payment Gateways
       final response = await ApiService.get('/api/payment/settings');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -399,45 +460,37 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.3), width: 1.5),
-                        image: const DecorationImage(
-                          image: NetworkImage('https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=1000&auto=format&fit=crop'),
-                          fit: BoxFit.cover,
-                        ),
+                        color: Colors.black,
                       ),
-                      child: Stack(
-                        children: [
-                          Center(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.5),
-                                shape: BoxShape.circle,
+                      clipBehavior: Clip.antiAlias,
+                      child: _youtubeController != null
+                        ? YoutubePlayer(
+                            controller: _youtubeController!,
+                            showVideoProgressIndicator: true,
+                            progressIndicatorColor: Colors.pink,
+                          )
+                        : Stack(
+                            children: [
+                              Container(
+                                decoration: const BoxDecoration(
+                                  image: DecorationImage(
+                                    image: NetworkImage('https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=1000&auto=format&fit=crop'),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
-                              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
-                            ),
-                          ),
-                          const Positioned(
-                            right: 15,
-                            top: 15,
-                            child: Icon(Icons.volume_up, color: Colors.white70, size: 20),
-                          ),
-                          Positioned(
-                            bottom: 15,
-                            left: 15,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: Colors.pink.withValues(alpha: 0.8),
-                                borderRadius: BorderRadius.circular(8),
+                              Center(
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
+                                ),
                               ),
-                              child: const Text(
-                                "LIVE PREVIEW",
-                                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                              ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
                     ),
 
                     const SizedBox(height: 5),

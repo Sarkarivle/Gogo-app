@@ -11,21 +11,25 @@ class PremiumService {
 
   bool _isPremium = false;
   bool get isPremium => _isPremium;
+  DateTime? _lastSyncTime;
 
-  Future<void> init() async {
+  Future<void> init({bool force = false}) async {
+    // Throttling: only sync if forced or 5 mins passed since last sync
+    if (!force && _lastSyncTime != null && DateTime.now().difference(_lastSyncTime!) < const Duration(minutes: 5)) {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final userDataStr = prefs.getString('user_data');
     if (userDataStr != null) {
       final data = jsonDecode(userDataStr);
       
-      // SYNC: Always fetch latest toggle status before checking premium
+      // SYNC: Fetch latest toggle status
       await AppConfigService().fetchReviewMode();
       
-      // SIMPLE LOGIC:
       // If Toggle is OFF AND user has 'Standard Access' (Free Premium) -> Make them UNPREMIUM
       if (!AppConfigService().isStandardMode && data['premiumPlan'] == 'Standard Access') {
         _isPremium = false;
-        // Optionally update local storage too
         Map<String, dynamic> updatedData = Map.from(data);
         updatedData['isPremium'] = false;
         updatedData['premiumPlan'] = 'None';
@@ -33,6 +37,7 @@ class PremiumService {
       } else {
         _isPremium = data['isPremium'] ?? false;
       }
+      _lastSyncTime = DateTime.now();
     }
   }
 

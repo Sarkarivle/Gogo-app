@@ -89,6 +89,50 @@ exports.updateFcmToken = async (req, res) => {
     }
 };
 
+/**
+ * Helper to sync premium status based on review mode and expiry
+ */
+async function syncUserStatus(user, reviewModeStatus) {
+    let changed = false;
+    const now = new Date();
+
+    // REVOKE Standard Access if toggle is OFF
+    if (!reviewModeStatus && user.premiumPlan === 'Standard Access') {
+        user.isPremium = false;
+        user.premiumPlan = 'None';
+        changed = true;
+    }
+
+    // Auto-downgrade if premium expired
+    if (user.isPremium) {
+        if (!user.premiumExpiry || new Date(user.premiumExpiry) < now) {
+            user.isPremium = false;
+            if (user.subscription) user.subscription.status = 'expired';
+            changed = true;
+        }
+    }
+
+    // Auto-upgrade if in Review Mode
+    if (reviewModeStatus && !user.isPremium) {
+        user.isPremium = true;
+        user.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+        user.premiumPlan = 'Standard Access';
+        changed = true;
+    }
+
+    if (changed && user.save) {
+        await User.updateOne({ _id: user._id }, {
+            $set: {
+                isPremium: user.isPremium,
+                premiumPlan: user.premiumPlan,
+                premiumExpiry: user.premiumExpiry,
+                'subscription.status': user.subscription?.status
+            }
+        });
+    }
+    return user;
+}
+
 exports.getProfile = async (req, res) => {
     try {
         const phone = req.params.phone;
@@ -99,24 +143,8 @@ exports.getProfile = async (req, res) => {
 
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
-
-        // REVOKE Standard Access if toggle is OFF
-        if (!isReviewMode && user.premiumPlan === 'Standard Access') {
-            await User.updateOne({ _id: user._id }, { $set: { isPremium: false, premiumPlan: 'None' } });
-            user.isPremium = false;
-            user.premiumPlan = 'None';
-        }
-
-        // SECURE CHECK: Auto-downgrade if premium expired
-        const now = new Date();
-        if (user.isPremium) {
-            if (!user.premiumExpiry || new Date(user.premiumExpiry) < now) {
-                await User.updateOne({ _id: user._id }, { $set: { isPremium: false, 'subscription.status': 'expired' } });
-                user.isPremium = false;
-                user.subscription.status = 'expired';
-            }
-        }
+        const reviewModeStatus = reviewConfig?.value?.isReviewMode === true;
+        await syncUserStatus(user, reviewModeStatus);
 
         const cleanArea = (user.area && user.area.toLowerCase() !== 'unknown') ? user.area : '';
         const cleanCity = (user.city && user.city.toLowerCase() !== 'unknown') ? user.city : '';
@@ -124,7 +152,7 @@ exports.getProfile = async (req, res) => {
         user.cityLabel = cleanArea || cleanCity || 'Nearby';
         user.area = '';
 
-        res.json({ success: true, user, isStandardMode: isReviewMode });
+        res.json({ success: true, user, isStandardMode: reviewModeStatus });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -144,7 +172,7 @@ exports.login = async (req, res) => {
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
-        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
+        const reviewModeStatus = reviewConfig?.value?.isReviewMode === true;
 
         if (user) {
             if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned' || user.isBanned) {
@@ -158,16 +186,7 @@ exports.login = async (req, res) => {
             user.lastSeen = new Date();
             user.isOnline = true;
 
-            if (!isReviewMode && user.premiumPlan === 'Standard Access') {
-                user.isPremium = false;
-                user.premiumPlan = 'None';
-            }
-
-            if (isReviewMode && !user.isPremium) {
-                user.isPremium = true;
-                user.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-                user.premiumPlan = 'Standard Access';
-            }
+            await syncUserStatus(user, reviewModeStatus);
 
             if (deviceId) user.deviceId = deviceId;
             if (ip) user.ipAddress = ip;
@@ -182,9 +201,9 @@ exports.login = async (req, res) => {
             }
             await user.save();
             const token = jwt.sign({ phone: user.phone, id: user._id }, JWT_SECRET, { expiresIn: '90d' });
-            res.json({ success: true, user, token, isStandardMode: isReviewMode });
+            res.json({ success: true, user, token, isStandardMode: reviewModeStatus });
         } else {
-            res.json({ success: false, isStandardMode: isReviewMode });
+            res.json({ success: false, isStandardMode: reviewModeStatus });
         }
     } catch (e) {
         res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -227,11 +246,12 @@ exports.register = async (req, res) => {
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
-        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
+        const reviewModeStatus = reviewConfig?.value?.isReviewMode === true;
 
         if (existing) {
+            await syncUserStatus(existing, reviewModeStatus);
             const token = jwt.sign({ phone: existing.phone, id: existing._id }, JWT_SECRET, { expiresIn: '90d' });
-            return res.json({ success: true, user: existing, token, isStandardMode: isReviewMode });
+            return res.json({ success: true, user: existing, token, isStandardMode: reviewModeStatus });
         }
 
         const userData = {
@@ -247,13 +267,10 @@ exports.register = async (req, res) => {
             isDeactivated: false,
             isOnline: true,
             lastSeen: new Date(),
-            isPremium: isReviewMode
+            isPremium: reviewModeStatus,
+            premiumPlan: reviewModeStatus ? 'Standard Access' : 'None',
+            premiumExpiry: reviewModeStatus ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : null
         };
-
-        if (isReviewMode) {
-            userData.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year
-            userData.premiumPlan = 'Standard Access';
-        }
 
         if (userData.dobYear) {
             const year = parseInt(userData.dobYear);
@@ -266,7 +283,7 @@ exports.register = async (req, res) => {
         marketingService.triggerS2SPostback('registration', req.body.clickId);
 
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
-        res.json({ success: true, user: savedUser, token, isStandardMode: isReviewMode });
+        res.json({ success: true, user: savedUser, token, isStandardMode: reviewModeStatus });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -450,17 +467,18 @@ exports.reactivateAccount = async (req, res) => {
 
         if (!user) return res.status(404).json({ success: false });
 
-        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
+        const reviewModeStatus = reviewConfig?.value?.isReviewMode === true;
 
         user.isDeactivated = false;
         user.accountStatus = 'Active';
         user.reactivatedAt = new Date();
         user.isOnline = true;
-        await user.save();
+
+        await syncUserStatus(user, reviewModeStatus);
 
         const io = req.app.get('socketio');
         if (io) io.emit('user_reactivated', { phone: user.phone });
-        res.json({ success: true, user, isStandardMode: isReviewMode });
+        res.json({ success: true, user, isStandardMode: reviewModeStatus });
     } catch (e) {
         res.status(500).json({ success: false });
     }

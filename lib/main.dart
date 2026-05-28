@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
 import 'services/app_visibility_coordinator.dart';
 import 'services/force_update_coordinator.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/news_home_screen.dart';
 import 'screens/onboarding/location_permission_screen.dart';
+import 'screens/onboarding/trial_onboarding_screen.dart';
+import 'screens/onboarding/profile_setup_screen.dart';
 import 'services/socket_service.dart';
 import 'services/call_service.dart';
 import 'services/user_repository.dart';
@@ -38,6 +41,9 @@ void main() async {
   if (AppVisibilityCoordinator().isHidden) {
     initialScreen = const NewsHomeScreen();
   } else if (userDataStr != null && authToken != null) {
+    // SYNC: Fetch review mode status before checking isStandardMode
+    await AppConfigService().fetchReviewMode();
+
     final userData = jsonDecode(userDataStr);
     
     // If Review Mode is active, force premium status locally
@@ -54,7 +60,23 @@ void main() async {
     if (userData['hasCompletedOnboarding'] == true) {
       initialScreen = const HomeScreen();
     } else {
-      initialScreen = const LocationPermissionScreen();
+      // FIX: Check if location permission is already granted to avoid showing the screen again
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        // If already granted, determine next step
+        if (AppConfigService().isStandardMode) {
+          initialScreen = const ProfileSetupScreen();
+        } else {
+          // Check if already premium (maybe they paid but didn't complete profile)
+          if (userData['isPremium'] == true) {
+            initialScreen = const ProfileSetupScreen();
+          } else {
+            initialScreen = const TrialOnboardingScreen();
+          }
+        }
+      } else {
+        initialScreen = const LocationPermissionScreen();
+      }
     }
   }
   

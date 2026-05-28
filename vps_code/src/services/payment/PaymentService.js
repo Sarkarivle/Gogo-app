@@ -84,11 +84,11 @@ class PaymentService {
         const now = new Date();
         const normalizedPhone = normalize(phone);
         const isTrial = (transaction.amount === 1);
-        const durationDays = isTrial ? 1 : 30;
+        const durationHours = isTrial ? 23 : (30 * 24);
         const user = await User.findOne({ phone: normalizedPhone });
         if (!user) return null;
         let baseDate = (user.premiumExpiry && user.premiumExpiry > now) ? user.premiumExpiry : now;
-        const newExpiry = new Date(baseDate.getTime() + (durationDays * 24 * 60 * 60 * 1000));
+        const newExpiry = new Date(baseDate.getTime() + (durationHours * 60 * 60 * 1000));
         const updateFields = {
             isPremium: true,
             premiumExpiry: newExpiry,
@@ -143,7 +143,20 @@ class PaymentService {
                 const orderId = paymentData.orderId || paymentData.razorpay_subscription_id || paymentData.merchantTransactionId || verification.transactionId;
                 transaction = await PaymentTransaction.findOneAndUpdate({ orderId, status: 'PENDING' }, { status: 'SUCCESS', gatewayTransactionId: verification.transactionId, paymentMethod: paymentData.method || (gateway === 'google_play' ? 'Google Play' : 'UPI') }, { new: true });
                 if (!transaction && gateway === 'google_play') {
-                    transaction = await PaymentTransaction.create({ orderId, userPhone: normalizedPhone, gateway: 'google_play', amount: paymentData.amount || 199, status: 'SUCCESS', gatewayTransactionId: verification.transactionId, paymentMethod: 'Google Play' });
+                    // FIX: Determine amount based on productId for Google Play
+                    let amount = paymentData.amount || 199;
+                    if (paymentData.productId && (paymentData.productId.includes('trial') || paymentData.productId.includes('rs1'))) {
+                        amount = 1;
+                    }
+                    transaction = await PaymentTransaction.create({
+                        orderId,
+                        userPhone: normalizedPhone,
+                        gateway: 'google_play',
+                        amount: amount,
+                        status: 'SUCCESS',
+                        gatewayTransactionId: verification.transactionId,
+                        paymentMethod: 'Google Play'
+                    });
                 }
                 if (!transaction) {
                     const alreadyDone = await PaymentTransaction.findOne({ orderId, status: 'SUCCESS' });

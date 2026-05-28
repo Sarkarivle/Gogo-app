@@ -36,7 +36,7 @@ const MarketingModule = {
                         <h2 class="text-3xl font-black text-white">Marketing Track</h2>
                         <p class="text-slate-500 text-sm">Manage Pixel IDs, S2S Postbacks, and Campaign Tracking</p>
                     </div>
-                    <button onclick="MarketingModule.save()" class="bg-orange-500 hover:bg-orange-600 text-black font-bold px-8 py-3 rounded-xl transition shadow-lg shadow-orange-500/20">
+                    <button onclick="MarketingModule.save(this)" class="bg-orange-500 hover:bg-orange-600 text-black font-bold px-8 py-3 rounded-xl transition shadow-lg shadow-orange-500/20">
                         SAVE ALL CHANGES
                     </button>
                 </div>
@@ -86,6 +86,11 @@ const MarketingModule = {
                             <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Purchase/Premium Postback</label>
                             <input type="text" id="purchasePostbackUrl" value="${config.purchasePostbackUrl || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-blue-500 outline-none" placeholder="https://api.track.com/sale?amt={value}">
                         </div>
+
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 text-orange-500">Onboarding Video URL (YouTube)</label>
+                            <input type="text" id="onboardingVideoUrl" value="${config.onboardingVideoUrl || ''}" class="w-full bg-white/5 border border-orange-500/30 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="https://www.youtube.com/watch?v=...">
+                        </div>
                     </div>
 
                     <!-- SETTINGS & TOGGLES -->
@@ -113,6 +118,37 @@ const MarketingModule = {
                             </div>
                         </div>
                     </div>
+
+                    <!-- YOUTUBE EMBED CODE -->
+                    <div class="glass p-8 rounded-[2rem] lg:col-span-2 border border-red-500/20 bg-red-500/5">
+                         <div class="flex items-center justify-between mb-6">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-12 h-12 bg-red-500 rounded-2xl flex items-center justify-center shadow-lg shadow-red-500/20">
+                                    <i class="fab fa-youtube text-white text-2xl"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-xl font-bold text-white">Trial Page Video Player</h3>
+                                    <p class="text-slate-500 text-xs uppercase font-black tracking-widest">YouTube Embed Engine</p>
+                                </div>
+                            </div>
+                            <button onclick="MarketingModule.save(this)" class="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-black font-black px-8 py-3 rounded-xl transition shadow-lg shadow-orange-500/30">
+                                <i class="fas fa-sync-alt"></i>
+                                <span>SYNC TO APP</span>
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Paste YouTube Embed Code (Iframe)</label>
+                                <span class="text-[10px] bg-red-500/20 text-red-500 px-2 py-1 rounded font-bold uppercase">Live Preview Active</span>
+                            </div>
+                            <textarea id="youtubeEmbedCode" rows="4" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-white focus:border-red-500 outline-none font-mono text-xs transition-all" placeholder='<iframe width="560" height="315" src="https://www.youtube.com/embed/XXXXXX" ...></iframe>'>${config.youtubeEmbedCode || ''}</textarea>
+                            <div class="flex items-start space-x-2 text-[10px] text-slate-500 italic bg-black/20 p-3 rounded-xl border border-white/5">
+                                <i class="fas fa-info-circle mt-0.5"></i>
+                                <span>Note: The app will extract the Video ID from the 'src' attribute of your iframe and play it automatically in the Onboarding Trial page.</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="glass p-8 rounded-[2rem] border-orange-500/20">
@@ -125,25 +161,42 @@ const MarketingModule = {
         `;
     },
 
-    save: async function() {
-        const data = {
-            fbPixelId: document.getElementById('fbPixelId').value,
-            googleAdsId: document.getElementById('googleAdsId').value,
-            tiktokPixelId: document.getElementById('tiktokPixelId').value,
-            installPostbackUrl: document.getElementById('installPostbackUrl').value,
-            registrationPostbackUrl: document.getElementById('registrationPostbackUrl').value,
-            purchasePostbackUrl: document.getElementById('purchasePostbackUrl').value,
-            isTrackingEnabled: document.getElementById('isTrackingEnabled').checked,
-            logUserIp: document.getElementById('logUserIp').checked
-        };
+    save: async function(btn) {
+        console.log("🚀 Syncing Marketing Config...");
+        const originalHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner animate-spin"></i> SYNCING...';
+        }
 
         try {
+            const data = {
+                fbPixelId: document.getElementById('fbPixelId').value,
+                googleAdsId: document.getElementById('googleAdsId').value,
+                tiktokPixelId: document.getElementById('tiktokPixelId').value,
+                installPostbackUrl: document.getElementById('installPostbackUrl').value,
+                registrationPostbackUrl: document.getElementById('registrationPostbackUrl').value,
+                purchasePostbackUrl: document.getElementById('purchasePostbackUrl').value,
+                onboardingVideoUrl: document.getElementById('onboardingVideoUrl').value,
+                youtubeEmbedCode: document.getElementById('youtubeEmbedCode').value,
+                isTrackingEnabled: document.getElementById('isTrackingEnabled').checked,
+                logUserIp: document.getElementById('logUserIp').checked
+            };
+
             const res = await API.post('/admin/marketing/config', data);
             if (res.success) {
-                UI.toast('Marketing configurations updated successfully!');
+                UI.toast('App Config Synced Successfully!', 'success');
+            } else {
+                UI.toast(res.message || 'Sync failed', 'error');
             }
         } catch (err) {
-            UI.toast('Failed to update configuration', 'error');
+            console.error("❌ Sync Error:", err);
+            UI.toast('Network error during sync', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         }
     }
 };

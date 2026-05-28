@@ -16,8 +16,10 @@ class RazorpayProvider extends PaymentProvider {
 
     async createOrder({ phone, amount, isSubscription = true }) {
         if (isSubscription) {
+            // FIX: Use trialPlanId if amount is 1 and it exists in config
+            const planId = (amount === 1 && this.config.trialPlanId) ? this.config.trialPlanId : this.config.planId;
             const subscription = await this.client.subscriptions.create({
-                plan_id: this.config.planId,
+                plan_id: planId,
                 total_count: 12,
                 quantity: 1,
                 customer_notify: 1,

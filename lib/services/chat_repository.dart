@@ -15,7 +15,7 @@ class ChatRepository {
   // Simple memory cache for chat history
   static final Map<String, List<ChatMessage>> _chatCache = {};
 
-  Future<List<ChatMessage>> getChatHistory({
+  Future<Map<String, dynamic>> getChatHistory({
     required String myPhone,
     required String otherPhone,
     int page = 1,
@@ -26,38 +26,40 @@ class ChatRepository {
     
     // Return cached data for page 1 for instant loading unless forced
     if (page == 1 && _chatCache.containsKey(cacheKey) && !forceRefresh) {
-      // If we have data, still do a background refresh but don't await it
-      _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit);
-      return _chatCache[cacheKey]!;
+      return {
+        'messages': _chatCache[cacheKey]!,
+        'isBlocked': false, // Placeholder, will be updated by refresh
+        'isPartnerDeactivated': false
+      };
     }
 
-    return await _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, limit, page: page);
+    final response = await ApiService.get('/api/chat/history/$myPhone/$otherPhone?page=$page&limit=$limit');
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      
+      if (page == 1 && decoded is Map) {
+        final List<dynamic> history = decoded['messages'] ?? [];
+        final messages = history.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
+        _chatCache[cacheKey] = messages;
+        return {
+          'messages': messages,
+          'isBlocked': decoded['isBlocked'] ?? false,
+          'blockerPhone': decoded['blockerPhone'],
+          'isPartnerDeactivated': decoded['isPartnerDeactivated'] ?? false
+        };
+      } else if (decoded is List) {
+        final messages = decoded.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
+        return {'messages': messages};
+      }
+    }
+    return {'messages': []};
   }
 
   /// Prefetch chat history into memory cache
   void prefetchHistory(String myPhone, String otherPhone) {
     final String cacheKey = '${myPhone}_$otherPhone';
     if (!_chatCache.containsKey(cacheKey)) {
-      _fetchAndCacheHistory(myPhone, otherPhone, cacheKey, 30);
-    }
-  }
-
-  Future<List<ChatMessage>> _fetchAndCacheHistory(String myPhone, String otherPhone, String cacheKey, int limit, {int page = 1}) async {
-    try {
-      final response = await ApiService.get('/api/chat/history/$myPhone/$otherPhone?page=$page&limit=$limit');
-      if (response.statusCode == 200) {
-        final List<dynamic> history = jsonDecode(response.body);
-        final messages = history.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
-        
-        if (page == 1) {
-          _chatCache[cacheKey] = messages;
-        }
-        return messages;
-      }
-      return [];
-    } catch (e) {
-      debugPrint("Chat history error: $e");
-      return [];
+      getChatHistory(myPhone: myPhone, otherPhone: otherPhone, forceRefresh: true);
     }
   }
 

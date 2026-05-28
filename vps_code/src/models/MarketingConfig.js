@@ -10,6 +10,8 @@ const MarketingConfigSchema = new mongoose.Schema({
     installPostbackUrl: { type: String, default: '' },
     registrationPostbackUrl: { type: String, default: '' },
     purchasePostbackUrl: { type: String, default: '' },
+    onboardingVideoUrl: { type: String, default: '' },
+    youtubeEmbedCode: { type: String, default: '' },
 
     // Toggles
     isTrackingEnabled: { type: Boolean, default: true },

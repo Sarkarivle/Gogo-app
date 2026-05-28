@@ -30,7 +30,7 @@ exports.updateConfig = async (req, res) => {
 // Public route for the App to fetch tracking IDs
 exports.getAppTrackingConfig = async (req, res) => {
     try {
-        const config = await MarketingConfig.findOne({ key: 'global_settings' }).select('fbPixelId googleAdsId isTrackingEnabled');
+        const config = await MarketingConfig.findOne({ key: 'global_settings' }).select('fbPixelId googleAdsId isTrackingEnabled youtubeEmbedCode');
         res.json({ success: true, config });
     } catch (err) {
         res.status(500).json({ success: false });

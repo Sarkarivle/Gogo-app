@@ -60,6 +60,48 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
+class _AnimatedMessageWrapper extends StatefulWidget {
+  final Widget child;
+  const _AnimatedMessageWrapper({required this.child});
+
+  @override
+  State<_AnimatedMessageWrapper> createState() => _AnimatedMessageWrapperState();
+}
+
+class _AnimatedMessageWrapperState extends State<_AnimatedMessageWrapper> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this, 
+      duration: const Duration(milliseconds: 400)
+    );
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizeTransition(
+      sizeFactor: _animation,
+      axisAlignment: -1.0, // This creates the "pushing" effect from bottom
+      child: FadeTransition(
+        opacity: _animation,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -86,6 +128,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   ChatMessage? _replyingToMessage;
 
   final ChatRepository _chatRepository = ChatRepository();
+
+  final Set<String> _animatedMessageIds = {};
 
   @override
   void initState() {
@@ -129,16 +173,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels <= 100 && !_isLoadingMore && _hasMoreHistory && !_isLoadingHistory) {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 && !_isLoadingMore && _hasMoreHistory && !_isLoadingHistory) {
       _fetchChatHistory(loadMore: true);
     }
   }
 
   void _handleTypingScroll() {
-    final bool isTyping = SocketService().typingUsers.value[widget.receiverPhone] ?? false;
-    if (isTyping && _scrollController.hasClients && _scrollController.position.pixels > _scrollController.position.maxScrollExtent - 100) {
-      _scrollToBottom();
-    }
+    // In reversed list, the bottom is at pixels 0.
+    // Typing indicator is at index 0. So it naturally appears without scrolling.
   }
 
   @override
@@ -169,12 +211,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    _scrollToBottom(immediate: true);
-  }
-
   Future<void> _loadUserAndHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final userData = prefs.getString('user_data');
@@ -187,13 +223,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final roomId = _getRoomId();
       SocketService().joinRoom(roomId);
       
-      // History fetch karne se pehle seen mark karein aur thoda wait karein
       _chatRepository.markChatSeen(currentUser!['phone'], widget.receiverPhone);
       NotificationService.clearUnreadForSender(widget.receiverPhone);
     }
-    await _checkBlockStatus();
-    await _fetchChatHistory(); // Load from cache (instant)
-    _fetchChatHistory(forceRefresh: true); // Load fresh in background
+    
+    // Step 1: Instant load from cache (no force refresh)
+    await _fetchChatHistory(forceRefresh: false);
+    
+    // Step 2: Background refresh (force refresh)
+    // This will update messages, block status and deactivated status in one call
+    _fetchChatHistory(forceRefresh: true);
   }
 
   void _listenToSocket() {
@@ -289,7 +328,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             });
             break;
           case 'chat_status_update':
-            _checkBlockStatus();
+            _fetchChatHistory(forceRefresh: true);
             break;
           case 'user_deactivated':
             if (data['phone'] == widget.receiverPhone) {
@@ -342,9 +381,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (dupIndex != -1) {
         _messages[dupIndex] = newMessage;
       } else {
-        _messages.add(newMessage);
-        // Ensure sorting if message arrived out of order (though rare for single chat)
-        _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        _messages.insert(0, newMessage);
+        // Ensure sorting: Newest first (index 0)
+        _messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
         
         if (!newMessage.isMe) {
           _hideTypingTimer?.cancel();
@@ -356,7 +395,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         }
       }
     });
-    _scrollToBottom();
   }
 
   Future<void> _fetchChatHistory({bool loadMore = false, bool forceRefresh = false}) async {
@@ -370,7 +408,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     try {
       final page = loadMore ? _currentHistoryPage + 1 : 1;
-      final newMsgs = await _chatRepository.getChatHistory(
+      final result = await _chatRepository.getChatHistory(
         myPhone: currentUser!['phone'],
         otherPhone: widget.receiverPhone,
         page: page,
@@ -378,29 +416,49 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         forceRefresh: forceRefresh,
       );
       
+      final List<ChatMessage> newMsgs = result['messages'] ?? [];
+      
+      // Prevent animation for history messages
+      for (var m in newMsgs) {
+        if (m.id != null) _animatedMessageIds.add(m.id!);
+        if (m.localId != null) _animatedMessageIds.add(m.localId!);
+      }
+
       if (mounted) {
         setState(() {
+          if (page == 1) {
+            // Update metadata if available (usually on first page load/refresh)
+            if (result.containsKey('isBlocked')) {
+              _isBlocked = result['isBlocked'];
+              _blockerPhone = result['blockerPhone'];
+            }
+            if (result.containsKey('isPartnerDeactivated')) {
+              _isRecipientDeactivated = result['isPartnerDeactivated'];
+            }
+          }
+
           if (loadMore) {
-            _messages.insertAll(0, newMsgs);
+            _messages.addAll(newMsgs);
             _currentHistoryPage++;
           } else {
+            // Merge logic: keep local "sending" messages that are not yet in the fresh history
             final localMsgs = _messages.where((m) => m.status == MessageStatus.sending || m.status == MessageStatus.error || m.localId != null).toList();
             _messages.clear();
             _messages.addAll(newMsgs);
             for (var lm in localMsgs) {
-              if (!_messages.any((m) => m.localId == lm.localId)) {
+              if (!_messages.any((m) => m.localId == lm.localId || (m.id != null && m.id == lm.id))) {
                 _messages.add(lm);
               }
             }
-            _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+            // Sort: Newest first for reversed list
+            _messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
             _currentHistoryPage = 1;
           }
           _hasMoreHistory = newMsgs.length >= 30;
         });
 
-        if (!loadMore) {
+        if (!loadMore && page == 1) {
           _initializeFirstUnread();
-          _scrollToBottom(immediate: true);
         }
       }
     } catch (e) {
@@ -415,47 +473,37 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _checkBlockStatus() async {
-    if (currentUser == null) return;
-    final res = await _chatRepository.checkBlockStatus(currentUser!['phone'], widget.receiverPhone);
-    
-    final profileRes = await ApiService.get('/api/user/profile/${widget.receiverPhone}');
-    bool isDeactivated = false;
-    if (profileRes.statusCode == 200) {
-      final profileData = jsonDecode(profileRes.body);
-      if (profileData['success'] == true) {
-        final u = profileData['user'];
-        isDeactivated = u['isDeactivated'] == true || u['accountStatus'] == 'Deactivated';
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isBlocked = res['isBlocked'];
-        _blockerPhone = res['blockerPhone'];
-        _isRecipientDeactivated = isDeactivated;
-      });
-    }
-  }
-
   String _getRoomId() {
     List<String> ids = [currentUser?['phone'] ?? 'Me', widget.receiverPhone];
     ids.sort();
     return ids.join('_');
   }
 
+  bool _isSending = false;
+
   void _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || currentUser == null) return;
+    if (text.isEmpty || currentUser == null || _isSending) return;
+
+    setState(() => _isSending = true);
 
     final sendContext = context;
     final isPremium = await PremiumService().checkPremiumAndRedirect(sendContext);
-    if (!isPremium) return;
-    if (!sendContext.mounted) return;
+    if (!isPremium) {
+      setState(() => _isSending = false);
+      return;
+    }
+    if (!sendContext.mounted) {
+      setState(() => _isSending = false);
+      return;
+    }
 
     if (_editingMessageId != null) {
       _chatRepository.editMessage(_editingMessageId!, text, currentUser!['phone'], widget.receiverPhone);
-      setState(() => _editingMessageId = null);
+      setState(() {
+        _editingMessageId = null;
+        _isSending = false;
+      });
       _messageController.clear();
       return;
     }
@@ -473,10 +521,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
 
     setState(() {
-      _messages.add(optimisticMsg);
+      _messages.insert(0, optimisticMsg);
       _replyingToMessage = null;
       _messageController.clear();
+      // Reset _isSending immediately after clearing controller so Mic/Send UI toggles fast
+      _isSending = false;
     });
+
     _scrollToBottom();
 
     if (_isBlocked) return;
@@ -529,9 +580,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
 
     setState(() {
-      _messages.add(optimisticMsg);
+      _messages.insert(0, optimisticMsg);
     });
-    _scrollToBottom(immediate: true);
+
+    _scrollToBottom();
 
     try {
       if (!file.existsSync()) throw Exception("File missing");
@@ -596,16 +648,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _scrollToBottom({bool immediate = false}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        final double target = _scrollController.position.maxScrollExtent;
-        if (immediate) {
-          _scrollController.jumpTo(target);
-        } else {
-          _scrollController.animateTo(target, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-        }
-      }
-    });
+    if (!_scrollController.hasClients) return;
+    if (immediate) {
+      _scrollController.jumpTo(0);
+    } else {
+      _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
   }
 
   @override
@@ -690,31 +738,75 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return ValueListenableBuilder<bool>(
       valueListenable: _isOtherUserTyping,
       builder: (context, isTyping, _) {
+        final int itemCount = _messages.length + 
+                             (isTyping ? 1 : 0) + 
+                             (_isLoadingMore ? 1 : 0) + 
+                             (_isRecipientDeactivated ? 1 : 0) +
+                             (_messages.isEmpty ? 1 : 0);
+
         return ListView.builder(
           controller: _scrollController,
+          reverse: true, // IMPORTANT: Reverse for chat feel
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          itemCount: (_messages.isEmpty ? 1 : 0) + _messages.length + (isTyping ? 1 : 0) + (_isLoadingMore ? 1 : 0) + (_isRecipientDeactivated ? 1 : 0),
+          itemCount: itemCount,
           itemBuilder: (context, index) {
-            if (_isLoadingMore && index == 0) return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent)));
-            if (_messages.isEmpty && index == 0) return _buildSafetyWarning();
+            // 1. Typing Indicator & Deactivated (Bottom of reversed list = Start of visual)
+            if (isTyping && index == 0) return const TypingIndicator();
             
-            final adjustedIndex = _isLoadingMore ? index - 1 : index;
-            if (adjustedIndex == _messages.length) {
-              if (_isRecipientDeactivated) return _buildDeactivatedSystemBubble();
-              return const TypingIndicator();
+            int msgIndex = isTyping ? index - 1 : index;
+            if (_isRecipientDeactivated && msgIndex == 0) return _buildDeactivatedSystemBubble();
+            
+            if (_isRecipientDeactivated) msgIndex--;
+            
+            // 2. Main Messages
+            if (msgIndex >= 0 && msgIndex < _messages.length) {
+              final msg = _messages[msgIndex];
+              final bool isFirst = msgIndex == _messages.length - 1;
+              
+              // Date Header Logic
+              bool showDateHeader = false;
+              if (isFirst) {
+                showDateHeader = true;
+              } else {
+                showDateHeader = !_isSameDay(_messages[msgIndex + 1].timestamp, msg.timestamp);
+              }
+
+              final String msgKey = msg.id ?? msg.localId ?? '';
+              final bool shouldAnimate = msgKey.isNotEmpty && !_animatedMessageIds.contains(msgKey);
+              
+              // Grouping Logic: Show time only for the last message in a minute-group
+              bool showTime = true;
+              bool isSameGroupAsNext = false; // Next visually (index - 1)
+              if (msgIndex > 0) {
+                isSameGroupAsNext = _isSameMinute(_messages[msgIndex - 1].timestamp, msg.timestamp) && 
+                                    _messages[msgIndex - 1].isMe == msg.isMe;
+                if (isSameGroupAsNext) showTime = false;
+              }
+
+              Widget bubble = _buildMessageBubble(msg, showTime: showTime, isSameGroupAsNext: isSameGroupAsNext);
+              
+              if (shouldAnimate) {
+                _animatedMessageIds.add(msgKey);
+                bubble = _AnimatedMessageWrapper(child: bubble);
+              }
+
+              return Column(
+                children: [
+                  if (showDateHeader) _buildDateHeader(msg.timestamp),
+                  if (isFirst) _buildSafetyWarning(),
+                  bubble,
+                ],
+              );
             }
-            if (adjustedIndex == _messages.length + 1 && _isRecipientDeactivated) return const TypingIndicator();
 
-            final msg = _messages[adjustedIndex];
-            final showDateHeader = adjustedIndex == 0 || !_isSameDay(_messages[adjustedIndex - 1].timestamp, msg.timestamp);
+            // 3. Loading More (Top of reversed list = End of visual)
+            if (_isLoadingMore && index == itemCount - 1) {
+              return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent)));
+            }
 
-            return Column(
-              children: [
-                if (showDateHeader && adjustedIndex == 0 && _messages.isNotEmpty) _buildSafetyWarning(),
-                if (showDateHeader) _buildDateHeader(msg.timestamp),
-                _buildMessageBubble(msg),
-              ],
-            );
+            if (_messages.isEmpty && index == 0) return _buildSafetyWarning();
+
+            return const SizedBox.shrink();
           },
         );
       }
@@ -742,18 +834,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildMessageBubble(ChatMessage msg) {
+  Widget _buildMessageBubble(ChatMessage msg, {bool showTime = true, bool isSameGroupAsNext = false}) {
     // 1. New Unread Message Tag Logic
     return ValueListenableBuilder<String?>(
       valueListenable: _firstUnreadMessageId,
       builder: (context, firstUnreadId, child) {
         bool isFirstUnread = firstUnreadId != null && msg.id == firstUnreadId;
-        return _buildBubbleContentWithTag(msg, isFirstUnread, firstUnreadId);
+        return _buildBubbleContentWithTag(msg, isFirstUnread, firstUnreadId, showTime: showTime, isSameGroupAsNext: isSameGroupAsNext);
       },
     );
   }
 
-  Widget _buildBubbleContentWithTag(ChatMessage msg, bool isFirstUnread, String? firstUnreadId) {
+  Widget _buildBubbleContentWithTag(ChatMessage msg, bool isFirstUnread, String? firstUnreadId, {bool showTime = true, bool isSameGroupAsNext = false}) {
     if (msg.isDeletedForEveryone) {
       return Center(
         child: Container(
@@ -798,7 +890,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       bubbleContent = _buildCallLogBubble(msg);
     } else {
       bubbleContent = Padding(
-        padding: const EdgeInsets.only(bottom: 12),
+        padding: EdgeInsets.only(bottom: isSameGroupAsNext ? 4 : 12),
         child: GestureDetector(
           onLongPress: () => _showContextMenu(msg),
           child: Align(
@@ -809,15 +901,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 if (msg.replyToId != null) _buildReplyPreview(msg),
                 Container(
                   constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                  padding: EdgeInsets.symmetric(horizontal: msg.isViewOnce && !msg.isOpened ? 12 : 14, vertical: msg.isViewOnce && !msg.isOpened ? 8 : 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: msg.isMe ? Colors.orangeAccent : const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(msg.isMe ? 18 : 0), bottomRight: Radius.circular(msg.isMe ? 0 : 18)),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18), 
+                      topRight: const Radius.circular(18), 
+                      bottomLeft: Radius.circular(msg.isMe ? 18 : (isSameGroupAsNext ? 5 : 0)), 
+                      bottomRight: Radius.circular(msg.isMe ? (isSameGroupAsNext ? 5 : 0) : 18)
+                    ),
                   ),
-                  child: _buildBubbleContent(msg),
+                  child: _buildBubbleContent(
+                    msg, 
+                    timeWidget: (showTime || (msg.isMe && msg.status != MessageStatus.seen)) 
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (showTime)
+                              Text(
+                                DateFormat('h:mm a').format(msg.timestamp), 
+                                style: TextStyle(color: msg.isMe ? Colors.black45 : Colors.white38, fontSize: 9)
+                              ),
+                            if (msg.isMe && (showTime || msg.status != MessageStatus.seen)) ...[
+                              const SizedBox(width: 4),
+                              _buildStatusIcon(msg.status, size: 12, color: msg.isMe ? Colors.black45 : null)
+                            ]
+                          ],
+                        )
+                      : null
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Row(mainAxisSize: MainAxisSize.min, children: [Text(DateFormat('h:mm a').format(msg.timestamp), style: const TextStyle(color: Colors.white38, fontSize: 10)), if (msg.isMe) ...[const SizedBox(width: 4), _buildStatusIcon(msg.status)]])
               ],
             ),
           ),
@@ -862,15 +975,35 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return bubbleContent;
   }
 
-  Widget _buildBubbleContent(ChatMessage msg) {
-    if (msg.isViewOnce) return _buildViewOnceImage(msg);
+  Widget _buildBubbleContent(ChatMessage msg, {Widget? timeWidget}) {
+    if (msg.isViewOnce) return _buildViewOnceImage(msg, timeWidget: timeWidget);
 
     if (msg.type == 'audio') {
-      return AudioPlayerWidget(url: msg.audioUrl ?? msg.localFilePath ?? '', isMe: msg.isMe);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          AudioPlayerWidget(url: msg.audioUrl ?? msg.localFilePath ?? '', isMe: msg.isMe),
+          ?timeWidget,
+        ],
+      );
     } else if (msg.type == 'image' || msg.type == 'video' || (msg.imageUrl != null && msg.imageUrl!.isNotEmpty) || (msg.localFilePath != null && msg.type != 'audio')) {
-      return _buildImageContent(msg);
+      return Stack(
+        children: [
+          _buildImageContent(msg),
+          if (timeWidget != null) Positioned(bottom: 4, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(4)), child: timeWidget)),
+        ],
+      );
     }
-    return Text(msg.text ?? '', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontSize: 15, height: 1.3));
+    
+    return Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.end,
+      runSpacing: 4,
+      children: [
+        Text(msg.text ?? '', style: TextStyle(color: msg.isMe ? Colors.black : Colors.white, fontSize: 15, height: 1.3)),
+        if (timeWidget != null) Padding(padding: const EdgeInsets.only(left: 8, bottom: 2), child: timeWidget),
+      ],
+    );
   }
 
   Widget _buildImageContent(ChatMessage msg) {
@@ -897,25 +1030,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildViewOnceImage(ChatMessage msg) {
+  Widget _buildViewOnceImage(ChatMessage msg, {Widget? timeWidget}) {
     if (msg.isMe) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.end,
         children: [
           Icon(msg.isOpened ? Icons.done_all : Icons.looks_one_rounded, color: Colors.black, size: 18),
           const SizedBox(width: 8),
-          Text(msg.isOpened ? 'Opened' : 'Photo', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13))
+          Text(msg.isOpened ? 'Opened' : 'Photo', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13)),
+          if (timeWidget != null) Padding(padding: const EdgeInsets.only(left: 8), child: timeWidget),
         ]
       );
     }
 
     if (msg.isOpened) {
-      return const Row(
-        mainAxisSize: MainAxisSize.min,
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Icon(Icons.looks_one_rounded, color: Colors.white24, size: 18),
-          SizedBox(width: 10),
-          Text('Opened', style: TextStyle(color: Colors.white24, fontWeight: FontWeight.bold, fontSize: 14))
+          const Icon(Icons.looks_one_rounded, color: Colors.white24, size: 18),
+          const SizedBox(width: 10),
+          const Text('Opened', style: TextStyle(color: Colors.white24, fontWeight: FontWeight.bold, fontSize: 14)),
+          if (timeWidget != null) Padding(padding: const EdgeInsets.only(left: 8), child: timeWidget),
         ]
       );
     }
@@ -954,7 +1090,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   const SizedBox(height: 10), 
                   const Text('1 PHOTO', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1))
                 ]
-              )
+              ),
+              if (timeWidget != null) Positioned(bottom: 8, right: 10, child: timeWidget),
             ]
           )
         ),
@@ -966,13 +1103,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Container(margin: const EdgeInsets.only(bottom: 4), padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 3, height: 20, color: Colors.orangeAccent), const SizedBox(width: 8), Flexible(child: Text(msg.replyText ?? '', style: const TextStyle(color: Colors.white54, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis))]));
   }
 
-  Widget _buildStatusIcon(MessageStatus status) {
+  Widget _buildStatusIcon(MessageStatus status, {double size = 14, Color? color}) {
     switch (status) {
-      case MessageStatus.sending: return const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.orangeAccent));
-      case MessageStatus.sent: return const Icon(Icons.done, color: Colors.white38, size: 14);
-      case MessageStatus.delivered: return const Icon(Icons.done_all, color: Colors.white38, size: 14);
-      case MessageStatus.seen: return const Icon(Icons.done_all, color: Colors.greenAccent, size: 14);
-      case MessageStatus.error: return const Icon(Icons.error_outline, color: Colors.redAccent, size: 14);
+      case MessageStatus.sending: return SizedBox(width: size - 2, height: size - 2, child: CircularProgressIndicator(strokeWidth: 1.2, color: color ?? Colors.orangeAccent));
+      case MessageStatus.sent: return Icon(Icons.done, color: color ?? Colors.white38, size: size);
+      case MessageStatus.delivered: return Icon(Icons.done_all, color: color ?? Colors.white38, size: size);
+      case MessageStatus.seen: return Icon(Icons.done_all, color: Colors.greenAccent, size: size); // Hamesha green dikhao seen par
+      case MessageStatus.error: return Icon(Icons.error_outline, color: color ?? Colors.redAccent, size: size);
     }
   }
 
@@ -991,7 +1128,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               const SizedBox(width: 12),
               Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 16), height: 50, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(25)), child: TextField(controller: _messageController, enabled: !_isRecipientDeactivated, onChanged: (v) => _handleTypingStatus(), onSubmitted: (v) => _sendMessage(), style: const TextStyle(color: Colors.white, fontSize: 15), decoration: const InputDecoration(hintText: 'Type message...', hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none)))),
               const SizedBox(width: 12),
-              GestureDetector(onTap: _messageController.text.trim().isEmpty ? ((_isBlocked || _isRecipientDeactivated) ? null : _handleMicClick) : _sendMessage, child: Container(padding: const EdgeInsets.all(10), decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: Icon(_messageController.text.trim().isEmpty ? Icons.mic_rounded : Icons.send_rounded, color: Colors.black, size: 24))),
+              GestureDetector(
+                onTap: () {
+                  final text = _messageController.text.trim();
+                  if (text.isEmpty) {
+                    if (!_isBlocked && !_isRecipientDeactivated) _handleMicClick();
+                  } else {
+                    _sendMessage();
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
+                  child: ListenableBuilder(
+                    listenable: _messageController,
+                    builder: (context, child) {
+                      final bool showSend = _messageController.text.trim().isNotEmpty;
+                      return Icon(
+                        showSend ? Icons.send_rounded : Icons.mic_rounded,
+                        color: Colors.black,
+                        size: 24,
+                      );
+                    },
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -1217,6 +1378,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   bool _isSameDay(DateTime d1, DateTime d2) => d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+  bool _isSameMinute(DateTime d1, DateTime d2) => _isSameDay(d1, d2) && d1.hour == d2.hour && d1.minute == d2.minute;
 }
 
 class MediaSelectionModal extends StatefulWidget {

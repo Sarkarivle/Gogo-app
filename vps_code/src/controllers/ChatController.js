@@ -112,19 +112,39 @@ exports.getChatHistory = async (req, res) => {
         const roomIdPart1 = p1 + '_' + p2;
         const roomIdPart2 = p2 + '_' + p1;
 
-        const chats = await Message.find({
-            $or: [
-                { roomId: roomId },
-                { roomId: { $in: [roomIdPart1, roomIdPart2, `+91${roomIdPart1}`, `+91${roomIdPart2}`] } }
-            ],
-            deletedBy: { $ne: p1 }
-        })
-            .sort({ timestamp: -1 })
-            .skip((parseInt(page) - 1) * parseInt(limit))
-            .limit(parseInt(limit));
+        const [chats, block, partner] = await Promise.all([
+            Message.find({
+                $or: [
+                    { roomId: roomId },
+                    { roomId: { $in: [roomIdPart1, roomIdPart2, `+91${roomIdPart1}`, `+91${roomIdPart2}`] } }
+                ],
+                deletedBy: { $ne: p1 }
+            })
+                .sort({ timestamp: -1 })
+                .skip((parseInt(page) - 1) * parseInt(limit))
+                .limit(parseInt(limit)),
+            Block.findOne({ $or: [{ blockerPhone: p1, blockedPhone: p2 }, { blockerPhone: p2, blockedPhone: p1 }] }),
+            User.findOne({ phone: p2 }, 'isDeactivated accountStatus')
+        ]);
 
-        res.json(chats.reverse());
-    } catch (e) { res.status(500).json([]); }
+        const messages = chats.reverse();
+        const isBlocked = !!block;
+        const blockerPhone = block ? block.blockerPhone : null;
+        const isPartnerDeactivated = partner ? (partner.isDeactivated || partner.accountStatus === 'Deactivated') : false;
+
+        if (parseInt(page) === 1) {
+            res.json({
+                messages,
+                isBlocked,
+                blockerPhone,
+                isPartnerDeactivated
+            });
+        } else {
+            res.json(messages);
+        }
+    } catch (e) {
+        res.status(500).json(req.query.page > 1 ? [] : { messages: [] });
+    }
 };
 
 exports.handleFileUpload = async (req, res) => {
