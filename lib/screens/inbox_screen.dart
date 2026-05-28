@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
@@ -346,13 +347,6 @@ class InboxScreenState extends State<InboxScreen> {
               }),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 12, left: 4),
-            child: Text(
-              "हाल ही की बातचीत सबसे ऊपर दिखाई जाती हैं",
-              style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.w400),
-            ),
-          ),
         ],
       ),
     );
@@ -427,16 +421,16 @@ class InboxScreenState extends State<InboxScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(child: Text(chat['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          Text(chat['dist_str'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          Text(chat['dist_str'] ?? '', style: const TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const Spacer(),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(chat['pos'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          Text(chat['city'] ?? '', style: const TextStyle(color: Colors.white38, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                           if (SocketService().onlineUsers.value[chat['phone']] ?? chat['isOnline'] ?? false)
-                            const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                            const Text("Online", style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ],
@@ -516,6 +510,17 @@ class InboxScreenState extends State<InboxScreen> {
 
   Future<void> _updateMeta(String partnerPhone, {bool? isMuted, bool? isFavourite, bool? isHidden}) async {
     if (_currentUser == null) return;
+
+    // Live/Optimistic UI Update
+    setState(() {
+      final index = _chats.indexWhere((c) => c['phone'] == partnerPhone);
+      if (index != -1) {
+        if (isMuted != null) _chats[index]['isMuted'] = isMuted;
+        if (isFavourite != null) _chats[index]['isFavourite'] = isFavourite;
+        if (isHidden == true) _chats.removeAt(index);
+      }
+    });
+
     final success = await _chatRepository.updateConversationMetadata(
       myPhone: _currentUser!['phone'],
       otherPhone: partnerPhone,
@@ -523,7 +528,9 @@ class InboxScreenState extends State<InboxScreen> {
       isFavourite: isFavourite,
       isHidden: isHidden,
     );
-    if (success) {
+    
+    if (!success) {
+      // Revert by fetching fresh data if server call failed
       _fetchInbox();
     }
   }
@@ -534,7 +541,7 @@ class InboxScreenState extends State<InboxScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         title: const Text("Delete Chat?", style: TextStyle(color: Colors.white)),
-        content: Text("This will remove the conversation with ${chat['name']} from your list. Other user will still see it.", style: const TextStyle(color: Colors.white70)),
+        content: Text("This will remove the conversation with ${chat['name']} from your list.", style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: Colors.white54))),
           TextButton(
@@ -576,16 +583,17 @@ class InboxScreenState extends State<InboxScreen> {
                 .replaceAll('Within ', '')
                 .replaceAll('Under ', '');
             
-            String displayLocation = cleanDist;
-            if (locName.isNotEmpty && cleanDist.toLowerCase() != "unknown" && cleanDist.isNotEmpty) {
-              displayLocation = "$cleanDist, $locName";
-            } else if (locName.isNotEmpty) {
-              displayLocation = locName;
+            String displayLocation = locName;
+            if (cleanDist.isNotEmpty && cleanDist.toLowerCase() != "unknown") {
+              displayLocation = locName.isNotEmpty ? "$locName • $cleanDist" : cleanDist;
             }
 
             return ListTile(
               onTap: () => _openChat(chat),
-              onLongPress: () => _showChatActions(chat),
+              onLongPress: () {
+                HapticFeedback.mediumImpact();
+                _showChatActions(chat);
+              },
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               leading: Stack(
                 children: [
