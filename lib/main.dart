@@ -36,14 +36,14 @@ void main() async {
   final userDataStr = prefs.getString('user_data');
   final authToken = prefs.getString('auth_token');
   
+  // ALWAYS Fetch App Config (Review Mode, Tracking, Login Image etc) on startup
+  await AppConfigService().fetchReviewMode();
+  
   Widget initialScreen = const LoginScreen();
   
   if (AppVisibilityCoordinator().isHidden) {
     initialScreen = const NewsHomeScreen();
   } else if (userDataStr != null && authToken != null) {
-    // SYNC: Fetch review mode status before checking isStandardMode
-    await AppConfigService().fetchReviewMode();
-
     final userData = jsonDecode(userDataStr);
     
     // If Review Mode is active, force premium status locally

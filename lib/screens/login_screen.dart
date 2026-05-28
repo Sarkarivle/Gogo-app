@@ -297,8 +297,15 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
             top: 0, left: 0, right: 0,
             child: Container(
               height: MediaQuery.of(context).size.height * 0.45,
-              decoration: const BoxDecoration(
-                image: DecorationImage(image: NetworkImage('https://img.freepik.com/free-vector/flat-lgbt-community-illustration_23-2148906969.jpg'), fit: BoxFit.cover),
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: NetworkImage(
+                    ApiService.getSecureUrl(AppConfigService().loginImageUrl).isNotEmpty 
+                        ? ApiService.getSecureUrl(AppConfigService().loginImageUrl) 
+                        : 'https://img.freepik.com/free-vector/flat-lgbt-community-illustration_23-2148906969.jpg'
+                  ), 
+                  fit: BoxFit.cover
+                ),
               ),
             ),
           ),

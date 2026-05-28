@@ -6,6 +6,21 @@ const ContactController = require('../controllers/ContactController');
 const NewsController = require('../controllers/NewsController');
 const MarketingController = require('../controllers/MarketingController');
 const { isAdmin } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = './uploads';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, 'login_image_' + Date.now() + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage });
 
 // Safety function to prevent "Undefined" crash
 const s = (fn) => fn || ((req, res) => res.status(500).json({ error: "Not Implemented" }));
@@ -46,6 +61,7 @@ router.post('/media/delete', s(AdminController.deleteMedia));
 // Marketing Config
 router.get('/marketing/config', s(MarketingController.getConfig));
 router.post('/marketing/config', s(MarketingController.updateConfig));
+router.post('/marketing/upload-login-image', upload.single('login_image'), s(MarketingController.uploadLoginImage));
 
 // External Controllers
 router.get('/policies', s(PolicyController.getPolicies));

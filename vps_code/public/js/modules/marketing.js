@@ -157,11 +157,108 @@ const MarketingModule = {
                         Data entered here is synced with the mobile app in real-time. When a user triggers an event (like a call or registration), the app uses these IDs to fire GTM tags. S2S Postbacks are handled by the server whenever a conversion event is confirmed.
                     </p>
                 </div>
+
+                <!-- LOGIN IMAGE SYNC -->
+                <div class="glass p-8 rounded-[2rem] border-blue-500/20 bg-blue-500/5">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                <i class="fas fa-image text-white text-2xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-bold text-white">Login Page Top Image</h3>
+                                <p class="text-slate-500 text-xs uppercase font-black tracking-widest">Visual Identity Sync</p>
+                            </div>
+                        </div>
+                        <button onclick="MarketingModule.syncApp(this)" class="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-black font-black px-8 py-3 rounded-xl transition shadow-lg shadow-orange-500/30">
+                            <i class="fas fa-sync-alt"></i>
+                            <span>SYNC TO APP</span>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                        <div class="space-y-4">
+                            <div id="loginImagePreview" class="w-full h-48 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden">
+                                ${config.loginImageUrl ? `<img src="${config.loginImageUrl}" class="w-full h-full object-cover">` : '<i class="fas fa-image text-white/10 text-4xl"></i>'}
+                            </div>
+                            <input type="file" id="loginImageInput" class="hidden" accept="image/*" onchange="MarketingModule.handleImageSelect(this)">
+                            <div class="flex space-x-3">
+                                <button onclick="document.getElementById('loginImageInput').click()" class="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition">
+                                    SELECT IMAGE
+                                </button>
+                                <button id="uploadLoginBtn" onclick="MarketingModule.uploadImage(this)" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                    UPLOAD NOW
+                                </button>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="p-4 bg-black/20 rounded-2xl border border-white/5 space-y-2">
+                                <p class="text-xs text-slate-400 leading-relaxed">
+                                    <strong class="text-blue-400">Step 1:</strong> Select a high-quality image (1080x1080 or 1080x720 recommended).
+                                </p>
+                                <p class="text-xs text-slate-400 leading-relaxed">
+                                    <strong class="text-blue-400">Step 2:</strong> Click <span class="text-white font-bold">UPLOAD NOW</span> to save it to the server.
+                                </p>
+                                <p class="text-xs text-slate-400 leading-relaxed">
+                                    <strong class="text-blue-400">Step 3:</strong> Click <span class="text-orange-400 font-bold">SYNC TO APP</span> to make it live on the Login screen instantly.
+                                </p>
+                            </div>
+                            <input type="hidden" id="loginImageUrl" value="${config.loginImageUrl || ''}">
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     },
 
-    save: async function(btn) {
+    handleImageSelect: function(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('loginImagePreview').innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+                document.getElementById('uploadLoginBtn').disabled = false;
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    },
+
+    uploadImage: async function(btn) {
+        const input = document.getElementById('loginImageInput');
+        if (!input.files || !input.files[0]) return;
+
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner animate-spin"></i> UPLOADING...';
+
+        try {
+            const formData = new FormData();
+            formData.append('login_image', input.files[0]);
+
+            const res = await API.uploadFile('/admin/marketing/upload-login-image', formData);
+            if (res.success) {
+                document.getElementById('loginImageUrl').value = res.imageUrl;
+                UI.toast('Image Uploaded! Now click Sync.', 'success');
+                btn.innerHTML = '<i class="fas fa-check"></i> UPLOADED';
+                btn.classList.replace('bg-blue-500', 'bg-emerald-500');
+            } else {
+                UI.toast(res.message || 'Upload failed', 'error');
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+            }
+        } catch (err) {
+            console.error("❌ Upload Error:", err);
+            UI.toast('Network error during upload', 'error');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    },
+
+    syncApp: async function(btn) {
+        // Just call save but with a different toast message
+        await this.save(btn, 'Login Image Synced to App!');
+    },
+
+    save: async function(btn, successMsg) {
         console.log("🚀 Syncing Marketing Config...");
         const originalHtml = btn ? btn.innerHTML : '';
         if (btn) {
@@ -180,12 +277,13 @@ const MarketingModule = {
                 onboardingVideoUrl: document.getElementById('onboardingVideoUrl').value,
                 youtubeEmbedCode: document.getElementById('youtubeEmbedCode').value,
                 isTrackingEnabled: document.getElementById('isTrackingEnabled').checked,
-                logUserIp: document.getElementById('logUserIp').checked
+                logUserIp: document.getElementById('logUserIp').checked,
+                loginImageUrl: document.getElementById('loginImageUrl').value
             };
 
             const res = await API.post('/admin/marketing/config', data);
             if (res.success) {
-                UI.toast('App Config Synced Successfully!', 'success');
+                UI.toast(successMsg || 'App Config Synced Successfully!', 'success');
             } else {
                 UI.toast(res.message || 'Sync failed', 'error');
             }

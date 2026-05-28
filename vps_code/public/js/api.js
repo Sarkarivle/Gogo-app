@@ -216,5 +216,19 @@ const API = {
             method: 'POST',
             body: JSON.stringify(data)
         });
+    },
+    async uploadFile(endpoint, formData) {
+        const token = this.getToken();
+        const headers = {
+            'Authorization': `Bearer ${token}`
+        };
+        console.log(`📡 API Upload Request: ${endpoint}`);
+        const res = await fetch(`/api${endpoint}`, {
+            method: 'POST',
+            headers,
+            body: formData
+        });
+        if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+        return await res.json();
     }
 };

@@ -67,22 +67,25 @@ exports.getInbox = async (req, res) => {
             const other = conv.partnerPhone;
             const u = userMap[other] || {};
             const block = blocks.find(b => (b.blockerPhone === phone && b.blockedPhone === other) || (b.blockerPhone === other && b.blockedPhone === phone));
+            const meta = metaMap[other] || {};
 
             const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
             const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
 
             return {
                 phone: other,
-                msg: conv.lastMessage.message,
-                type: conv.lastMessage.type,
-                timestamp: conv.lastMessage.timestamp,
+                msg: conv.lastMessage?.message || '',
+                type: conv.lastMessage?.type || 'text',
+                timestamp: conv.lastMessage?.timestamp || new Date(),
                 name: u.name || 'User',
                 unread: conv.unreadCount || 0,
                 isOnline: u.isOnline || false,
                 isVerified: u.isVerified || false,
                 isBlocked: !!block,
                 iBlocked: block?.blockerPhone === phone,
-                city: cleanArea || cleanCity || 'Nearby'
+                city: cleanArea || cleanCity || 'Nearby',
+                isFavourite: meta.isFavourite || false,
+                isMuted: meta.isMuted || false
             };
         });
 

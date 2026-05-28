@@ -48,6 +48,8 @@ class AppConfigService {
   Map<String, dynamic>? get trackingConfig => _trackingConfig;
   DateTime? _lastConfigFetchTime;
 
+  String? get loginImageUrl => _trackingConfig?['loginImageUrl'];
+
   Future<void> fetchReviewMode({bool forceRefresh = false}) async {
     // Cache for 10 minutes
     if (!forceRefresh && _lastConfigFetchTime != null) {

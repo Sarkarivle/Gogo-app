@@ -17,6 +17,8 @@ const MarketingConfigSchema = new mongoose.Schema({
     isTrackingEnabled: { type: Boolean, default: true },
     logUserIp: { type: Boolean, default: false },
 
+    loginImageUrl: { type: String, default: '' },
+
     lastUpdatedBy: { type: String, default: 'admin' }
 }, { timestamps: true });
 
