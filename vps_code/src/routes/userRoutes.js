@@ -4,6 +4,7 @@ const UserController = require('../controllers/UserController');
 const ContactController = require('../controllers/ContactController');
 const PolicyController = require('../controllers/PolicyController');
 const NewsController = require('../controllers/NewsController');
+const MarketingController = require('../controllers/MarketingController');
 const { isUser } = require('../middleware/auth');
 
 router.post('/login', UserController.login);
@@ -29,5 +30,8 @@ router.get('/policies', PolicyController.getPolicies);
 
 // News
 router.get('/news/public', NewsController.getPublicNews);
+
+// Tracking Config
+router.get('/tracking-config', MarketingController.getAppTrackingConfig);
 
 module.exports = router;

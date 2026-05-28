@@ -206,5 +206,15 @@ const API = {
             method: 'POST',
             body: JSON.stringify({ title, message })
         });
+    },
+    // Generic methods
+    async get(endpoint) {
+        return await this.request(`/api${endpoint}`);
+    },
+    async post(endpoint, data) {
+        return await this.request(`/api${endpoint}`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
     }
 };

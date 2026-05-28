@@ -29,6 +29,12 @@ const UI = {
         return '<div class="flex justify-center items-center h-full py-20 text-[10px] font-black uppercase opacity-20 tracking-[0.3em] animate-pulse text-white">Synchronizing Data...</div>';
     },
 
+    skeleton(count = 4) {
+        let cards = '';
+        for(let i=0; i<count; i++) cards += this.skeletonCard();
+        return `<div class="grid grid-cols-2 gap-8">${cards}</div>`;
+    },
+
     skeletonCard() {
         return `
             <div class="glass p-8 rounded-[2rem] space-y-4">

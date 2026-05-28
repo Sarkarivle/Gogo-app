@@ -4,6 +4,7 @@ const AdminController = require('../controllers/AdminController');
 const PolicyController = require('../controllers/PolicyController');
 const ContactController = require('../controllers/ContactController');
 const NewsController = require('../controllers/NewsController');
+const MarketingController = require('../controllers/MarketingController');
 const { isAdmin } = require('../middleware/auth');
 
 // Safety function to prevent "Undefined" crash
@@ -41,6 +42,10 @@ router.get('/monetization/stats', s(AdminController.getMonetizationStats));
 router.get('/monetization/history', s(AdminController.getPaymentHistory));
 router.get('/media/all', s(AdminController.getAllMedia));
 router.post('/media/delete', s(AdminController.deleteMedia));
+
+// Marketing Config
+router.get('/marketing/config', s(MarketingController.getConfig));
+router.post('/marketing/config', s(MarketingController.updateConfig));
 
 // External Controllers
 router.get('/policies', s(PolicyController.getPolicies));

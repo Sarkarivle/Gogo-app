@@ -69,6 +69,7 @@ async function changeModule(mod) {
             case 'messages': await loadSupportMessages(); break;
             case 'app_update': await loadAppUpdate(); break;
             case 'news': await loadNews(); break;
+            case 'marketing': await loadMarketing(); break;
             case 'audit': await loadAuditLogs(); break;
             case 'database': await loadDatabaseTools(); break;
             case 'admins': await loadAdmins(); break;

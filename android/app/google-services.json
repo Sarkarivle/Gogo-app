@@ -9,6 +9,25 @@
       "client_info": {
         "mobilesdk_app_id": "1:179204120380:android:d8dbaaddafb5df80920839",
         "android_client_info": {
+          "package_name": "com.example.gogo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAS-4aRru34W2-w2pCeDxq3x5x7WM17BPE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:179204120380:android:544dc6bf169550d6920839",
+        "android_client_info": {
           "package_name": "com.gogo.dating"
         }
       },

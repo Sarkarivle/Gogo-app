@@ -14,20 +14,15 @@ import 'services/call_service.dart';
 import 'services/user_repository.dart';
 import 'services/app_config_service.dart';
 import 'services/premium_service.dart';
+import 'services/analytics_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await AppVisibilityCoordinator().init();
   
-  // Fetch Review Mode Config Early
-  await AppConfigService().fetchReviewMode();
-  
-  // Initialize Global Socket Service
-  SocketService().init();
-  
-  // Track App Open
-  UserRepository().trackEvent('app_open');
+  // Track App Open via GTM/Analytics
+  AnalyticsService.logAppOpen();
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Color(0xFF2A0D17),

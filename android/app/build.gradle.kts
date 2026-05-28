@@ -58,4 +58,7 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
+    
+    // Google Tag Manager for Android
+    implementation("com.google.android.gms:play-services-tagmanager:18.1.1")
 }

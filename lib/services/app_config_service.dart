@@ -44,16 +44,30 @@ class AppConfigService {
   bool _isStandardMode = false;
   bool get isStandardMode => _isStandardMode;
 
+  Map<String, dynamic>? _trackingConfig;
+  Map<String, dynamic>? get trackingConfig => _trackingConfig;
+
   Future<void> fetchReviewMode() async {
     try {
-      final response = await ApiService.get('/api/payment/settings');
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      final responses = await Future.wait([
+        ApiService.get('/api/payment/settings'),
+        ApiService.get('/api/user/tracking-config')
+      ]);
+
+      if (responses[0].statusCode == 200) {
+        final data = jsonDecode(responses[0].body);
         _isStandardMode = data['isStandardMode'] ?? false;
-        debugPrint('Standard Mode Status: $_isStandardMode');
+      }
+
+      if (responses[1].statusCode == 200) {
+        final data = jsonDecode(responses[1].body);
+        if (data['success'] == true) {
+          _trackingConfig = data['config'];
+          debugPrint('Tracking Config Loaded: $_trackingConfig');
+        }
       }
     } catch (e) {
-      debugPrint('Error fetching standard mode: $e');
+      debugPrint('Error fetching app config: $e');
     }
   }
 

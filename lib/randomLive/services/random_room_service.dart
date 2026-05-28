@@ -13,6 +13,8 @@ import '../../services/chat_repository.dart';
 import '../../main.dart';
 import '../../utils/phone_utils.dart';
 
+import '../../services/analytics_service.dart';
+
 enum RandomRoomState { idle, searching, matched, inCall }
 
 class RandomRoomService with WidgetsBindingObserver {
@@ -186,6 +188,9 @@ class RandomRoomService with WidgetsBindingObserver {
         nextPartner(context);
       }
     }
+    
+    // Track Video Call Start for Ads Optimization
+    AnalyticsService.logStartCall('video');
   }
 
   Future<void> _processOffer(dynamic offerData) async {

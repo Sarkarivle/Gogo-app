@@ -7,6 +7,8 @@ const { normalize, phoneQuery } = require('../utils/phoneUtils');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
 
+const marketingService = require('../services/marketingService');
+
 const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
 
 /**
@@ -265,6 +267,10 @@ exports.register = async (req, res) => {
 
         const newUser = new User(userData);
         const savedUser = await newUser.save();
+
+        // Trigger S2S Registration Postback
+        marketingService.triggerS2SPostback('registration', req.body.clickId);
+
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
         res.json({ success: true, user: savedUser, token });
     } catch (e) {
