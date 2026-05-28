@@ -1,3 +1,4 @@
+// Optimized UserController for GoGo
 const User = require('../models/User');
 const Config = require('../models/Config');
 const Report = require('../models/Report');
@@ -98,10 +99,10 @@ exports.getProfile = async (req, res) => {
 
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
 
         // REVOKE Standard Access if toggle is OFF
-        if (!isStandardMode && user.premiumPlan === 'Standard Access') {
+        if (!isReviewMode && user.premiumPlan === 'Standard Access') {
             await User.updateOne({ _id: user._id }, { $set: { isPremium: false, premiumPlan: 'None' } });
             user.isPremium = false;
             user.premiumPlan = 'None';
@@ -123,7 +124,7 @@ exports.getProfile = async (req, res) => {
         user.cityLabel = cleanArea || cleanCity || 'Nearby';
         user.area = '';
 
-        res.json({ success: true, user });
+        res.json({ success: true, user, isStandardMode: isReviewMode });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -133,7 +134,6 @@ exports.login = async (req, res) => {
     const { phone, firebaseToken, deviceId, deviceModel, os, ip } = req.body;
     try {
         const normalizedPhone = normalize(phone);
-        // --- SECURE FIREBASE VERIFICATION ---
         const isValid = await verifyFirebaseToken(normalizedPhone, firebaseToken);
         if (!isValid) {
             return res.status(401).json({ success: false, message: "Identity verification failed" });
@@ -144,9 +144,9 @@ exports.login = async (req, res) => {
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
-        if (user) {
-            const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
 
+        if (user) {
             if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned' || user.isBanned) {
                 return res.status(403).json({ success: false, message: "Account blocked" });
             }
@@ -158,14 +158,12 @@ exports.login = async (req, res) => {
             user.lastSeen = new Date();
             user.isOnline = true;
 
-            // SIMPLE REVOKE: If toggle is OFF and user has free premium, make them normal
-            if (!isStandardMode && user.premiumPlan === 'Standard Access') {
+            if (!isReviewMode && user.premiumPlan === 'Standard Access') {
                 user.isPremium = false;
                 user.premiumPlan = 'None';
             }
 
-            // AUTO-UPGRADE existing users if they log in during Review Mode
-            if (isStandardMode && !user.isPremium) {
+            if (isReviewMode && !user.isPremium) {
                 user.isPremium = true;
                 user.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
                 user.premiumPlan = 'Standard Access';
@@ -184,9 +182,9 @@ exports.login = async (req, res) => {
             }
             await user.save();
             const token = jwt.sign({ phone: user.phone, id: user._id }, JWT_SECRET, { expiresIn: '90d' });
-            res.json({ success: true, user, token });
+            res.json({ success: true, user, token, isStandardMode: isReviewMode });
         } else {
-            res.json({ success: false });
+            res.json({ success: false, isStandardMode: isReviewMode });
         }
     } catch (e) {
         res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -218,7 +216,6 @@ exports.register = async (req, res) => {
     if (!phone) return res.status(400).json({ success: false, message: "Phone required" });
 
     const normalizedPhone = normalize(phone);
-    // --- SECURE FIREBASE VERIFICATION ---
     const isValid = await verifyFirebaseToken(normalizedPhone, firebaseToken);
     if (!isValid) {
         return res.status(401).json({ success: false, message: "Identity verification failed" });
@@ -230,14 +227,13 @@ exports.register = async (req, res) => {
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
+        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
+
         if (existing) {
             const token = jwt.sign({ phone: existing.phone, id: existing._id }, JWT_SECRET, { expiresIn: '90d' });
-            return res.json({ success: true, user: existing, token });
+            return res.json({ success: true, user: existing, token, isStandardMode: isReviewMode });
         }
 
-        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
-
-        // SECURE: Only take allowed fields to prevent mass assignment (e.g., setting isPremium: true via register)
         const userData = {
             phone: normalizedPhone,
             name: name || 'GoGo User',
@@ -251,11 +247,10 @@ exports.register = async (req, res) => {
             isDeactivated: false,
             isOnline: true,
             lastSeen: new Date(),
-            // AUTO-PREMIUM for Review Mode (Compliance)
-            isPremium: isStandardMode
+            isPremium: isReviewMode
         };
 
-        if (isStandardMode) {
+        if (isReviewMode) {
             userData.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year
             userData.premiumPlan = 'Standard Access';
         }
@@ -268,11 +263,10 @@ exports.register = async (req, res) => {
         const newUser = new User(userData);
         const savedUser = await newUser.save();
 
-        // Trigger S2S Registration Postback
         marketingService.triggerS2SPostback('registration', req.body.clickId);
 
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
-        res.json({ success: true, user: savedUser, token });
+        res.json({ success: true, user: savedUser, token, isStandardMode: isReviewMode });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -449,16 +443,24 @@ exports.reactivateAccount = async (req, res) => {
         // IDOR Prevention: Always prefer token phone for users
         if (req.user && !req.user.role) phone = req.user.phone;
 
-        const user = await User.findOne(phoneQuery(phone));
+        const [user, reviewConfig] = await Promise.all([
+            User.findOne(phoneQuery(phone)),
+            Config.findOne({ key: 'review_mode_config' })
+        ]);
+
         if (!user) return res.status(404).json({ success: false });
+
+        const isReviewMode = reviewConfig?.value?.isReviewMode === true;
+
         user.isDeactivated = false;
         user.accountStatus = 'Active';
         user.reactivatedAt = new Date();
         user.isOnline = true;
         await user.save();
+
         const io = req.app.get('socketio');
         if (io) io.emit('user_reactivated', { phone: user.phone });
-        res.json({ success: true, user });
+        res.json({ success: true, user, isStandardMode: isReviewMode });
     } catch (e) {
         res.status(500).json({ success: false });
     }
