@@ -16,12 +16,21 @@ const Block = require('./src/models/Block');
 // Services
 const analyticsService = require('./src/services/analyticsService');
 const revenueService = require('./src/services/revenueService');
+const notificationService = require('./src/services/notificationService');
 const randomMatchController = require('./src/controllers/RandomMatchController');
 const { normalize, phoneQuery } = require('./src/utils/phoneUtils');
 const { updateConversationSummary, resetUnreadCount } = require('./src/utils/chatUtils');
 
 const app = express();
 const server = http.createServer(app);
+
+// --- STARTUP CHECKS ---
+if (!process.env.JWT_SECRET) {
+    console.warn("⚠️ WARNING: JWT_SECRET is not set in .env. Using default (INSECURE)");
+}
+if (!process.env.ADMIN_PANEL_KEY) {
+    console.warn("⚠️ WARNING: ADMIN_PANEL_KEY is not set. Admin panel path is vulnerable.");
+}
 
 // --- HELPERS ---
 const normalizePhone = normalize;
@@ -70,7 +79,10 @@ app.get('/', (req, res) => res.send('🚀 GoGo Backend Running!'));
 
 app.get('/admin', (req, res) => {
     const ADMIN_KEY = process.env.ADMIN_PANEL_KEY || 'hpvkashyap';
-    if (req.query.key !== ADMIN_KEY) return res.status(403).send("Forbidden");
+    // Allow both ?key=secret and just ?secret for convenience
+    const isAuthorized = req.query.key === ADMIN_KEY || req.query[ADMIN_KEY] !== undefined;
+
+    if (!isAuthorized) return res.status(403).send("Forbidden");
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
@@ -316,6 +328,36 @@ io.on('connection', (socket) => {
             });
             await newMessage.save();
             updateConversationSummary(newMessage);
+
+            // --- SEND PUSH NOTIFICATION ---
+            try {
+                const receiverUser = await User.findOne({ phone: receiver }, 'fcmToken');
+                if (receiverUser?.fcmToken) {
+                    const senderUser = await User.findOne({ phone: myPhone }, 'name position');
+                    const senderName = senderUser?.name || "Someone";
+
+                    let body = data.message;
+                    if (data.type === 'image') body = "📷 Sent an image";
+                    else if (data.type === 'audio') body = "🎵 Sent a voice message";
+                    else if (data.type === 'video') body = "🎥 Sent a video";
+
+                    await notificationService.sendPushNotification(
+                        receiverUser.fcmToken,
+                        senderName,
+                        body,
+                        {
+                            type: 'chat',
+                            senderPhone: myPhone,
+                            senderName: senderName,
+                            senderPosition: senderUser?.position || "Member",
+                            roomId: roomId,
+                            messageId: tempId.toString()
+                        }
+                    );
+                }
+            } catch (notifyErr) {
+                console.error("FCM Send Error in server.js:", notifyErr.message);
+            }
         } catch (err) {
             console.error("SEND_MESSAGE_ERROR:", err);
             if (callback) callback({ success: false });

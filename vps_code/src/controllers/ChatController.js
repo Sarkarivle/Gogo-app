@@ -12,7 +12,10 @@ const jwt = require('jsonwebtoken');
 
 exports.getInbox = async (req, res) => {
     try {
-        const phone = normalize(req.params.phone);
+        let phone = normalize(req.params.phone);
+        // IDOR Prevention: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = normalize(req.user.phone);
+
         const page = Math.max(1, parseInt(req.query.page || 1));
         const limit = Math.max(1, parseInt(req.query.limit || 50));
         const skip = (page - 1) * limit;
@@ -257,17 +260,25 @@ exports.checkBlock = async (req, res) => {
 
 exports.getRecentPhotos = async (req, res) => {
     try {
-        res.json({ success: true, photos: await RecentPhoto.find({ phone: normalize(req.params.phone) }).sort({ timestamp: -1 }).limit(20) });
+        let phone = normalize(req.params.phone);
+        // IDOR Prevention: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = normalize(req.user.phone);
+
+        const pQ = phoneQuery(phone);
+        res.json({ success: true, photos: await RecentPhoto.find(pQ).sort({ timestamp: -1 }).limit(20) });
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.getBlockedList = async (req, res) => {
     try {
-        const phone = normalize(req.params.phone);
-        const blocks = await Block.find({ blockerPhone: phone }).lean();
+        let phone = normalize(req.params.phone);
+        // IDOR Prevention: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = normalize(req.user.phone);
+
+        const blocks = await Block.find({ blockerPhone: new RegExp(phone + '$') }).lean();
         const partnerPhones = blocks.map(b => b.blockedPhone);
 
-        const blockedUsers = await User.find({ phone: { $in: partnerPhones } }, 'phone name profileImages').lean();
+        const blockedUsers = await User.find({ phone: { $in: partnerPhones.map(p => new RegExp(normalize(p) + '$')) } }, 'phone name profileImages').lean();
 
         const result = blockedUsers.map(u => ({
             phone: u.phone,
@@ -285,6 +296,11 @@ exports.deletePhoto = async (req, res) => {
     try {
         const photo = await RecentPhoto.findById(req.params.messageId);
         if (photo) {
+            // IDOR Check: Ensure user owns the photo or is admin
+            if (req.user && !req.user.role && normalize(req.user.phone) !== normalize(photo.phone)) {
+                return res.status(403).json({ success: false, message: "Unauthorized" });
+            }
+
             const filePath = path.join(process.cwd(), 'uploads', photo.imageUrl.split('/').pop());
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             await RecentPhoto.findByIdAndDelete(req.params.messageId);
@@ -295,7 +311,11 @@ exports.deletePhoto = async (req, res) => {
 
 exports.deleteRecentPhotoByUrl = async (req, res) => {
     try {
-        const phone = normalize(req.body.phone), url = req.body.imageUrl.split('?')[0];
+        let phone = normalize(req.body.phone);
+        // IDOR Prevention: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = normalize(req.user.phone);
+
+        const url = req.body.imageUrl.split('?')[0];
         const photo = await RecentPhoto.findOne({ phone, imageUrl: url });
         if (photo) {
             const filePath = path.join(process.cwd(), 'uploads', url.split('/').pop());

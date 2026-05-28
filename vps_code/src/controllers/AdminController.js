@@ -20,6 +20,20 @@ const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
 
 const { normalize, phoneQuery } = require('../utils/phoneUtils');
 
+// Helper for Audit Logging
+const logAction = async (req, action, target, details) => {
+    try {
+        await new AdminLog({
+            adminId: req.admin?.id,
+            adminName: req.admin?.username,
+            action,
+            target,
+            details,
+            timestamp: new Date()
+        }).save();
+    } catch (e) { console.error("Audit Log Error:", e); }
+};
+
 exports.loginAdmin = async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -60,7 +74,14 @@ exports.getChatHistory = async (req, res) => {
 };
 
 exports.getStats = async (req, res) => {
-    try { res.json({ success: true, stats: await analyticsService.getDashboardStats() }); } catch (e) { res.status(500).json({ success: false }); }
+    console.log(`📊 [${new Date().toISOString()}] Admin API: getStats requested by ${req.admin?.username}`);
+    try {
+        const stats = await analyticsService.getDashboardStats();
+        res.json({ success: true, stats });
+    } catch (e) {
+        console.error("❌ Dashboard Stats Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
 };
 
 exports.getAnalytics = async (req, res) => {
@@ -110,6 +131,9 @@ exports.updateUserStatus = async (req, res) => {
 
         const user = await User.findOneAndUpdate(phoneQuery(phone), filteredUpdate, { new: true });
         if (!user) return res.status(404).json({ success: false });
+
+        await logAction(req, "Update User Status", phone, JSON.stringify(filteredUpdate));
+
         const io = req.app.get('socketio');
         if (io) {
             io.to(`user_${phone}`).emit('profile_sync_required', { type: 'STATUS_UPDATE', fullUser: user });
@@ -143,6 +167,9 @@ exports.clearUserChat = async (req, res) => {
         const phone = normalize(req.params.phone);
         const pQ = new RegExp(phone + '$');
         await Message.deleteMany({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] });
+
+        await logAction(req, "Clear Chat History", phone, "Wiped all message logs for user");
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -158,6 +185,9 @@ exports.deleteUser = async (req, res) => {
             Block.deleteMany({ $or: [{ blockerPhone: pQ }, { blockedPhone: pQ }] }),
             Subscription.findOneAndDelete({ userPhone: pQ })
         ]);
+
+        await logAction(req, "Delete Account", phone, "Permanently wiped user data");
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -186,18 +216,52 @@ exports.approveVerification = async (req, res) => {
             User.findOneAndUpdate(phoneQuery(phone), { isVerified: true }),
             VerificationRequest.findOneAndUpdate({ userPhone: new RegExp(phone + '$') }, { status: 'Approved' })
         ]);
+
+        await logAction(req, "Approve Identity", phone, "Manual ID verification approved");
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.broadcastNotification = async (req, res) => {
+    const { title, message } = req.body;
+    console.log(`📣 [${new Date().toISOString()}] Broadcast triggered: "${title}" - "${message}"`);
+
     try {
+        if (!message) return res.status(400).json({ success: false, message: "Message body is required" });
+
         const io = req.app.get('socketio');
-        if (io) io.emit('admin_alert', req.body);
-        const users = await User.find({ fcmToken: { $exists: true, $ne: null } }, 'fcmToken');
-        for (const u of users) notificationService.sendPushNotification(u.fcmToken, req.body.title, req.body.message);
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+        if (io) {
+            io.emit('admin_alert', { title, message, timestamp: new Date() });
+            console.log("📡 Socket broadcast emitted to all online users");
+        }
+
+        const users = await User.find({ fcmToken: { $exists: true, $ne: null } }, 'fcmToken phone');
+        console.log(`👥 Found ${users.length} users with FCM tokens in database`);
+
+        let successCount = 0;
+        const sendPromises = users.map(async (u) => {
+            if (u.fcmToken) {
+                const success = await notificationService.sendPushNotification(
+                    u.fcmToken,
+                    title || "Broadcast",
+                    message,
+                    { type: 'broadcast' }
+                );
+                if (success) successCount++;
+            }
+        });
+
+        await Promise.all(sendPromises);
+        console.log(`✅ Broadcast finished. Successful deliveries: ${successCount}/${users.length}`);
+
+        await logAction(req, "Global Broadcast", "All Users", message);
+
+        res.json({ success: true, targetCount: users.length, deliveredCount: successCount });
+    } catch (e) {
+        console.error("❌ Broadcast Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
 };
 
 exports.getUserInboxes = async (req, res) => {
@@ -217,7 +281,13 @@ exports.getUserInboxes = async (req, res) => {
 };
 
 exports.getMonitoringData = async (req, res) => {
-    try { res.json({ activeSockets: analyticsService.io ? analyticsService.io.engine.clientsCount : 0 }); } catch (e) { res.status(500).json({}); }
+    try {
+        const data = await analyticsService.getLiveMonitoringData();
+        res.json(data);
+    } catch (e) {
+        console.error("Monitoring Data Error:", e);
+        res.status(500).json({ success: false, message: "Internal server error" });
+    }
 };
 
 exports.getAuditLogs = async (req, res) => {
@@ -279,8 +349,18 @@ exports.getAllMedia = async (req, res) => {
 exports.deleteMedia = async (req, res) => {
     try {
         const fileName = req.body.url.split('/').pop().split('?')[0];
+        // Security: Prevent path traversal
+        if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+            return res.status(400).json({ success: false, message: "Invalid filename" });
+        }
+
         const filePath = path.join(__dirname, '../../uploads', fileName);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+        // Use fs.promises for non-blocking I/O
+        if (fs.existsSync(filePath)) {
+            await fs.promises.unlink(filePath).catch(err => console.error("File Delete Error:", err));
+        }
+
         if (req.body.type === 'Profile') await User.findOneAndUpdate(phoneQuery(req.body.owner), { $pull: { profileImages: req.body.url.split('?')[0] } });
         else if (req.body.type === 'Chat') await Message.findOneAndUpdate({ imageUrl: req.body.url.split('?')[0] }, { $set: { message: "[Deleted]", imageUrl: null, type: 'text' } });
         res.json({ success: true });

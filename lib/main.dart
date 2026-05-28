@@ -12,11 +12,16 @@ import 'screens/onboarding/location_permission_screen.dart';
 import 'services/socket_service.dart';
 import 'services/call_service.dart';
 import 'services/user_repository.dart';
+import 'services/app_config_service.dart';
+import 'services/premium_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await AppVisibilityCoordinator().init();
+  
+  // Fetch Review Mode Config Early
+  await AppConfigService().fetchReviewMode();
   
   // Initialize Global Socket Service
   SocketService().init();
@@ -39,6 +44,17 @@ void main() async {
     initialScreen = const NewsHomeScreen();
   } else if (userDataStr != null && authToken != null) {
     final userData = jsonDecode(userDataStr);
+    
+    // If Review Mode is active, force premium status locally
+    if (AppConfigService().isStandardMode) {
+      userData['isPremium'] = true;
+      userData['premiumPlan'] = 'Standard Access';
+      await prefs.setString('user_data', jsonEncode(userData));
+    }
+    
+    // Always initialize PremiumService to sync latest toggle state
+    await PremiumService().init();
+
     // Agar hasCompletedOnboarding false hai ya missing hai, toh onboarding dikhao
     if (userData['hasCompletedOnboarding'] == true) {
       initialScreen = const HomeScreen();

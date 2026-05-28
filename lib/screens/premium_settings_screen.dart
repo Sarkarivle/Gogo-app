@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
+import '../services/app_config_service.dart';
 import 'cancel_membership_screen.dart';
 import 'onboarding/trial_onboarding_screen.dart';
 
@@ -91,6 +92,10 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
         backgroundColor: Color(0xFF0F0F0F),
         body: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)),
       );
+    }
+
+    if (AppConfigService().isStandardMode) {
+      return _buildReviewModeSettings();
     }
 
     final sub = userData?['subscription'] ?? {};
@@ -299,6 +304,45 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
             child: Text(answer, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5)),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReviewModeSettings() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F0F0F),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
+        title: const Text('Member Information', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.verified_user_rounded, color: Colors.blueAccent, size: 80),
+            const SizedBox(height: 24),
+            const Text(
+              "Account Status: Active",
+              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "Your GoGo account is in good standing.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+            const SizedBox(height: 40),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                "Enjoy full access to our community. If you have any questions, please contact our support team.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

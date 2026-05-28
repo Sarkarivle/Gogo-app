@@ -13,20 +13,35 @@ const API = {
         const token = this.getToken();
         const headers = {
             'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
             ...options.headers
         };
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const res = await fetch(url, { ...options, headers });
+        console.log(`📡 API Request: ${url}`);
+        const res = await fetch(url, {
+            ...options,
+            headers,
+            cache: 'no-store'
+        });
 
-        if (res.status === 401) {
-            this.clearToken();
-            throw new Error("Session expired. Please login again.");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            console.error(`❌ API Error [${res.status}] for ${url}:`, errData);
+            if (res.status === 401) {
+                console.warn("🔐 Session expired or invalid token. Redirecting to login...");
+                this.clearToken();
+                throw new Error("Session expired. Please login again.");
+            }
+            throw new Error(errData.message || `Server error (${res.status})`);
         }
 
-        return await res.json();
+        const data = await res.json();
+        console.log(`✅ API Response [${res.status}] for ${url}:`, data.success ? 'Success' : 'Failed');
+        return data;
     },
 
     async login(username, password) {
@@ -129,6 +144,9 @@ const API = {
     async getMonitoringData() {
         return await this.request('/api/admin/monitoring/sockets');
     },
+    async getAuditLogs() {
+        return await this.request('/api/admin/audit-logs');
+    },
     async getAnalyticsDetailed() {
         return await this.request('/api/admin/analytics/detailed');
     },
@@ -153,6 +171,21 @@ const API = {
     async deleteNews(id) {
         return await this.request(`/api/admin/news/${id}`, { method: 'DELETE' });
     },
+    async getAllNews() {
+        return await this.request('/api/admin/news');
+    },
+    async addNews(data) {
+        return await this.request('/api/admin/news', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+    async updateNews(id, data) {
+        return await this.request(`/api/admin/news/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    },
     async getConfig(key) {
         return await this.request(`/api/admin/config/${key}`);
     },
@@ -167,5 +200,11 @@ const API = {
     },
     async getPaymentHistory(page = 1) {
         return await this.request(`/api/admin/monetization/history?page=${page}`);
+    },
+    async broadcastNotification(title, message) {
+        return await this.request('/api/admin/broadcast', {
+            method: 'POST',
+            body: JSON.stringify({ title, message })
+        });
     }
 };

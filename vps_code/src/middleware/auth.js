@@ -35,13 +35,17 @@ exports.isUser = (req, res, next) => {
 
         const userPhone = normalize(decoded.phone);
 
-        // IDOR Check
+        // IDOR Check: Only enforce for sensitive operations
+        const sensitiveMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
         let requestedPhone = req.params.phone || req.body.phone || req.query.phone;
 
-        if (requestedPhone) {
+        if (requestedPhone && sensitiveMethods.includes(req.method)) {
             const tP = normalize(requestedPhone);
             if (userPhone !== tP) {
-                return res.status(403).json({ success: false, message: "Unauthorized access to another account." });
+                // Special case for some routes that might pass someone else's phone for legitimate reasons
+                if (!url.includes('/report')) {
+                    return res.status(403).json({ success: false, message: "Unauthorized operation on another account." });
+                }
             }
         } else if (url.includes('/history/') || url.includes('/check-block/')) {
             const parts = url.split('/');

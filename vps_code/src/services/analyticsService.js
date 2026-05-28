@@ -150,6 +150,15 @@ class AnalyticsService {
         // Implementation for reconnect tracking if needed
     }
 
+    getServerHealth() {
+        return {
+            cpuUsage: (os.loadavg()[0] * 10).toFixed(2),
+            freeMem: (os.freemem() / 1024 / 1024 / 1024).toFixed(2),
+            totalMem: (os.totalmem() / 1024 / 1024 / 1024).toFixed(2),
+            uptime: (os.uptime() / 3600).toFixed(1)
+        };
+    }
+
     async broadcastMetrics() {
         if (!this.io) return;
 
@@ -159,19 +168,14 @@ class AnalyticsService {
             if (!adminRoom || adminRoom.size === 0) return;
 
             const onlineCount = await User.countDocuments({ isOnline: true });
-
-            const serverHealth = {
-                cpuUsage: (os.loadavg()[0] * 10).toFixed(2),
-                freeMem: (os.freemem() / 1024 / 1024 / 1024).toFixed(2),
-                totalMem: (os.totalmem() / 1024 / 1024 / 1024).toFixed(2),
-                uptime: (os.uptime() / 3600).toFixed(1)
-            };
+            const serverHealth = this.getServerHealth();
 
             const liveMetrics = {
                 activeSockets: this.io.engine.clientsCount,
                 onlineUsers: onlineCount,
                 eventThroughput: `${(this.metrics.eventThroughput / 60).toFixed(1)}/sec`,
                 messagesPerMin: this.metrics.messagesLastMinute,
+                reconnects24h: 0, // Placeholder if not tracked
 
                 // We send both, dashboard can choose what to show
                 // But for the funnel cards, we'll send the unique ones as requested
@@ -189,14 +193,25 @@ class AnalyticsService {
         }
     }
 
+    async getLiveMonitoringData() {
+        const onlineCount = await User.countDocuments({ isOnline: true });
+        return {
+            activeSockets: this.io ? this.io.engine.clientsCount : 0,
+            onlineUsers: onlineCount,
+            eventThroughput: `${(this.metrics.eventThroughput / 60).toFixed(1)}/sec`,
+            reconnects24h: 0,
+            serverHealth: this.getServerHealth()
+        };
+    }
+
     async getDashboardStats() {
         // Deriving stats for initial load
         const [total, premium, online, pendingReports, totalMsgs] = await Promise.all([
-            User.countDocuments(),
+            User.estimatedDocumentCount(),
             User.countDocuments({ isPremium: true }),
             User.countDocuments({ isOnline: true }),
             Report.countDocuments({ status: 'Pending' }),
-            Message.countDocuments()
+            Message.estimatedDocumentCount() // Much faster for large collections
         ]);
 
         const maleCount = await User.countDocuments({ gender: 'Male' });
@@ -205,13 +220,16 @@ class AnalyticsService {
         const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const dau = await User.countDocuments({ lastSeen: { $gte: dayAgo } });
 
-        const dailyGrowth = [];
+        const dailyGrowthPromises = [];
         for(let i=6; i>=0; i--) {
             const start = new Date(); start.setHours(0,0,0,0); start.setDate(start.getDate() - i);
             const end = new Date(); end.setHours(23,59,59,999); end.setDate(end.getDate() - i);
-            const count = await User.countDocuments({ createdAt: { $gte: start, $lte: end } });
-            dailyGrowth.push({ date: start.toLocaleDateString('en-US', { weekday: 'short' }), count });
+            dailyGrowthPromises.push(
+                User.countDocuments({ createdAt: { $gte: start, $lte: end } })
+                    .then(count => ({ date: start.toLocaleDateString('en-US', { weekday: 'short' }), count }))
+            );
         }
+        const dailyGrowth = await Promise.all(dailyGrowthPromises);
 
         // Retention (Real unique-user based)
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -251,6 +269,7 @@ class AnalyticsService {
             },
             funnelRaw: uf,
             liveActivity: this.metrics.liveActivity,
+            serverHealth: this.getServerHealth(),
             systemStatus: 'ONLINE'
         };
     }

@@ -4,7 +4,7 @@ const UserSchema = new mongoose.Schema({
     // Core Identity
     phone: { type: String, unique: true, required: true, index: true },
     name: { type: String, index: 'text' },
-    gender: { type: String, enum: ['Male', 'Female', 'Other'], default: 'Male' },
+    gender: { type: String, enum: ['Male', 'Female', 'Other'], default: 'Male', index: true },
     age: Number,
     dobDay: String, dobMonth: String, dobYear: String,
 

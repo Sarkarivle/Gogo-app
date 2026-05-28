@@ -23,14 +23,16 @@ async function loadMonetization() {
     `;
 
     try {
-        const [configData, gpConfigData, statsData] = await Promise.all([
+        const [configData, gpConfigData, reviewData, statsData] = await Promise.all([
             API.getConfig('payment_settings').catch(e => ({ success: false, config: {} })),
             API.getConfig('google_play_settings').catch(e => ({ success: false, config: {} })),
+            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isReviewMode: false } })),
             API.getMonetizationStats().catch(e => ({ success: false, stats: {} }))
         ]);
 
         let settings = configData.config || {};
         let gpSettings = gpConfigData.config || {};
+        let isReviewMode = reviewData.config?.isReviewMode || false;
 
         // Ensure activeGateway is set to razorpay by default if missing
         if (!settings.activeGateway) settings.activeGateway = 'razorpay';
@@ -49,6 +51,25 @@ async function loadMonetization() {
 
         mainContent.innerHTML = `
             <div class="space-y-10 animate-fade pb-20">
+                <!-- Google Compliance Switch -->
+                <div class="glass p-6 rounded-[2rem] border border-red-500/20 flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="p-3 bg-red-500/10 rounded-2xl">
+                            <i class="fas fa-shield-check text-red-500 text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xs font-black text-white uppercase tracking-wider">Google Compliance Switch</h3>
+                            <p id="reviewModeStatus" class="text-[9px] font-bold mt-0.5 ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
+                                ${isReviewMode ? 'Review Mode Active (Payments Hidden)' : 'Live Mode Active (Payments Visible)'}
+                            </p>
+                        </div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer scale-110 mr-4">
+                        <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
+                        <div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                </div>
+
                 <!-- Primary Revenue Cards -->
                 <div class="grid grid-cols-4 gap-6">
                     ${UI.card('Gross Revenue', '₹' + stats.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500', 'gross-revenue')}
@@ -428,4 +449,19 @@ async function saveGooglePlaySettings() {
 async function searchHistory() {
     const val = document.getElementById('historySearch').value;
     loadPaymentHistory(1, val);
+}
+
+async function toggleReviewMode(el) {
+    const isActive = el.checked;
+    const statusText = document.getElementById('reviewModeStatus');
+
+    try {
+        await API.updateConfig('review_mode_config', { isReviewMode: isActive });
+        statusText.innerText = isActive ? 'Review Mode Active (Payments Hidden)' : 'Live Mode Active (Payments Visible)';
+        statusText.className = `text-[9px] font-bold mt-0.5 ${isActive ? 'text-emerald-500' : 'text-slate-500'}`;
+        showSystemToast("System Updated", `Compliance Switch ${isActive ? 'ACTIVATED' : 'DEACTIVATED'}`, isActive ? 'bg-red-500' : 'bg-blue-500');
+    } catch (e) {
+        el.checked = !isActive;
+        showSystemToast("Update Failed", "Could not update compliance mode", 'bg-red-500');
+    }
 }

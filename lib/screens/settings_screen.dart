@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../services/user_repository.dart';
 import '../services/app_visibility_coordinator.dart';
+import '../services/app_config_service.dart';
 import 'login_screen.dart';
 import 'premium_settings_screen.dart';
 import 'contact_us_screen.dart';
@@ -99,8 +100,13 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             SettingsHeaderCard(userData: userData),
             const SizedBox(height: 24),
-            PremiumMembershipCard(userData: userData),
-            const SizedBox(height: 24),
+            if (!AppConfigService().isStandardMode) ...[
+              PremiumMembershipCard(userData: userData),
+              const SizedBox(height: 24),
+            ] else ...[
+              _buildCommunityCard(),
+              const SizedBox(height: 24),
+            ],
             _buildAccountSection(),
             const SizedBox(height: 24),
             _buildPrivacySection(),
@@ -125,26 +131,78 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: 'Verify your identity',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const VerificationPage())),
         ),
-        SettingsRowItem(
-          icon: Icons.receipt_long_outlined,
-          title: 'Invoice',
-          subtitle: 'Billing & payment history',
-          onTap: () {},
-        ),
+        if (!AppConfigService().isStandardMode)
+          SettingsRowItem(
+            icon: Icons.receipt_long_outlined,
+            title: 'Invoice',
+            subtitle: 'Billing & payment history',
+            onTap: () {},
+          ),
         SettingsRowItem(
           icon: Icons.block_flipped,
           title: 'Blocked Users',
           subtitle: 'Manage restricted contacts',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const BlockedUsersScreen())),
         ),
-        SettingsRowItem(
-          icon: Icons.star_outline_rounded,
-          title: 'Premium Settings',
-          subtitle: 'Manage your subscription',
-          isLast: true,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumSettingsPage())),
-        ),
+        if (!AppConfigService().isStandardMode)
+          SettingsRowItem(
+            icon: Icons.star_outline_rounded,
+            title: 'Premium Settings',
+            subtitle: 'Manage your subscription',
+            isLast: true,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumSettingsPage())),
+          ),
       ],
+    );
+  }
+
+  Widget _buildCommunityCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.2), width: 1.5),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0A1A2A),
+            Color(0xFF1A1A1A),
+          ],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.verified_user_rounded, color: Colors.blueAccent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'TRUSTED MEMBER',
+                style: TextStyle(
+                  color: Colors.blueAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "Community Status: Active",
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "Thank you for being part of GoGo",
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
     );
   }
 
@@ -457,7 +515,7 @@ class SettingsHeaderCard extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800))),
-                    if (isPremium) ...[
+                    if (isPremium && !AppConfigService().isStandardMode) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

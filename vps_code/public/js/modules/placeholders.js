@@ -22,58 +22,43 @@ async function loadNotifications() {
 }
 
 async function sendBroadcast() {
-    const title = document.getElementById('notifTitle').value;
-    const msg = document.getElementById('notifBody').value;
-    if(!msg) return alert("Message required");
+    const title = document.getElementById('notifTitle').value.trim();
+    const msg = document.getElementById('notifBody').value.trim();
 
-    showSystemToast("Campaign", "Initializing Broadcast...", "bg-blue-500");
-    const res = await API.broadcastNotification(title, msg);
-    if(res.success) {
-        showSystemToast("Success", "Broadcast executed successfully", "bg-emerald-500");
-        document.getElementById('notifTitle').value = "";
-        document.getElementById('notifBody').value = "";
-    } else {
-        showSystemToast("Error", "Failed to send broadcast", "bg-red-500");
+    if(!msg) {
+        showSystemToast("Warning", "Message content is required", "bg-yellow-500");
+        return;
+    }
+
+    const btn = document.querySelector('button[onclick="sendBroadcast()"]');
+    const originalText = btn.innerText;
+
+    try {
+        btn.disabled = true;
+        btn.innerText = "TRANSMITTING...";
+
+        showSystemToast("Campaign", "Initializing Global Broadcast...", "bg-blue-500");
+
+        const res = await API.broadcastNotification(title, msg);
+
+        if(res.success) {
+            showSystemToast("Success", `Broadcast sent to ${res.targetCount || 'all'} users`, "bg-emerald-500");
+            document.getElementById('notifTitle').value = "";
+            document.getElementById('notifBody').value = "";
+        } else {
+            throw new Error(res.message || "Broadcast failed at server");
+        }
+    } catch (err) {
+        console.error("Broadcast UI Error:", err);
+        showSystemToast("Error", err.message || "Failed to execute broadcast", "bg-red-500");
+    } finally {
+        btn.disabled = false;
+        btn.innerText = originalText;
     }
 }
 
 async function loadModeration() {
     await loadReports();
-}
-
-async function loadDiscovery() {
-    const mainContent = document.getElementById('mainContent');
-    document.getElementById('modTitle').innerText = "Discovery & Feed Controls";
-    mainContent.innerHTML = `
-        <div class="max-w-4xl mx-auto glass p-10 rounded-[3rem] space-y-8 animate-fade">
-            <div class="grid grid-cols-2 gap-10">
-                <div class="space-y-6">
-                    <h4 class="text-xs font-black text-white uppercase border-b border-white/5 pb-2">Global Algorithm</h4>
-                    ${renderToggle('Boost Verified Profiles', true)}
-                    ${renderToggle('Prioritize New Users', true)}
-                    ${renderToggle('Location-based strictness', false)}
-                </div>
-                <div class="space-y-6">
-                    <h4 class="text-xs font-black text-white uppercase border-b border-white/5 pb-2">Search Controls</h4>
-                    <div class="space-y-2">
-                         <label class="text-[10px] font-black text-slate-500 uppercase">Max Discovery Distance (KM)</label>
-                         <input type="range" class="w-full accent-orange-500" min="10" max="500" value="100">
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-function renderToggle(label, active) {
-    return `
-        <div class="flex justify-between items-center">
-            <span class="text-[10px] font-bold text-slate-400 uppercase">${label}</span>
-            <button class="relative inline-flex h-5 w-10 items-center rounded-full ${active ? 'bg-orange-500' : 'bg-slate-700'}">
-                <span class="inline-block h-3 w-3 transform rounded-full bg-white ${active ? 'translate-x-6' : 'translate-x-1'}"></span>
-            </button>
-        </div>
-    `;
 }
 
 async function loadDatabaseTools() {

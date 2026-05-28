@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/onboarding/trial_onboarding_screen.dart';
+import 'app_config_service.dart';
 
 class PremiumService {
   static final PremiumService _instance = PremiumService._internal();
@@ -13,10 +14,25 @@ class PremiumService {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final userData = prefs.getString('user_data');
-    if (userData != null) {
-      final data = jsonDecode(userData);
-      _isPremium = data['isPremium'] ?? false;
+    final userDataStr = prefs.getString('user_data');
+    if (userDataStr != null) {
+      final data = jsonDecode(userDataStr);
+      
+      // SYNC: Always fetch latest toggle status before checking premium
+      await AppConfigService().fetchReviewMode();
+      
+      // SIMPLE LOGIC:
+      // If Toggle is OFF AND user has 'Standard Access' (Free Premium) -> Make them UNPREMIUM
+      if (!AppConfigService().isStandardMode && data['premiumPlan'] == 'Standard Access') {
+        _isPremium = false;
+        // Optionally update local storage too
+        Map<String, dynamic> updatedData = Map.from(data);
+        updatedData['isPremium'] = false;
+        updatedData['premiumPlan'] = 'None';
+        await prefs.setString('user_data', jsonEncode(updatedData));
+      } else {
+        _isPremium = data['isPremium'] ?? false;
+      }
     }
   }
 

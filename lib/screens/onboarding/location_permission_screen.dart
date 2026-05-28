@@ -5,7 +5,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import '../../services/app_config_service.dart';
 import 'trial_onboarding_screen.dart';
+import 'profile_setup_screen.dart';
+import '../home_screen.dart';
 
 class LocationPermissionScreen extends StatefulWidget {
   const LocationPermissionScreen({super.key});
@@ -61,17 +64,20 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
       // Step 3: Save Locally (Mandatory)
       final prefs = await SharedPreferences.getInstance();
       final userDataStr = prefs.getString('user_data');
+      Map<String, dynamic>? user;
+
       if (userDataStr != null) {
-        Map<String, dynamic> user = jsonDecode(userDataStr);
-        if (area != null && area.toLowerCase() != 'unknown') user['area'] = area;
-        if (city != null && city.toLowerCase() != 'unknown') user['city'] = city;
-        user['lat'] = pos.latitude;
-        user['lng'] = pos.longitude;
-        await prefs.setString('user_data', jsonEncode(user));
+        final Map<String, dynamic> currentUser = jsonDecode(userDataStr);
+        if (area != null && area.toLowerCase() != 'unknown') currentUser['area'] = area;
+        if (city != null && city.toLowerCase() != 'unknown') currentUser['city'] = city;
+        currentUser['lat'] = pos.latitude;
+        currentUser['lng'] = pos.longitude;
+        user = currentUser;
+        await prefs.setString('user_data', jsonEncode(currentUser));
         
         // Step 4: Sync with server
         final Map<String, dynamic> locationData = {
-          'phone': user['phone'], 
+          'phone': currentUser['phone'],
           'lat': pos.latitude, 
           'lng': pos.longitude,
         };
@@ -85,10 +91,18 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
 
       // Step 5: Navigate
       if (mounted) {
+        Widget nextScreen = const TrialOnboardingScreen();
+        
+        if (AppConfigService().isStandardMode) {
+          // Skip trial and payment in Review Mode
+          bool hasCompleted = user?['hasCompletedOnboarding'] ?? false;
+          nextScreen = hasCompleted ? const HomeScreen() : const ProfileSetupScreen();
+        }
+
         Navigator.pushReplacement(
           context,
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const TrialOnboardingScreen(),
+            pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return FadeTransition(opacity: animation, child: child);
             },

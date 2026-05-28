@@ -27,10 +27,10 @@ async function loadMonitoring() {
         mainContent.innerHTML = `
             <div class="space-y-10 animate-fade">
                 <div class="grid grid-cols-4 gap-6">
-                    ${UI.card('Active Sockets', monitor.activeSockets, 'Total TCP Connections', 'text-emerald-500')}
-                    ${UI.card('Online Users', monitor.onlineUsers, 'Authenticated Presence', 'text-blue-500')}
-                    ${UI.card('Reconnects (24h)', monitor.reconnects24h, 'Network Stability Index', 'text-yellow-500')}
-                    ${UI.card('Throughput', monitor.eventThroughput, 'Events per Minute', 'text-orange-500')}
+                    ${UI.card('Active Sockets', monitor.activeSockets || 0, 'Total TCP Connections', 'text-emerald-500')}
+                    ${UI.card('Online Users', monitor.onlineUsers || 0, 'Authenticated Presence', 'text-blue-500')}
+                    ${UI.card('Reconnects (24h)', monitor.reconnects24h || 0, 'Network Stability Index', 'text-yellow-500')}
+                    ${UI.card('Throughput', monitor.eventThroughput || '0/sec', 'Events per Minute', 'text-orange-500')}
                 </div>
 
                 <div class="grid grid-cols-2 gap-10">
@@ -43,11 +43,11 @@ async function loadMonitoring() {
                         <div class="grid grid-cols-2 gap-4 pt-4">
                             <div class="p-4 bg-white/5 rounded-2xl">
                                 <p class="text-[8px] font-black text-slate-500 uppercase">Uptime</p>
-                                <p class="text-lg font-black text-white">${s.serverHealth.uptime} Hours</p>
+                                <p id="monitor-uptime" class="text-lg font-black text-white">${s.serverHealth.uptime} Hours</p>
                             </div>
                             <div class="p-4 bg-white/5 rounded-2xl">
                                 <p class="text-[8px] font-black text-slate-500 uppercase">Memory Free</p>
-                                <p class="text-lg font-black text-white">${s.serverHealth.freeMem} GB</p>
+                                <p id="monitor-free-mem" class="text-lg font-black text-white">${s.serverHealth.freeMem} GB</p>
                             </div>
                         </div>
                     </div>
@@ -66,8 +66,23 @@ async function loadMonitoring() {
         // Start real event stream handler
         window.activeEventStream = true;
     } catch (err) {
-        mainContent.innerHTML = `<p class="p-20 text-center text-red-500 uppercase font-black">Error synchronizing telemetry data</p>`;
+        console.error("Monitoring Load Error:", err);
+        mainContent.innerHTML = `<p class="p-20 text-center text-red-500 uppercase font-black">Error synchronizing telemetry data: ${err.message}</p>`;
     }
+}
+
+function renderHealthBar(label, value, unit, color) {
+    return `
+        <div class="space-y-2">
+            <div class="flex justify-between text-[10px] font-black uppercase">
+                <span class="text-slate-500">${label}</span>
+                <span class="text-white">${value}${unit}</span>
+            </div>
+            <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                <div class="h-full ${color} transition-all duration-1000" style="width: ${value}%"></div>
+            </div>
+        </div>
+    `;
 }
 
 function updateMonitoringRealtime(data) {
@@ -77,43 +92,37 @@ function updateMonitoringRealtime(data) {
     updateCardValue('reconnects-(24h)', data.reconnects24h);
     updateCardValue('throughput', data.eventThroughput);
 
-    // Update Health Bars
-    const cpuVal = data.serverHealth.cpuUsage;
-    const ramPercent = (((data.serverHealth.totalMem - data.serverHealth.freeMem) / data.serverHealth.totalMem) * 100).toFixed(1);
+    if (data.serverHealth) {
+        // Update Health Bars
+        const cpuVal = data.serverHealth.cpuUsage;
+        const ramPercent = (((data.serverHealth.totalMem - data.serverHealth.freeMem) / data.serverHealth.totalMem) * 100).toFixed(1);
 
-    updateHealthBar('CPU LOAD', cpuVal);
-    updateHealthBar('RAM USAGE', ramPercent);
+        updateHealthBar('CPU LOAD', cpuVal);
+        updateHealthBar('RAM USAGE', ramPercent);
 
-    // Update Uptime and Memory Free
-    const uptimeEl = document.querySelector('p:contains("Uptime") + p'); // This might need a better selector
-    // Actually let's just find by text content for now or add IDs if possible
-    // To keep it simple and safe:
-    document.querySelectorAll('.glass .grid p').forEach(p => {
-        if (p.innerText === 'UPTIME') p.nextElementSibling.innerText = `${data.serverHealth.uptime} Hours`;
-        if (p.innerText === 'MEMORY FREE') p.nextElementSibling.innerText = `${data.serverHealth.freeMem} GB`;
-    });
+        // Update Uptime and Memory Free using IDs
+        const uptimeEl = document.getElementById('monitor-uptime');
+        const memEl = document.getElementById('monitor-free-mem');
+        if (uptimeEl) uptimeEl.innerText = `${data.serverHealth.uptime} Hours`;
+        if (memEl) memEl.innerText = `${data.serverHealth.freeMem} GB`;
+    }
 }
 
 function updateCardValue(id, val) {
     const el = document.querySelector(`[data-card-id="${id}"] h2`);
-    if (el) el.innerText = val.toLocaleString();
+    if (el) el.innerText = typeof val === 'number' ? val.toLocaleString() : val;
 }
 
 function updateHealthBar(label, value) {
-    const bars = document.querySelectorAll('.glass h3 + div > div');
-    bars.forEach(bar => {
-        const labelEl = bar.querySelector('span');
-        if (labelEl && labelEl.innerText === label) {
-            bar.querySelector('span.text-white').innerText = `${value}%`;
-            bar.querySelector('.transition-all').style.width = `${value}%`;
+    document.querySelectorAll('.glass .space-y-2').forEach(barContainer => {
+        const labelSpan = barContainer.querySelector('span.text-slate-500');
+        if (labelSpan && labelSpan.innerText === label) {
+            const valueSpan = barContainer.querySelector('span.text-white');
+            const progress = barContainer.querySelector('.h-full');
+            if (valueSpan) valueSpan.innerText = `${value}%`;
+            if (progress) progress.style.width = `${value}%`;
         }
     });
-}
-
-function startEventStream() {
-    // We'll hook into the real socket events instead of a mock interval
-    socket.on('receive_message', (msg) => appendStreamEvent('MSG_SENT', msg.senderPhone));
-    socket.on('user_status_change', (data) => appendStreamEvent(data.isOnline ? 'AUTH_SUCCESS' : 'DISCONNECT', data.phone));
 }
 
 function appendStreamEvent(type, phone) {
@@ -122,12 +131,8 @@ function appendStreamEvent(type, phone) {
 
     const div = document.createElement('div');
     div.className = 'text-slate-400 animate-fade';
-    const obscuredPhone = phone ? phone.replace(/(\d{3})\d{4}(\d{3})/, '$1****$2') : 'Internal';
+    const obscuredPhone = phone ? String(phone).replace(/(\d{3})\d{4}(\d{3})/, '$1****$2') : 'Internal';
     div.innerHTML = `<span class="text-[8px] opacity-30">${new Date().toLocaleTimeString()}</span> <span class="text-orange-500">[${type}]</span> Processed event for ${obscuredPhone}`;
     stream.prepend(div);
     if (stream.children.length > 50) stream.lastChild.remove();
-}
-
-async function loadServerHealth() {
-    await loadMonitoring();
 }

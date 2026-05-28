@@ -8,6 +8,7 @@ import '../../services/api_service.dart';
 import '../../services/payment_service.dart';
 import '../../services/premium_service.dart';
 import '../../services/user_repository.dart';
+import '../../services/app_config_service.dart';
 import 'payment_screen.dart';
 import 'profile_setup_screen.dart';
 import '../home_screen.dart';
@@ -52,6 +53,13 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
+          // If Standard Mode (Review Mode) is active, skip trial screen immediately
+          if (data['isStandardMode'] == true) {
+            await AppConfigService().fetchReviewMode(); // Sync global state
+            _loadUserData(); // Trigger redirect
+            return;
+          }
+
           setState(() {
             _activeGateway = data['activeGateway'] ?? 'razorpay';
             _isUpiEnabled = data['config']?['isUpiEnabled'] ?? true;

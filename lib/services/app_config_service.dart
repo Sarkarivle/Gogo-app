@@ -41,6 +41,22 @@ class AppConfigService {
   DateTime? _lastFetchTime;
   final Duration _cacheTTL = const Duration(minutes: 15);
 
+  bool _isStandardMode = false;
+  bool get isStandardMode => _isStandardMode;
+
+  Future<void> fetchReviewMode() async {
+    try {
+      final response = await ApiService.get('/api/payment/settings');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _isStandardMode = data['isStandardMode'] ?? false;
+        debugPrint('Standard Mode Status: $_isStandardMode');
+      }
+    } catch (e) {
+      debugPrint('Error fetching standard mode: $e');
+    }
+  }
+
   Future<AppUpdateConfig?> fetchAppUpdateConfig({bool forceRefresh = false}) async {
     // Check cache
     if (!forceRefresh && _cachedConfig != null && _lastFetchTime != null) {

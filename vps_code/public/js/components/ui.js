@@ -1,3 +1,29 @@
+/**
+ * UI Components & Helpers
+ */
+
+// Define global toast first to ensure it's available to all modules
+window.showSystemToast = function(title, message, colorClass = 'bg-orange-500') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const id = 'toast-' + Math.random().toString(36).substring(7);
+    const toast = document.createElement('div');
+    toast.id = id;
+    toast.className = `glass p-6 rounded-2xl border-l-4 ${colorClass.includes('border') ? colorClass : 'border-white/20'} animate-fade flex flex-col min-w-[300px] shadow-2xl`;
+    toast.innerHTML = `
+        <div class="flex justify-between items-start mb-2">
+            <span class="text-[10px] font-black text-white uppercase tracking-widest">${title}</span>
+            <button onclick="this.parentElement.parentElement.remove()" class="text-white/20 hover:text-white transition"><i class="fas fa-times text-[10px]"></i></button>
+        </div>
+        <p class="text-xs text-slate-300 font-bold">${message}</p>
+        <div class="mt-3 w-full h-1 bg-white/5 rounded-full overflow-hidden">
+            <div class="h-full ${colorClass} transition-all duration-3000 ease-linear" style="width: 100%; animation: shrink 3s linear forwards;"></div>
+        </div>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => { if(document.getElementById(id)) document.getElementById(id).remove(); }, 3000);
+};
+
 const UI = {
     loader() {
         return '<div class="flex justify-center items-center h-full py-20 text-[10px] font-black uppercase opacity-20 tracking-[0.3em] animate-pulse text-white">Synchronizing Data...</div>';
@@ -138,5 +164,9 @@ const UI = {
         setDynamicContent(content) {
             document.getElementById('userControlDynamic').innerHTML = content;
         }
+    },
+
+    showToast(title, message, colorClass = 'bg-orange-500') {
+        window.showSystemToast(title, message, colorClass);
     }
 };

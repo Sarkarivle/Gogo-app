@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Config = require('../models/Config');
 const Report = require('../models/Report');
 const VerificationRequest = require('../models/VerificationRequest');
 const analyticsService = require('../services/analyticsService');
@@ -87,9 +88,22 @@ exports.updateFcmToken = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
     try {
-        const normalizedPhone = normalize(req.params.phone);
-        const user = await User.findOne({ phone: normalizedPhone }).select('-lat -lng -location').lean();
+        const phone = req.params.phone;
+        const [user, reviewConfig] = await Promise.all([
+            User.findOne(phoneQuery(phone)).select('-lat -lng -location').lean(),
+            Config.findOne({ key: 'review_mode_config' })
+        ]);
+
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+
+        // REVOKE Standard Access if toggle is OFF
+        if (!isStandardMode && user.premiumPlan === 'Standard Access') {
+            await User.updateOne({ _id: user._id }, { $set: { isPremium: false, premiumPlan: 'None' } });
+            user.isPremium = false;
+            user.premiumPlan = 'None';
+        }
 
         // SECURE CHECK: Auto-downgrade if premium expired
         const now = new Date();
@@ -123,8 +137,14 @@ exports.login = async (req, res) => {
             return res.status(401).json({ success: false, message: "Identity verification failed" });
         }
 
-        const user = await User.findOne({ phone: normalizedPhone });
+        const [user, reviewConfig] = await Promise.all([
+            User.findOne(phoneQuery(phone)),
+            Config.findOne({ key: 'review_mode_config' })
+        ]);
+
         if (user) {
+            const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+
             if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned' || user.isBanned) {
                 return res.status(403).json({ success: false, message: "Account blocked" });
             }
@@ -135,6 +155,20 @@ exports.login = async (req, res) => {
             }
             user.lastSeen = new Date();
             user.isOnline = true;
+
+            // SIMPLE REVOKE: If toggle is OFF and user has free premium, make them normal
+            if (!isStandardMode && user.premiumPlan === 'Standard Access') {
+                user.isPremium = false;
+                user.premiumPlan = 'None';
+            }
+
+            // AUTO-UPGRADE existing users if they log in during Review Mode
+            if (isStandardMode && !user.isPremium) {
+                user.isPremium = true;
+                user.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+                user.premiumPlan = 'Standard Access';
+            }
+
             if (deviceId) user.deviceId = deviceId;
             if (ip) user.ipAddress = ip;
 
@@ -189,11 +223,17 @@ exports.register = async (req, res) => {
     }
 
     try {
-        const existing = await User.findOne({ phone: normalizedPhone });
+        const [existing, reviewConfig] = await Promise.all([
+            User.findOne(phoneQuery(phone)),
+            Config.findOne({ key: 'review_mode_config' })
+        ]);
+
         if (existing) {
             const token = jwt.sign({ phone: existing.phone, id: existing._id }, JWT_SECRET, { expiresIn: '90d' });
             return res.json({ success: true, user: existing, token });
         }
+
+        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
 
         // SECURE: Only take allowed fields to prevent mass assignment (e.g., setting isPremium: true via register)
         const userData = {
@@ -208,8 +248,15 @@ exports.register = async (req, res) => {
             isBanned: false,
             isDeactivated: false,
             isOnline: true,
-            lastSeen: new Date()
+            lastSeen: new Date(),
+            // AUTO-PREMIUM for Review Mode (Compliance)
+            isPremium: isStandardMode
         };
+
+        if (isStandardMode) {
+            userData.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year
+            userData.premiumPlan = 'Standard Access';
+        }
 
         if (userData.dobYear) {
             const year = parseInt(userData.dobYear);
@@ -230,7 +277,6 @@ exports.updateLocation = async (req, res) => {
         let { phone, lat, lng, city, area } = req.body;
         // Identity check: Always prefer token phone for users
         if (req.user && !req.user.role) phone = req.user.phone;
-        const normalizedPhone = normalize(phone);
 
         if (city && city.toLowerCase() === 'unknown') city = null;
         if (area && area.toLowerCase() === 'unknown') area = null;
@@ -242,7 +288,7 @@ exports.updateLocation = async (req, res) => {
         if (lat && lng) {
             update.location = { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] };
         }
-        await User.findOneAndUpdate({ phone: normalizedPhone }, { $set: update });
+        await User.findOneAndUpdate(phoneQuery(phone), { $set: update });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -254,7 +300,6 @@ exports.updateProfile = async (req, res) => {
         let { phone, ...updateData } = req.body;
         // Identity check: Always prefer token phone for users
         if (req.user && !req.user.role) phone = req.user.phone;
-        const normalizedPhone = normalize(phone);
 
         // SECURE: Prevent Mass Assignment (Privilege Escalation)
         const allowedUpdates = [
@@ -274,9 +319,9 @@ exports.updateProfile = async (req, res) => {
         }
         filteredUpdate.lastSeen = new Date();
 
-        const updatedUser = await User.findOneAndUpdate({ phone: normalizedPhone }, { $set: filteredUpdate }, { new: true });
+        const updatedUser = await User.findOneAndUpdate(phoneQuery(phone), { $set: filteredUpdate }, { new: true });
         if (!updatedUser) return res.status(404).json({ success: false });
-        if (filteredUpdate.hasCompletedOnboarding) analyticsService.trackEvent('onboarding_completed', normalizedPhone);
+        if (filteredUpdate.hasCompletedOnboarding) analyticsService.trackEvent('onboarding_completed', normalize(phone));
         res.json({ success: true, user: updatedUser });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -292,8 +337,7 @@ exports.updatePremium = async (req, res) => {
         }
 
         const { phone, isPremium } = req.body;
-        const normalizedPhone = normalize(phone);
-        const updatedUser = await User.findOneAndUpdate({ phone: normalizedPhone }, { isPremium, lastSeen: new Date() }, { new: true });
+        const updatedUser = await User.findOneAndUpdate(phoneQuery(phone), { isPremium, lastSeen: new Date() }, { new: true });
         res.json({ success: true, user: updatedUser });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -318,7 +362,11 @@ exports.getDiscover = async (req, res) => {
         const pageNum = Math.max(1, parseInt(page));
         const limitNum = Math.max(1, parseInt(limit));
         const skip = (pageNum - 1) * limitNum;
-        const baseQuery = { phone: { $ne: normalizedPhone }, accountStatus: 'Active' };
+
+        // Exclude caller using Variations to ensure they don't see themselves
+        const phoneVariations = [normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`];
+        const baseQuery = { phone: { $nin: phoneVariations }, accountStatus: 'Active' };
+
         if (isOnlineOnly === 'true' || tab === 'Online') baseQuery.isOnline = true;
         if (havePlace && havePlace !== 'Any') baseQuery.havePlace = havePlace;
         if (position && position !== 'Any') {
@@ -370,9 +418,11 @@ exports.trackEvent = async (req, res) => {
 
 exports.deactivateAccount = async (req, res) => {
     try {
-        const { phone, reason } = req.body;
-        const normalizedPhone = normalize(phone);
-        const user = await User.findOne({ phone: normalizedPhone });
+        let { phone, reason } = req.body;
+        // IDOR Prevention: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = req.user.phone;
+
+        const user = await User.findOne(phoneQuery(phone));
         if (!user) return res.status(404).json({ success: false });
         user.isDeactivated = true;
         user.accountStatus = 'Deactivated';
@@ -380,7 +430,7 @@ exports.deactivateAccount = async (req, res) => {
         user.isOnline = false;
         await user.save();
         const io = req.app.get('socketio');
-        if (io) io.emit('user_deactivated', { phone: normalizedPhone });
+        if (io) io.emit('user_deactivated', { phone: user.phone });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -389,9 +439,11 @@ exports.deactivateAccount = async (req, res) => {
 
 exports.reactivateAccount = async (req, res) => {
     try {
-        const { phone } = req.body;
-        const normalizedPhone = normalize(phone);
-        const user = await User.findOne({ phone: normalizedPhone });
+        let { phone } = req.body;
+        // IDOR Prevention: Always prefer token phone for users
+        if (req.user && !req.user.role) phone = req.user.phone;
+
+        const user = await User.findOne(phoneQuery(phone));
         if (!user) return res.status(404).json({ success: false });
         user.isDeactivated = false;
         user.accountStatus = 'Active';
@@ -399,7 +451,7 @@ exports.reactivateAccount = async (req, res) => {
         user.isOnline = true;
         await user.save();
         const io = req.app.get('socketio');
-        if (io) io.emit('user_reactivated', { phone: normalizedPhone });
+        if (io) io.emit('user_reactivated', { phone: user.phone });
         res.json({ success: true, user });
     } catch (e) {
         res.status(500).json({ success: false });

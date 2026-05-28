@@ -4,16 +4,26 @@ const { normalize } = require('../utils/phoneUtils');
 
 const getPublicSettings = async (req, res) => {
     try {
-        const [payConfig, gpConfig] = await Promise.all([
+        const [payConfig, gpConfig, reviewConfig] = await Promise.all([
             Config.findOne({ key: 'payment_settings' }),
-            Config.findOne({ key: 'google_play_settings' })
+            Config.findOne({ key: 'google_play_settings' }),
+            Config.findOne({ key: 'review_mode_config' })
         ]);
 
         const settings = payConfig?.value || {};
         const gpSettings = gpConfig?.value || {};
 
+        // Robust check for isReviewMode within the value object
+        let isStandardMode = false;
+        if (reviewConfig && reviewConfig.value) {
+            isStandardMode = reviewConfig.value.isReviewMode === true;
+        }
+
+        console.log(`🛡️  Compliance Status: StandardMode=${isStandardMode}`);
+
         res.json({
             success: true,
+            isStandardMode: isStandardMode,
             activeGateway: settings.activeGateway || 'razorpay',
             config: {
                 isUpiEnabled: settings.isUpiEnabled !== false,
@@ -21,7 +31,7 @@ const getPublicSettings = async (req, res) => {
             }
         });
     } catch (e) {
-        res.json({ success: true, activeGateway: 'razorpay', config: { isUpiEnabled: true, isGooglePlayEnabled: false } });
+        res.json({ success: true, isStandardMode: false, activeGateway: 'razorpay', config: { isUpiEnabled: true, isGooglePlayEnabled: false } });
     }
 };
 

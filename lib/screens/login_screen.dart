@@ -11,6 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 import 'onboarding/location_permission_screen.dart';
 import '../services/user_repository.dart';
+import '../services/app_config_service.dart';
+import '../services/premium_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -229,6 +231,9 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
 
   Future<void> _handleBackendLogin(String phone) async {
     try {
+      // Re-fetch Standard Mode status on login to ensure accuracy
+      await AppConfigService().fetchReviewMode();
+
       final response = await ApiService.post('/api/user/login', {'phone': phone});
       final data = jsonDecode(response.body);
       if (data['success'] == true) {
@@ -261,6 +266,14 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
 
   Future<void> _saveUserAndGoHome(dynamic userData, String? token) async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // If Review Mode is active, force premium status locally for a seamless experience
+    if (AppConfigService().isStandardMode) {
+      userData['isPremium'] = true;
+      userData['premiumExpiry'] = DateTime.now().add(const Duration(days: 365)).toIso8601String();
+      await PremiumService().init();
+    }
+
     await prefs.setString('user_data', jsonEncode(userData));
     if (token != null) {
       await prefs.setString('auth_token', token);
