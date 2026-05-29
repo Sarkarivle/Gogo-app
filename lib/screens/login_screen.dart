@@ -233,8 +233,13 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
     try {
       // Re-fetch Standard Mode status on login to ensure accuracy
       await AppConfigService().fetchReviewMode();
+      
+      final String? firebaseToken = await _auth.currentUser?.getIdToken();
 
-      final response = await ApiService.post('/api/user/login', {'phone': phone});
+      final response = await ApiService.post('/api/user/login', {
+        'phone': phone,
+        'firebaseToken': firebaseToken,
+      });
       final data = jsonDecode(response.body);
       if (data['success'] == true) {
         _saveUserAndGoHome(data['user'], data['token']);
@@ -244,7 +249,8 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
           'name': 'User ${phone.substring(phone.length - 4)}',
           'age': 18,
           'isPremium': false,
-          'hasCompletedOnboarding': false
+          'hasCompletedOnboarding': false,
+          'firebaseToken': firebaseToken,
         });
         final regData = jsonDecode(regResponse.body);
         if (regData['success'] == true) {

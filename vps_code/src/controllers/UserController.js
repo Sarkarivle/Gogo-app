@@ -283,7 +283,7 @@ exports.register = async (req, res) => {
         marketingService.triggerS2SPostback('registration', req.body.clickId);
 
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
-        res.json({ success: true, user: savedUser, token, isStandardMode: reviewModeStatus });
+        res.json({ success: true, user: savedUser, token, isStandardMode: isStandardMode });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
