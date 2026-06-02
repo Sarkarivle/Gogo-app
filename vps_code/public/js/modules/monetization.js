@@ -51,22 +51,41 @@ async function loadMonetization() {
         mainContent.innerHTML = `
             <div class="space-y-10 animate-fade pb-20">
                 <!-- Google Compliance Switch -->
-                <div class="glass p-6 rounded-[2rem] border border-red-500/20 flex items-center justify-between">
-                    <div class="flex items-center space-x-4">
-                        <div class="p-3 bg-red-500/10 rounded-2xl">
-                            <i class="fas fa-shield-check text-red-500 text-lg"></i>
+                <div class="glass p-6 rounded-[2rem] border border-red-500/20 flex flex-col space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-4">
+                            <div class="p-3 bg-red-500/10 rounded-2xl">
+                                <i class="fas fa-shield-check text-red-500 text-lg"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-black text-white uppercase tracking-wider">Google Compliance Switch</h3>
+                                <p id="reviewModeStatus" class="text-[9px] font-bold mt-0.5 ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
+                                    ${isReviewMode ? 'Review Mode Active (Payments Hidden)' : 'Live Mode Active (Payments Visible)'}
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <h3 class="text-xs font-black text-white uppercase tracking-wider">Google Compliance Switch</h3>
-                            <p id="reviewModeStatus" class="text-[9px] font-bold mt-0.5 ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
-                                ${isReviewMode ? 'Review Mode Active (Payments Hidden)' : 'Live Mode Active (Payments Visible)'}
-                            </p>
-                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer scale-110 mr-4">
+                            <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
+                            <div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500"></div>
+                        </label>
                     </div>
-                    <label class="relative inline-flex items-center cursor-pointer scale-110 mr-4">
-                        <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
-                        <div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500"></div>
-                    </label>
+
+                    <!-- 1 Message Free Trial Switch -->
+                    <div class="pt-4 border-t border-white/5 flex items-center justify-between">
+                        <div class="flex items-center space-x-4">
+                            <div class="p-3 bg-orange-500/10 rounded-2xl">
+                                <i class="fas fa-comment-alt-dots text-orange-500 text-lg"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-black text-white uppercase tracking-wider">1 Message Free Trial</h3>
+                                <p class="text-[9px] font-bold mt-0.5 text-slate-500 italic">User becomes Free after 1 message exchange (Only if Google Switch is ON)</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer scale-110 mr-4">
+                            <input type="checkbox" id="one_message_trial_toggle" ${reviewData.config?.isOneMessageTrialEnabled ? 'checked' : ''} onchange="toggleOneMessageTrial(this)" class="sr-only peer">
+                            <div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-orange-500"></div>
+                        </label>
+                    </div>
                 </div>
 
                 <!-- Primary Revenue Cards -->
@@ -292,10 +311,31 @@ async function savePaymentSettings(activeGateway) {
 
 async function toggleReviewMode(el) {
     try {
-        // Only call updateConfig. It already handles the broadcast in AdminController.js
-        await API.updateConfig('review_mode_config', { isReviewMode: el.checked });
+        const reviewData = await API.getConfig('review_mode_config').catch(e => ({ success: false, config: {} }));
+        const config = reviewData.config || {};
+        config.isReviewMode = el.checked;
+
+        // Auto-disable 1-message trial if Google Switch is turned OFF
+        if (!el.checked) config.isOneMessageTrialEnabled = false;
+
+        await API.updateConfig('review_mode_config', config);
 
         showSystemToast("Compliance Changed", `Mode: ${el.checked ? 'REVIEW' : 'LIVE'}`, el.checked ? 'bg-red-500' : 'bg-emerald-500');
+        loadMonetization();
+    } catch (e) {
+        el.checked = !el.checked;
+        showSystemToast("Sync Error", "Server not responding", 'bg-red-500');
+    }
+}
+
+async function toggleOneMessageTrial(el) {
+    try {
+        const reviewData = await API.getConfig('review_mode_config').catch(e => ({ success: false, config: {} }));
+        const config = reviewData.config || {};
+        config.isOneMessageTrialEnabled = el.checked;
+        await API.updateConfig('review_mode_config', config);
+
+        showSystemToast("Trial Config Updated", `1-Message Trial: ${el.checked ? 'ENABLED' : 'DISABLED'}`, 'bg-orange-500');
         loadMonetization();
     } catch (e) {
         el.checked = !el.checked;

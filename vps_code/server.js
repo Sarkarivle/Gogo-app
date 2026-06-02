@@ -395,7 +395,20 @@ io.on('connection', (socket) => {
         try {
             const other = normalize(data.otherPhone);
             const roomId = getRoomId(myPhone, other);
-            await Message.updateMany({ roomId, receiverPhone: myPhone, isOpened: false }, { isOpened: true, isDelivered: true });
+
+            // SECURITY FIX: Only mark normal messages as 'Opened' (Seen).
+            // 'View Once' messages MUST NOT be marked as opened automatically; they only open on tap.
+            await Message.updateMany(
+                { roomId, receiverPhone: myPhone, isOpened: false, isViewOnce: false },
+                { isOpened: true, isDelivered: true }
+            );
+
+            // For View Once, just ensure they are marked as Delivered (two ticks) but NOT opened.
+            await Message.updateMany(
+                { roomId, receiverPhone: myPhone, isDelivered: false, isViewOnce: true },
+                { isDelivered: true }
+            );
+
             await resetUnreadCount(myPhone, other);
             socket.to(roomId).emit('chat_seen_update', { by: myPhone });
             io.to(`user_${other}`).emit('unread_update', { phone: myPhone, unreadCount: 0 });

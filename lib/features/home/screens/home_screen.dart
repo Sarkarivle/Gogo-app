@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:gogo/core/location/location_service.dart';
 import 'package:gogo/core/location/location_repository.dart';
 import 'package:geolocator/geolocator.dart';
@@ -18,7 +19,8 @@ import 'package:gogo/features/profile/screens/my_profile_screen.dart';
 import 'package:gogo/features/random_live/screens/random_live_intro_screen.dart';
 import 'package:gogo/core/services/notification_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
-import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
+
+import 'package:gogo/core/guards/access_guard.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -136,16 +138,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     // 1. Notification init
     await NotificationService.initialize();
 
-    // 2. Fetch latest config & enforce access
+    // 2. Fetch latest config
     await PremiumService().init();
-    if (!PremiumService().hasAccess && mounted) {
-      Navigator.pushAndRemoveUntil(
-        context, 
-        MaterialPageRoute(builder: (_) => const TrialOnboardingScreen()),
-        (route) => false
-      );
-      return;
-    }
 
     currentUser = await _userRepository.getCurrentUser();
     if (currentUser != null) {
@@ -383,10 +377,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background Glow
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _showExitDialog();
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // Background Glow
           Positioned(
             top: -100, 
             right: -100, 
@@ -415,8 +415,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         ],
       ),
       bottomNavigationBar: _buildBottomNav(),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildLiveButton() {
     return Container(
@@ -442,9 +443,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         child: InkWell(
           borderRadius: BorderRadius.circular(30), 
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+            AccessGuard().runWithAccessCheck(
+              context, 
+              onAllowed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+                );
+              }
             );
           }, 
           child: Row(
@@ -686,6 +692,38 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           const BottomNavigationBarItem(icon: Icon(Icons.explore_outlined, size: 28), activeIcon: Icon(Icons.explore, size: 28), label: 'Match'),
           BottomNavigationBarItem(icon: _totalUnreadCount > 0 ? Badge(backgroundColor: Colors.redAccent, label: Text(_totalUnreadCount.toString()), child: const Icon(Icons.chat_bubble_outline_rounded, size: 26)) : const Icon(Icons.chat_bubble_outline_rounded, size: 26), activeIcon: const Icon(Icons.chat_bubble_rounded, size: 26), label: 'Inbox'),
           const BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded, size: 28), activeIcon: Icon(Icons.person_rounded, size: 28), label: 'Profile'),
+        ],
+      ),
+    );
+  }
+
+  void _showExitDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24), 
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.05))
+        ),
+        title: const Text("Exit GoGo?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text("Are you sure you want to close the app?", style: TextStyle(color: Colors.white70, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold))
+          ),
+          ElevatedButton(
+            onPressed: () => SystemNavigator.pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+              foregroundColor: Colors.redAccent,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text("YES, EXIT", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );

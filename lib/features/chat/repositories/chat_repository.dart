@@ -9,6 +9,8 @@ import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 
+import 'package:gogo/features/premium/providers/premium_service.dart';
+
 class ChatRepository {
   static final ChatRepository _instance = ChatRepository._internal();
   factory ChatRepository() => _instance;
@@ -168,6 +170,9 @@ class ChatRepository {
     String? replyType,
     Function(dynamic)? ack,
   }) {
+    // 1-Message Trial Logic: Use up trial on ANY outgoing message
+    PremiumService().useOneMessageTrial();
+
     SocketService().emit('send_message', {
       'localId': localId,
       'senderPhone': senderPhone,

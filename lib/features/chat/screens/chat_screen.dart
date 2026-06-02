@@ -117,8 +117,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Centralized Block Listening
     ModerationRepository().blockStatusNotifier.addListener(_syncBlockFromGlobal);
 
+    // Listen for Access Loss (1-Message Trial Kick-out)
+    PremiumService().accessNotifier.addListener(_handleAccessChange);
+
     _initChat();
     _setupSocketListeners();
+  }
+
+  void _handleAccessChange() {
+    if (!PremiumService().hasAccess && mounted) {
+      debugPrint("📢 [CHAT] Access Lost. Popping Chat Screen.");
+      Navigator.of(context).pop();
+    }
   }
 
   void _syncBlockFromGlobal() {
@@ -568,6 +578,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    PremiumService().accessNotifier.removeListener(_handleAccessChange);
     ModerationRepository().blockStatusNotifier.removeListener(_syncBlockFromGlobal);
     _typingTimer?.cancel();
     _messageController.removeListener(_handleTypingStatus);

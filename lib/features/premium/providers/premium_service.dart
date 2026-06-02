@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/app_config_service.dart';
@@ -12,8 +13,34 @@ class PremiumService {
   factory PremiumService() => _instance;
   PremiumService._internal();
 
-  // Global Notifier for Access State Changes
+  // Global Notifiers for Access State Changes
   final ValueNotifier<bool> accessNotifier = ValueNotifier<bool>(true);
+  final ValueNotifier<String> statusNotifier = ValueNotifier<String>("FREE");
+
+  // New: Track if 1-message trial has been used
+  bool _isOneMessageTrialUsed = false;
+  bool get isOneMessageTrialUsed => _isOneMessageTrialUsed;
+
+  Future<void> useOneMessageTrial() async {
+    if (AppConfigService().isOneMessageTrialEnabled && !_isOneMessageTrialUsed) {
+      _isOneMessageTrialUsed = true;
+      
+      // OPTIMIZATION: Update UI state immediately for zero-lag experience
+      hasAccess; 
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('one_message_trial_used', true);
+      
+      // SYNC TO BACKEND in background
+      ApiService.post('/api/user/mark-trial-used', {}).catchError((e) {
+        debugPrint("Error syncing trial usage: $e");
+        // ignore: invalid_return_type_for_catch_error
+        return null;
+      });
+      
+      debugPrint("🚀 [PREMIUM] 1-Message Trial USED. Access Revoked.");
+    }
+  }
 
   bool get isPremium => UserRepository().currentUser?['isPremium'] ?? false;
   String? get subscriptionStatus => UserRepository().currentUser?['subscription']?['status'];
@@ -26,16 +53,43 @@ class PremiumService {
 
   /// Logical check for ANY type of access (Paid OR Free Trial)
   bool get hasAccess {
-    final access = isPremium || isFreemiumUser;
-    // Update notifier whenever this is checked to trigger UI shifts
+    bool access = isPremium || isFreemiumUser;
+
+    // 1-Message Trial Override for Google Compliance Switch
+    if (AppConfigService().isStandardMode) {
+      if (AppConfigService().isOneMessageTrialEnabled) {
+        // If 1-message trial is active, access depends on whether they've used their 1 message
+        access = !_isOneMessageTrialUsed;
+      } else {
+        // Google Toggle is ON, and trial is disabled -> Unlimited Access (Standard Review Mode)
+        access = true;
+      }
+    }
+
+    // Update notifiers only if values changed to save rebuilds
     if (accessNotifier.value != access) {
       accessNotifier.value = access;
     }
+    
+    final String currentLabel = accountStatusLabel;
+    if (statusNotifier.value != currentLabel) {
+      statusNotifier.value = currentLabel;
+    }
+
     return access;
   }
 
   String get accountStatusLabel {
     if (isPremium) return "PREMIUM";
+    
+    // Google Compliance Mode Status Labels
+    if (AppConfigService().isStandardMode) {
+      if (AppConfigService().isOneMessageTrialEnabled) {
+        return _isOneMessageTrialUsed ? "FREE (LIMIT EXCEEDED)" : "TRIAL ACCESS (1 MSG)";
+      }
+      return "FREE ACCESS";
+    }
+
     if (isFreemiumUser) return "FREEMIUM";
     return "FREE";
   }
@@ -51,21 +105,25 @@ class PremiumService {
       // 1. Force fetch fresh config from backend (Bypassing cache for compliance)
       await AppConfigService().fetchReviewMode(forceRefresh: true);
       
-      // 2. Refresh user profile to sync isPremium status
+      // 2. Refresh user profile to sync isPremium status & trial status
       final userData = UserRepository().currentUser;
       if (userData != null && userData['phone'] != null) {
-        await UserRepository().fetchProfile(userData['phone']);
+        final freshProfile = await UserRepository().fetchProfile(userData['phone']);
+        
+        // SYNC TRIAL STATUS FROM BACKEND
+        if (freshProfile != null && freshProfile['oneMessageTrialUsed'] == true) {
+          if (!_isOneMessageTrialUsed) {
+             _isOneMessageTrialUsed = true;
+             final prefs = await SharedPreferences.getInstance();
+             await prefs.setBool('one_message_trial_used', true);
+          }
+        }
       }
 
-      // 3. Update local access state
-      final bool currentAccess = isPremium || isFreemiumUser;
+      // 3. Update local access state & labels via Notifiers
+      final bool currentAccess = hasAccess; 
       
-      // 4. Update notifier only if state actually changed to save rebuilds
-      if (accessNotifier.value != currentAccess) {
-        accessNotifier.value = currentAccess;
-      }
-      
-      debugPrint('🔔 Real-time Access Updated: $currentAccess');
+      debugPrint('🔔 Real-time Access Updated: $currentAccess, Status: ${statusNotifier.value}');
     } catch (e) {
       debugPrint('Error in refreshAccessState: $e');
     } finally {
@@ -78,6 +136,10 @@ class PremiumService {
     if (userData != null) {
       // SYNC: Fetch latest toggle status from server
       await AppConfigService().fetchReviewMode();
+      
+      // Sync local trial usage
+      final prefs = await SharedPreferences.getInstance();
+      _isOneMessageTrialUsed = prefs.getBool('one_message_trial_used') ?? false;
     }
   }
 

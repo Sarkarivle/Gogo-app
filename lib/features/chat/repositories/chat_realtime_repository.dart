@@ -3,6 +3,7 @@ import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/features/chat/models/chat_message.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
+import 'package:gogo/features/premium/providers/premium_service.dart';
 
 class ChatRealtimeRepository {
   static final ChatRealtimeRepository _instance = ChatRealtimeRepository._internal();
@@ -45,6 +46,10 @@ class ChatRealtimeRepository {
       }
     } else if (type == 'receive_message') {
       final String? myPhone = SocketService().currentUserPhone;
+      
+      // 1-Message Trial Logic: Use up trial on ANY incoming message
+      PremiumService().useOneMessageTrial();
+
       if (myPhone != null) {
         final String? otherPhone = PhoneUtils.normalize(data['senderPhone'] == myPhone ? data['receiverPhone'] : data['senderPhone']);
         if (otherPhone != null) {

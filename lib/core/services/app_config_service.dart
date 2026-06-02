@@ -45,6 +45,9 @@ class AppConfigService {
   final ValueNotifier<bool> isStandardModeNotifier = ValueNotifier<bool>(false);
   bool get isStandardMode => isStandardModeNotifier.value;
 
+  final ValueNotifier<bool> isOneMessageTrialEnabledNotifier = ValueNotifier<bool>(false);
+  bool get isOneMessageTrialEnabled => isOneMessageTrialEnabledNotifier.value;
+
   // New Freemium Configs with Notifiers for Real-time UI updates
   final ValueNotifier<bool> isFreemiumActiveNotifier = ValueNotifier<bool>(false);
   bool get isFreemiumActive => isFreemiumActiveNotifier.value;
@@ -80,6 +83,11 @@ class AppConfigService {
         final bool newStandardMode = data['isStandardMode'] ?? false;
         if (isStandardModeNotifier.value != newStandardMode) {
           isStandardModeNotifier.value = newStandardMode;
+        }
+
+        final bool newOneMessageTrial = data['isOneMessageTrialEnabled'] ?? false;
+        if (isOneMessageTrialEnabledNotifier.value != newOneMessageTrial) {
+          isOneMessageTrialEnabledNotifier.value = newOneMessageTrial;
         }
 
         final bool newFreemiumMode = data['isFreemiumActive'] ?? data['isStandardMode'] ?? false;

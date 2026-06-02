@@ -97,6 +97,12 @@ async function syncUserStatus(user, isStandardMode) {
     let changed = false;
     const now = new Date();
 
+    // Ensure 1-message trial flag exists
+    if (user.oneMessageTrialUsed === undefined) {
+        user.oneMessageTrialUsed = false;
+        changed = true;
+    }
+
     // 1. Manage 'Standard Access' users (Google Compliance Mode)
     if (user.premiumPlan === 'Standard Access') {
         if (!isStandardMode) {
@@ -153,6 +159,20 @@ exports.getProfile = async (req, res) => {
         user.area = '';
 
         res.json({ success: true, user, isStandardMode });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+};
+
+exports.markTrialUsed = async (req, res) => {
+    try {
+        const phone = req.user?.phone;
+        if (!phone) return res.status(401).json({ success: false });
+
+        const User = require('../models/User');
+        await User.findOneAndUpdate({ phone: normalize(phone) }, { oneMessageTrialUsed: true });
+
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -499,6 +519,20 @@ exports.reactivateAccount = async (req, res) => {
         const io = req.app.get('socketio');
         if (io) io.emit('user_reactivated', { phone: user.phone });
         res.json({ success: true, user, isStandardMode });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+};
+
+exports.markTrialUsed = async (req, res) => {
+    try {
+        const phone = req.user?.phone;
+        if (!phone) return res.status(401).json({ success: false });
+
+        const User = require('../models/User');
+        await User.findOneAndUpdate({ phone: normalize(phone) }, { oneMessageTrialUsed: true });
+
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
     }

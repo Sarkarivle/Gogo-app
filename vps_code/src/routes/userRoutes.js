@@ -22,6 +22,7 @@ router.get('/discover', isUser, UserController.getDiscover);
 router.post('/track-event', UserController.trackEvent); // Unprotected for login analytics
 router.post('/deactivate', isUser, UserController.deactivateAccount);
 router.post('/reactivate', isUser, UserController.reactivateAccount);
+router.post('/mark-trial-used', isUser, UserController.markTrialUsed);
 
 // Contact & Policies
 router.post('/contact-us', ContactController.submitMessage);

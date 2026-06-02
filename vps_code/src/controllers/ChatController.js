@@ -255,14 +255,28 @@ exports.markSeen = async (req, res) => {
         const o = normalize(req.body.otherPhone);
         const phoneVariations = [m, `+91${m}`, `91${m}`];
 
+        // SECURITY FIX: Only mark normal messages as 'Opened' (Seen).
+        // 'View Once' messages MUST NOT be marked as opened automatically.
         await Message.updateMany({
             $or: [
                 { roomId: [m, o].sort().join('_') },
                 { roomId: [`+91${m}`, `+91${o}`].sort().join('_') }
             ],
             receiverPhone: { $in: phoneVariations },
-            isOpened: false
+            isOpened: false,
+            isViewOnce: false
         }, { isOpened: true, isDelivered: true });
+
+        // For View Once, just ensure they are marked as Delivered but NOT opened.
+        await Message.updateMany({
+            $or: [
+                { roomId: [m, o].sort().join('_') },
+                { roomId: [`+91${m}`, `+91${o}`].sort().join('_') }
+            ],
+            receiverPhone: { $in: phoneVariations },
+            isDelivered: false,
+            isViewOnce: true
+        }, { isDelivered: true });
 
         await resetUnreadCount(m, o);
         res.json({ success: true });

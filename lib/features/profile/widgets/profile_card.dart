@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/shared/widgets/blinking_dot.dart';
 
+import 'package:gogo/core/guards/access_guard.dart';
+
 class ProfileCard extends StatelessWidget {
   final String distance;
   final String city;
@@ -62,18 +64,23 @@ class ProfileCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        ProfileDetailPage.navigate(
-          context,
-          name: name,
-          phone: phone,
-          distance: distance,
-          city: city,
-          area: area,
-          age: age,
-          position: position,
-          havePlace: havePlace,
-          isVerified: isVerified,
-          isOnline: isOnline,
+        AccessGuard().runWithAccessCheck(
+          context, 
+          onAllowed: () {
+            ProfileDetailPage.navigate(
+              context,
+              name: name,
+              phone: phone,
+              distance: distance,
+              city: city,
+              area: area,
+              age: age,
+              position: position,
+              havePlace: havePlace,
+              isVerified: isVerified,
+              isOnline: isOnline,
+            );
+          }
         );
       },
       child: Container(

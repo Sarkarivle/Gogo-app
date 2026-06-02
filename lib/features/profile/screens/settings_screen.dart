@@ -537,19 +537,20 @@ class PremiumMembershipCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
-      valueListenable: AppConfigService().isStandardModeNotifier,
-      builder: (context, isStandardMode, _) {
+      valueListenable: PremiumService().accessNotifier,
+      builder: (context, hasAccess, _) {
         final bool isPaidPremium = userData?['isPremium'] ?? false;
-        final bool hasFreeAccess = isStandardMode;
-        final bool showAsPremium = isPaidPremium || hasFreeAccess;
+        final bool showAsPremium = hasAccess;
         
-        final String expiryDate = isStandardMode ? 'Semi Unlimited' : (userData?['premiumExpiry'] ?? 'Never');
+        final String expiryDate = AppConfigService().isStandardMode 
+          ? (AppConfigService().isOneMessageTrialEnabled ? 'Limited Access' : 'Semi Unlimited') 
+          : (userData?['premiumExpiry'] ?? 'Never');
 
         // Logic for Button Text and Action
         String buttonText = 'Premium Settings';
-        if (!isPaidPremium && !hasFreeAccess) {
+        if (!isPaidPremium && !hasAccess) {
           buttonText = 'Activate Premium';
-        } else if (hasFreeAccess && !isPaidPremium) {
+        } else if (hasAccess && !isPaidPremium) {
           buttonText = 'Manage Membership';
         }
 
@@ -581,14 +582,19 @@ class PremiumMembershipCard extends StatelessWidget {
                     children: [
                       Icon(Icons.stars_rounded, color: showAsPremium ? Colors.orangeAccent : Colors.white24, size: 20),
                       const SizedBox(width: 8),
-                      Text(
-                        showAsPremium ? 'PREMIUM MEMBER' : 'UPGRADE TO PREMIUM',
-                        style: TextStyle(
-                          color: showAsPremium ? Colors.orangeAccent : Colors.white54,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
+                      ValueListenableBuilder<String>(
+                        valueListenable: PremiumService().statusNotifier,
+                        builder: (context, statusLabel, _) {
+                          return Text(
+                            statusLabel,
+                            style: TextStyle(
+                              color: showAsPremium ? Colors.orangeAccent : Colors.white54,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
+                            ),
+                          );
+                        }
                       ),
                     ],
                   ),
@@ -610,7 +616,7 @@ class PremiumMembershipCard extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 showAsPremium 
-                  ? (isPaidPremium ? (userData?['premiumPlanName'] ?? "आपका प्रीमियम सक्रिय है") : "Free Community Access")
+                  ? (isPaidPremium ? (userData?['premiumPlanName'] ?? "आपका प्रीमियम सक्रिय है") : (AppConfigService().isStandardMode ? "Trial Membership" : "Free Community Access"))
                   : "प्रीमियम में अपग्रेड करें",
                 style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               ),

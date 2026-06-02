@@ -15,15 +15,18 @@ const getPublicSettings = async (req, res) => {
 
         // Robust check for isReviewMode within the value object
         let isStandardMode = false;
+        let isOneMessageTrialEnabled = false;
         if (reviewConfig && reviewConfig.value) {
             isStandardMode = reviewConfig.value.isReviewMode === true;
+            isOneMessageTrialEnabled = reviewConfig.value.isOneMessageTrialEnabled === true;
         }
 
-        console.log(`🛡️  Compliance Status: StandardMode=${isStandardMode}`);
+        console.log(`🛡️  Compliance Status: StandardMode=${isStandardMode}, 1MsgTrial=${isOneMessageTrialEnabled}`);
 
         res.json({
             success: true,
             isStandardMode: isStandardMode,
+            isOneMessageTrialEnabled: isOneMessageTrialEnabled,
             activeGateway: settings.activeGateway || 'razorpay',
             config: {
                 isUpiEnabled: settings.isUpiEnabled !== false,

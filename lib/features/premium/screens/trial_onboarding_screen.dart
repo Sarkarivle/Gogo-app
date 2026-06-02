@@ -317,105 +317,196 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
   }
 
   Future<void> _handleBackPress() async {
+    // 1. If offer already shown once this session, perform the actual back/exit action
     if (_hasShownExitOffer) {
-      // If offer already shown, check if we can pop or need to show exit dialog
       if (Navigator.of(context).canPop()) {
-        Navigator.pop(context);
+        Navigator.pop(context); // Go back to previous screen
       } else {
-        _showAppExitDialog();
+        _showAppExitDialog(); // Exit app if at root
       }
       return;
     }
 
-    // Show Premium Offer Popup for the first time
-    setState(() => _hasShownExitOffer = true);
-    _showExitOfferDialog();
+    // 2. First time back is pressed, always show the Exit Offer Bottom Sheet
+    _showExitBottomSheet();
   }
 
-  void _showExitOfferDialog() {
-    showDialog(
+  void _showExitBottomSheet() {
+    setState(() => _hasShownExitOffer = true);
+    
+    showModalBottomSheet(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          // When back is pressed on the sheet, close sheet AND the screen (or ask exit)
+          Navigator.pop(sheetContext); // Close sheet
+          
+          if (Navigator.of(context).canPop()) {
+            Navigator.pop(context); // Close screen
+          } else {
+            _showAppExitDialog();
+          }
+        },
         child: Container(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2A0D17), Color(0xFF1A1A1A)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF2A0D17), Color(0xFF0F0F0F)],
             ),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.3)),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 30),
-              const Icon(Icons.stars_rounded, color: Colors.amber, size: 60),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Icon(Icons.stars_rounded, color: Colors.amber, size: 50),
               const SizedBox(height: 20),
-              const Text("WAIT! DON'T MISS OUT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1)),
-              const SizedBox(height: 15),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
-                    children: [
-                      TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
-                      const TextSpan(text: "में "),
-                      const TextSpan(text: "1000+ लड़के ", style: TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
-                      const TextSpan(text: "आपका इंतज़ार कर रहे है! इसे अभी अनलॉक करें।"),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
-              
-              // Internal Pay Button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _startSubscription();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.pink,
-                    minimumSize: const Size(double.infinity, 55),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  ),
-                  child: Text(
-                    hasUsedTrial ? "ACTIVATE NOW" : "START TRIAL ₹${PaymentRepository().trialPrice}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ),
-              ),
-              
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Maybe Later", style: TextStyle(color: Colors.white38)),
+              const Text(
+                "WAIT! DON'T MISS OUT", 
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.2)
               ),
               const SizedBox(height: 15),
+              RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                  children: [
+                    TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
+                    const TextSpan(text: "में "),
+                    const TextSpan(text: "1000+ लड़के ", style: TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
+                    const TextSpan(text: "आपका इंतज़ार कर रहे है! इसे अभी अनलॉक करें।"),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 35),
+              
+              // Pay Section (Premium Layout)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.03),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Image.asset(
+                                'assets/gpay_logo.png',
+                                height: 20,
+                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 20),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
+                                Text("GPay", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 3,
+                      child: SizedBox(
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _startSubscription();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.pink,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            hasUsedTrial 
+                                ? "Activate Now" 
+                                : "Start Trial ₹${PaymentRepository().trialPrice}",
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   void _showAppExitDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Exit GoGo?", style: TextStyle(color: Colors.white)),
-        content: const Text("Are you sure you want to close the app?", style: TextStyle(color: Colors.white70)),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24), 
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.05))
+        ),
+        title: const Text("Exit GoGo?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text("Are you sure you want to close the app?", style: TextStyle(color: Colors.white70, fontSize: 14)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("NO", style: TextStyle(color: Colors.white38))),
           TextButton(
+            onPressed: () => Navigator.pop(context), 
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold))
+          ),
+          ElevatedButton(
             onPressed: () => SystemNavigator.pop(),
-            child: const Text("YES, EXIT", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+              foregroundColor: Colors.redAccent,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text("YES, EXIT", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -715,7 +806,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
             ),
             // Bottom Bar
             Container(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 15),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 25),
               decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [Color(0xFF1E1E1E), Color(0xFF1A080E)],
