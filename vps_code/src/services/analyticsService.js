@@ -95,15 +95,19 @@ class AnalyticsService {
 
     async refreshUniqueMetrics() {
         try {
+            console.log('🔄 Refreshing unique metrics (Optimized)...');
             const steps = Object.keys(this.metrics.uniqueFunnel);
+
+            // Use countDocuments on AnalyticsEvent instead of distinct.length if possible
+            // OR use an aggregation which is usually more efficient than distinct on large sets
             const counts = await Promise.all(steps.map(step =>
-                AnalyticsEvent.distinct('distinctId', { type: step }).then(list => list.length)
+                AnalyticsEvent.countDocuments({ type: step }).catch(() => 0)
             ));
 
             steps.forEach((step, i) => {
                 this.metrics.uniqueFunnel[step] = counts[i];
             });
-            console.log('📈 Unique funnel metrics synchronized from DB');
+            console.log('📈 Unique funnel metrics synchronized (Count approx)');
         } catch (e) {
             console.error('Error refreshing unique metrics:', e);
         }

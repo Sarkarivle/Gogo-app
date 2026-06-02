@@ -50,6 +50,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const d = R * c;
 
+        if (d < 0.5) return "0.5 km";
         if (d < 1) return "Within 1 km";
         if (d < 5) return "Under 5 km";
         return d.toFixed(1) + " km";
@@ -96,28 +97,27 @@ async function syncUserStatus(user, isStandardMode) {
     let changed = false;
     const now = new Date();
 
-    // REVOKE Standard Access if toggle is OFF
-    if (!isStandardMode && user.premiumPlan === 'Standard Access') {
-        user.isPremium = false;
-        user.premiumPlan = 'None';
-        changed = true;
+    // 1. Manage 'Standard Access' users (Google Compliance Mode)
+    if (user.premiumPlan === 'Standard Access') {
+        if (!isStandardMode) {
+            // Toggle is OFF -> Remove Standard Access completely
+            user.isPremium = false;
+            user.premiumPlan = 'None';
+            changed = true;
+        } else if (user.isPremium) {
+            // Toggle is ON -> Set isPremium=false (App logic will show as Freemium)
+            user.isPremium = false;
+            changed = true;
+        }
     }
 
-    // Auto-downgrade if premium expired
+    // 2. Auto-downgrade if premium expired (for real paid users)
     if (user.isPremium) {
         if (!user.premiumExpiry || new Date(user.premiumExpiry) < now) {
             user.isPremium = false;
             if (user.subscription) user.subscription.status = 'expired';
             changed = true;
         }
-    }
-
-    // Auto-upgrade if in Review Mode
-    if (isStandardMode && !user.isPremium) {
-        user.isPremium = true;
-        user.premiumExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-        user.premiumPlan = 'Standard Access';
-        changed = true;
     }
 
     if (changed && user.save) {
@@ -210,6 +210,19 @@ exports.login = async (req, res) => {
     }
 };
 
+exports.getPublicConfig = async (req, res) => {
+    try {
+        const { key } = req.params;
+        const allowedKeys = ['app_update_config', 'review_mode_config'];
+        if (!allowedKeys.includes(key)) return res.status(403).json({ success: false });
+
+        const config = await Config.findOne({ key });
+        res.json({ success: true, config: config ? config.value : {} });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+};
+
 exports.reportUser = async (req, res) => {
     try {
         let { reporterPhone, reportedPhone, category, description, reportType } = req.body;
@@ -267,9 +280,9 @@ exports.register = async (req, res) => {
             isDeactivated: false,
             isOnline: true,
             lastSeen: new Date(),
-            isPremium: isStandardMode,
-            premiumPlan: isStandardMode ? 'Standard Access' : 'None',
-            premiumExpiry: isStandardMode ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : null
+            isPremium: false,
+            premiumPlan: 'None',
+            premiumExpiry: null
         };
 
         if (userData.dobYear) {
@@ -367,6 +380,8 @@ exports.getDiscover = async (req, res) => {
         let phone = (req.user && !req.user.role) ? req.user.phone : req.query.phone;
         const normalizedPhone = normalize(phone);
 
+        console.log(`🔍 Discover Fetch: User=${normalizedPhone}, Tab=${tab}, Page=${page}`);
+
         let userLat = lat ? parseFloat(lat) : null;
         let userLng = lng ? parseFloat(lng) : null;
         if (!userLat || !userLng) {
@@ -394,6 +409,9 @@ exports.getDiscover = async (req, res) => {
             const ageMap = { '18-25': { $gte: 18, $lte: 25 }, '26-35': { $gte: 26, $lte: 35 }, '36-45': { $gte: 36, $lte: 45 }, '46+': { $gte: 46 } };
             if (ageMap[age]) baseQuery.age = ageMap[age];
         }
+
+        console.log(`🛠 Discovery Query: ${JSON.stringify(baseQuery)}`);
+
         let users = [];
         if (tab === 'Nearby' && userLat && userLng) {
             let maxDist = 500 * 1000;
@@ -408,6 +426,8 @@ exports.getDiscover = async (req, res) => {
             else if (tab === 'Popular') sort = { isPremium: -1, lastSeen: -1 };
             users = await User.find(baseQuery).sort(sort).skip(skip).limit(limitNum).lean();
         }
+
+        console.log(`✅ Discovery Found: ${users.length} users`);
         const processedUsers = users.map(u => {
             const uLat = u.lat || u.location?.coordinates?.[1];
             const uLng = u.lng || u.location?.coordinates?.[0];

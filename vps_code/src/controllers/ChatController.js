@@ -10,6 +10,36 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 
+/**
+ * Helper to calculate distance for privacy
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    try {
+        const p1Lat = parseFloat(lat1);
+        const p1Lon = parseFloat(lon1);
+        const p2Lat = parseFloat(lat2);
+        const p2Lon = parseFloat(lon2);
+
+        if (isNaN(p1Lat) || isNaN(p1Lon) || isNaN(p2Lat) || isNaN(p2Lon)) return "";
+
+        const R = 6371;
+        const dLat = (p2Lat - p1Lat) * Math.PI / 180;
+        const dLon = (p2Lon - p1Lon) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(p1Lat * Math.PI / 180) * Math.cos(p2Lat * Math.PI / 180) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const d = R * c;
+
+        if (d < 0.5) return "0.5 km";
+        if (d < 1) return "Within 1 km";
+        if (d < 5) return "Under 5 km";
+        return d.toFixed(1) + " km";
+    } catch (e) {
+        return "";
+    }
+}
+
 exports.getInbox = async (req, res) => {
     try {
         let phone = normalize(req.params.phone);
@@ -23,6 +53,11 @@ exports.getInbox = async (req, res) => {
         // Optimized Search: Always use normalized 10-digit phone
         // We still check variations for backward compatibility if needed, but prefer normalized
         const phoneVariations = [phone, `+91${phone}`, `91${phone}`];
+
+        // Fetch current user for distance calculation
+        const caller = await User.findOne({ phone: { $in: phoneVariations } }, 'lat lng location').lean();
+        const userLat = caller?.lat || caller?.location?.coordinates?.[1];
+        const userLng = caller?.lng || caller?.location?.coordinates?.[0];
 
         // 1. Fetch conversations
         const [conversations, allMetadata] = await Promise.all([
@@ -51,7 +86,7 @@ exports.getInbox = async (req, res) => {
 
         // 3. Fetch partners and blocks in parallel
         const [partners, blocks] = await Promise.all([
-            User.find({ phone: { $in: partnerPhones } }, 'phone name isOnline isVerified city area').lean(),
+            User.find({ phone: { $in: partnerPhones } }, 'phone name isOnline isVerified city area position lat lng location').lean(),
             Block.find({
                 $or: [
                     { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
@@ -72,6 +107,10 @@ exports.getInbox = async (req, res) => {
             const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
             const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
 
+            const uLat = u.lat || u.location?.coordinates?.[1];
+            const uLng = u.lng || u.location?.coordinates?.[0];
+            const distStr = (userLat && userLng && uLat && uLng) ? calculateDistance(userLat, userLng, uLat, uLng) : "";
+
             return {
                 phone: other,
                 msg: conv.lastMessage?.message || '',
@@ -84,6 +123,8 @@ exports.getInbox = async (req, res) => {
                 isBlocked: !!block,
                 iBlocked: block?.blockerPhone === phone,
                 city: cleanArea || cleanCity || 'Nearby',
+                distance: distStr,
+                position: u.position || '',
                 isFavourite: meta.isFavourite || false,
                 isMuted: meta.isMuted || false
             };

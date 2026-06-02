@@ -60,9 +60,16 @@ exports.sendPushNotification = async (token, title, body, extraData = {}) => {
     try {
         const response = await admin.messaging().send(message);
         console.log("🚀 FCM Success:", response);
-        return true;
+        return { success: true, response };
     } catch (error) {
         console.error("❌ FCM Error:", error.message);
-        return false;
+        // Return structured error so caller can cleanup if token is invalid
+        return {
+            success: false,
+            error: error.message,
+            isInvalidToken: error.code === 'messaging/registration-token-not-registered' ||
+                            error.code === 'messaging/invalid-registration-token' ||
+                            error.message.includes('not found')
+        };
     }
 };

@@ -4,6 +4,7 @@ const MessageSchema = new mongoose.Schema({
     roomId: { type: String, index: true },
     senderPhone: { type: String, index: true },
     receiverPhone: { type: String, index: true },
+    localId: String, // Added for deduplication and client-side mapping
     message: String,
     imageUrl: String,
     audioUrl: String,

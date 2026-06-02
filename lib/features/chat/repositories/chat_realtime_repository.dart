@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/features/chat/models/chat_message.dart';
@@ -49,7 +48,7 @@ class ChatRealtimeRepository {
       if (myPhone != null) {
         final String? otherPhone = PhoneUtils.normalize(data['senderPhone'] == myPhone ? data['receiverPhone'] : data['senderPhone']);
         if (otherPhone != null) {
-           final newMessage = ChatMessage.fromJson(data, myPhone);
+           final newMessage = ChatMessage.fromJson(Map<String, dynamic>.from(data), myPhone);
            ChatRepository().updateCacheWithNewMessage(myPhone, otherPhone, newMessage);
         }
       }

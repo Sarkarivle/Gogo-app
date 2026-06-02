@@ -11,6 +11,7 @@ const PaymentTransactionSchema = new mongoose.Schema({
     gatewaySubscriptionId: String,
     gatewayCustomerId: String,
     paymentMethod: String,
+    current_period_end: Number, // Unix timestamp from gateway
     errorMessage: String,
     webhookLogs: [mongoose.Schema.Types.Mixed],
     metadata: mongoose.Schema.Types.Mixed

@@ -1,0 +1,146 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/utils/phone_utils.dart';
+import 'package:gogo/core/location/location_repository.dart';
+
+class UserRepository {
+  static final UserRepository _instance = UserRepository._internal();
+  factory UserRepository() => _instance;
+  UserRepository._internal();
+
+  final ValueNotifier<Map<String, dynamic>?> userNotifier = ValueNotifier<Map<String, dynamic>?>(null);
+  SharedPreferences? _prefs;
+
+  // Profile Cache for performance
+  static final Map<String, Map<String, dynamic>> _profileCache = {};
+  static final Map<String, int> _profileCacheTime = {};
+  static const int _cacheTTL = 2 * 60 * 1000; // 2 minutes cache
+
+  Map<String, dynamic>? get currentUser => userNotifier.value;
+
+  Future<void> initialize() async {
+    _prefs = await SharedPreferences.getInstance();
+    final userDataStr = _prefs?.getString('user_data');
+    if (userDataStr != null) {
+      userNotifier.value = jsonDecode(userDataStr);
+    }
+  }
+
+  Future<void> updateLocation(String phone, {bool force = false}) async {
+    final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
+    await LocationRepository().updateLocation(normalizedPhone, force: force);
+  }
+
+  Future<Map<String, dynamic>?> getCurrentUser() async {
+    if (userNotifier.value != null) return userNotifier.value;
+    
+    _prefs ??= await SharedPreferences.getInstance();
+    final userDataStr = _prefs?.getString('user_data');
+    if (userDataStr != null) {
+      final Map<String, dynamic> userData = jsonDecode(userDataStr);
+      if (userData['profileImages'] != null) {
+        userData['profileImages'] = (userData['profileImages'] as List)
+          .map((img) => ApiService.getSecureUrl(img))
+          .toList();
+      }
+      userNotifier.value = userData;
+      return userData;
+    }
+    return null;
+  }
+
+  /// REFRESH PROFILE: Fetch latest user data from server (used for real-time status updates)
+  Future<Map<String, dynamic>?> fetchProfile(String phone, {bool forceRefresh = false}) async {
+    try {
+      final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
+      
+      // Check cache first if not forced
+      if (!forceRefresh && _profileCache.containsKey(normalizedPhone)) {
+        final lastTime = _profileCacheTime[normalizedPhone] ?? 0;
+        if (DateTime.now().millisecondsSinceEpoch - lastTime < _cacheTTL) {
+          return _profileCache[normalizedPhone];
+        }
+      }
+
+      final response = await ApiService.get('/api/user/profile/$normalizedPhone');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['user'] != null) {
+          final Map<String, dynamic> userData = data['user'];
+          
+          // Update Cache
+          _profileCache[normalizedPhone] = userData;
+          _profileCacheTime[normalizedPhone] = DateTime.now().millisecondsSinceEpoch;
+
+          // Only update local user if it's the current user's profile
+          if (currentUser != null && currentUser!['phone'] == userData['phone']) {
+            await updateLocalUser(userData);
+          }
+          return userData;
+        }
+      }
+    } catch (e) {
+      debugPrint('Fetch Profile error: $e');
+    }
+    return null;
+  }
+
+  Future<String> _getDeviceId() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    String? deviceId = _prefs?.getString('unique_device_id');
+    if (deviceId == null) {
+      deviceId = 'DEV_${DateTime.now().microsecondsSinceEpoch}';
+      await _prefs?.setString('unique_device_id', deviceId);
+    }
+    return deviceId;
+  }
+
+  Future<void> trackEvent(String eventType, {String? customId}) async {
+    try {
+      final String distinctId = customId ?? await _getDeviceId();
+      ApiService.post('/api/user/track-event', {
+        'eventType': eventType,
+        'distinctId': distinctId,
+      });
+    } catch (e) {
+      debugPrint('Track Event error: $e');
+    }
+  }
+
+  Future<void> updateLocalUser(Map<String, dynamic> userData) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    if (userData.isEmpty) {
+      await _prefs?.remove('user_data');
+      userNotifier.value = null;
+      _profileCache.clear();
+      _profileCacheTime.clear();
+    } else {
+      // Normalize phone before saving locally for consistency
+      if (userData['phone'] != null) {
+        userData['phone'] = PhoneUtils.normalize(userData['phone']);
+      }
+      await _prefs?.setString('user_data', jsonEncode(userData));
+      userNotifier.value = userData;
+    }
+  }
+
+  Future<bool> deactivateAccount(String phone, String reason) async {
+    try {
+      final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
+      final response = await ApiService.post('/api/user/deactivate', {
+        'phone': normalizedPhone,
+        'reason': reason,
+      });
+
+      if (response.statusCode == 200) {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+}

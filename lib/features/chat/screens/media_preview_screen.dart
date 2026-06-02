@@ -13,7 +13,6 @@ class MediaPreviewScreen extends StatefulWidget {
 }
 
 class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
-  bool _isViewOnce = false;
   VideoPlayerController? _videoController;
 
   @override
@@ -39,70 +38,106 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _isViewOnce ? Icons.looks_one_rounded : Icons.looks_one_outlined,
-              color: _isViewOnce ? Colors.orangeAccent : Colors.white,
-            ),
-            onPressed: () {
-              setState(() => _isViewOnce = !_isViewOnce);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(_isViewOnce ? 'View Once ON' : 'View Once OFF'),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-            },
-          ),
-        ],
+        title: Text(
+          widget.type == 'image' ? 'Preview Image' : 'Preview Video',
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+        ),
       ),
-      body: Stack(
+      body: Column(
         children: [
-          Center(
-            child: widget.type == 'image'
-                ? Image.file(widget.file)
-                : (_videoController != null && _videoController!.value.isInitialized
-                    ? AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      )
-                    : const CircularProgressIndicator(color: Colors.orangeAccent)),
-          ),
-          Positioned(
-            bottom: 40,
-            right: 20,
-            child: FloatingActionButton(
-              backgroundColor: Colors.orangeAccent,
-              onPressed: () => Navigator.pop(context, {'file': widget.file, 'isViewOnce': _isViewOnce}),
-              child: const Icon(Icons.send_rounded, color: Colors.black),
+          Expanded(
+            child: Center(
+              child: widget.type == 'image'
+                  ? InteractiveViewer(child: Image.file(widget.file))
+                  : (_videoController != null && _videoController!.value.isInitialized
+                      ? AspectRatio(
+                          aspectRatio: _videoController!.value.aspectRatio,
+                          child: VideoPlayer(_videoController!),
+                        )
+                      : const CircularProgressIndicator(color: Colors.orangeAccent)),
             ),
           ),
-          if (_isViewOnce)
-            Positioned(
-              bottom: 100,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.looks_one_rounded, color: Colors.orangeAccent, size: 16),
-                      SizedBox(width: 8),
-                      Text('Send as One-Time View', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
+          
+          // Bottom Buttons Area
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black.withValues(alpha: 0.9)],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 30), // Professional gap from bottom
+                child: Row(
+                  children: [
+                    // Button 1: Send Normally
+                    Expanded(
+                      child: _buildActionButton(
+                        label: 'SEND NORMALLY',
+                        icon: Icons.send_rounded,
+                        color: Colors.white.withValues(alpha: 0.1),
+                        textColor: Colors.white,
+                        onTap: () => Navigator.pop(context, {'file': widget.file, 'isViewOnce': false}),
+                      ),
+                    ),
+                    const SizedBox(width: 15),
+                    // Button 2: One Time View
+                    Expanded(
+                      child: _buildActionButton(
+                        label: 'ONE TIME VIEW',
+                        icon: Icons.looks_one_rounded,
+                        color: Colors.orangeAccent,
+                        textColor: Colors.black,
+                        onTap: () => Navigator.pop(context, {'file': widget.file, 'isViewOnce': true}),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required Color textColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          height: 60,
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: textColor, size: 20),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

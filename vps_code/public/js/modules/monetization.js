@@ -34,7 +34,6 @@ async function loadMonetization() {
         let gpSettings = gpConfigData.config || {};
         let isReviewMode = reviewData.config?.isReviewMode || false;
 
-        // Ensure activeGateway is set to razorpay by default if missing
         if (!settings.activeGateway) settings.activeGateway = 'razorpay';
 
         let s = statsData.stats || {};
@@ -78,43 +77,74 @@ async function loadMonetization() {
                     ${UI.card('Active Premium', stats.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500', 'active-premium')}
                 </div>
 
-                <!-- Secondary Financial Metrics -->
-                <div class="grid grid-cols-4 gap-6">
-                    <div class="glass p-6 rounded-3xl">
-                        <p class="text-[9px] font-black text-slate-500 uppercase">Top Gateway</p>
-                        <p class="text-xl font-black text-white uppercase mt-1">${stats.topGateway}</p>
-                    </div>
-                    <div class="glass p-6 rounded-3xl">
-                        <p class="text-[9px] font-black text-slate-500 uppercase">Avg ARPU</p>
-                        <p class="text-xl font-black text-white mt-1">₹${stats.arpu}</p>
-                    </div>
-                    <div class="glass p-6 rounded-3xl">
-                        <p class="text-[9px] font-black text-slate-500 uppercase">Failed Today</p>
-                        <p class="text-xl font-black text-red-500 mt-1">${stats.failedToday}</p>
-                    </div>
-                    <div class="glass p-6 rounded-3xl">
-                        <p class="text-[9px] font-black text-slate-500 uppercase">Churn Rate</p>
-                        <p class="text-xl font-black text-white mt-1">${stats.subscriptionHealth.churnRate}</p>
-                    </div>
-                </div>
-
                 <div class="grid grid-cols-2 gap-10">
-                    <!-- Gateway Config -->
+                    <!-- Pricing & Gateway Config -->
                     <div class="space-y-6">
-                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-orange-500/10">
+
+                        <!-- NEW PRICING ENGINE -->
+                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-emerald-500/10">
                             <div class="border-b border-white/5 pb-6">
-                                <h3 class="text-xs font-black text-white uppercase">UPI Gateways (Local Banks)</h3>
-                                <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Configure Razorpay, PhonePe or Cashfree</p>
+                                <h3 class="text-xs font-black text-white uppercase tracking-widest">Subscription Pricing Engine</h3>
+                                <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Control upfront and display costs</p>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-6">
+                                <div>
+                                    <label class="text-[9px] font-black text-emerald-500 uppercase tracking-widest ml-1">Trial Price (INR)</label>
+                                    <input type="number" id="trialPrice" value="${settings.trialPrice || 1}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-emerald-500 font-bold mt-2 focus:border-emerald-500/50 transition">
+                                    <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Instant Setup/Trial Fee</p>
+                                </div>
+                                <div>
+                                    <label class="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Main Price (INR)</label>
+                                    <input type="number" id="monthlyPrice" value="${settings.monthlyPrice || 199}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white font-bold mt-2 focus:border-orange-500/50 transition">
+                                    <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Display Price on App</p>
+                                </div>
+                            </div>
+
+                            <button onclick="savePricingStrategy()" class="w-full py-4 bg-emerald-500 text-black rounded-2xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-emerald-500/30">
+                                <i class="fas fa-save mr-2"></i> Save Pricing Strategy
+                            </button>
+
+                            <!-- Retention Win-back Offer -->
+                            <div class="mt-8 pt-8 border-t border-white/5 space-y-6">
+                                <div class="flex justify-between items-center">
+                                    <h4 class="text-[10px] font-black text-pink-500 uppercase tracking-widest">Retention Campaign</h4>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="offer_toggle" ${settings.isOfferEnabled ? 'checked' : ''} class="sr-only peer">
+                                        <div class="w-10 h-5 bg-white/10 rounded-full peer peer-checked:bg-pink-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                                    </label>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <input type="number" id="offerPrice" value="${settings.offerPrice || 99}" placeholder="Offer Price" class="bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
+                                    <input type="text" id="offerPlanId" value="${settings.offerPlanId || ''}" placeholder="Offer Plan ID" class="bg-black/20 border border-white/5 p-3 rounded-xl text-[10px] text-white">
+                                    <div class="col-span-2 grid grid-cols-2 gap-4">
+                                        <div>
+                                            <p class="text-[7px] text-slate-500 mb-1">SHOW AFTER (DAYS)</p>
+                                            <input type="number" id="offerStartDay" value="${settings.offerStartDay || 1}" class="w-full bg-black/20 border border-white/5 p-2 rounded-lg text-xs text-white">
+                                        </div>
+                                        <div>
+                                            <p class="text-[7px] text-slate-500 mb-1">HIDE AFTER (DAYS)</p>
+                                            <input type="number" id="offerEndDay" value="${settings.offerEndDay || 7}" class="w-full bg-black/20 border border-white/5 p-2 rounded-lg text-xs text-white">
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onclick="saveOfferStrategy()" class="w-full py-3 bg-pink-500/10 text-pink-500 border border-pink-500/20 rounded-xl text-[9px] font-black uppercase hover:bg-pink-500 hover:text-white transition">Update Win-back Offer</button>
+                            </div>
+                        </div>
+
+                        <!-- GATEWAY CONFIG -->
+                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-white/5">
+                            <div class="border-b border-white/5 pb-6">
+                                <h3 class="text-xs font-black text-white uppercase tracking-widest">Gateway Credentials</h3>
                             </div>
 
                             <div class="flex items-center justify-between glass p-4 rounded-2xl">
                                 <div>
                                     <p class="text-[10px] font-black text-white uppercase">Enable UPI Payments</p>
-                                    <p class="text-[8px] text-slate-500 uppercase">Visible on checkout page</p>
                                 </div>
                                 <label class="relative inline-flex items-center cursor-pointer">
                                     <input type="checkbox" id="upi_toggle" ${settings.isUpiEnabled !== false ? 'checked' : ''} class="sr-only peer">
-                                    <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                    <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
                                 </label>
                             </div>
 
@@ -126,39 +156,12 @@ async function loadMonetization() {
                                 `).join('')}
                             </div>
 
-                            <div id="activeGatewayForm" class="space-y-6 pt-4">
+                            <div id="activeGatewayForm">
                                 ${renderGatewayForm(settings.activeGateway, settings)}
                             </div>
 
-                            <button onclick="savePaymentSettings('${settings.activeGateway}')" class="w-full py-4 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-orange-500/20">
-                                Sync UPI Config
-                            </button>
-                        </div>
-
-                        <!-- Google Play Section -->
-                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-blue-500/10">
-                            <div class="border-b border-white/5 pb-6">
-                                <h3 class="text-xs font-black text-white uppercase">Google Play Billing</h3>
-                                <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Separate from UPI - Official Play Store Payment</p>
-                            </div>
-
-                            <div class="flex items-center justify-between glass p-4 rounded-2xl">
-                                <div>
-                                    <p class="text-[10px] font-black text-white uppercase">Enable Google Play</p>
-                                    <p class="text-[8px] text-slate-500 uppercase">Direct Play Store Purchase</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" id="google_play_toggle" ${gpSettings.isEnabled === true ? 'checked' : ''} class="sr-only peer">
-                                    <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                                </label>
-                            </div>
-
-                            <div id="googlePlayForm" class="space-y-6">
-                                ${renderGatewayForm('google_play', { google_play: gpSettings })}
-                            </div>
-
-                            <button onclick="saveGooglePlaySettings()" class="w-full py-4 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-blue-500/20">
-                                Sync Google Play Config
+                            <button onclick="savePaymentSettings('${settings.activeGateway}')" class="w-full py-4 bg-white/5 text-white border border-white/10 rounded-xl text-[10px] font-black uppercase hover:bg-white/10 transition">
+                                Sync Gateway Keys
                             </button>
                         </div>
                     </div>
@@ -166,10 +169,10 @@ async function loadMonetization() {
                     <!-- Live Activity Feed -->
                     <div class="glass p-10 rounded-[3rem] flex flex-col">
                         <div class="border-b border-white/5 pb-6 mb-6">
-                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Realtime Finance Feed</h3>
+                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Realtime Financial Intelligence</h3>
                         </div>
-                        <div id="financeActivity" class="flex-1 space-y-4 overflow-y-auto h-96 pr-2 font-mono text-[10px]">
-                            <div class="text-slate-500 opacity-50 uppercase italic text-center py-20">Waiting for live transactions...</div>
+                        <div id="financeActivity" class="flex-1 space-y-4 overflow-y-auto h-[40rem] pr-2 font-mono text-[10px]">
+                            <div class="text-slate-500 opacity-50 uppercase italic text-center py-20">Monitoring live stream...</div>
                         </div>
                     </div>
                 </div>
@@ -177,9 +180,9 @@ async function loadMonetization() {
                 <!-- Payment History -->
                 <div class="glass rounded-[3rem] overflow-hidden">
                     <div class="p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
-                        <h3 class="text-xs font-black text-white uppercase">Transaction History</h3>
+                        <h3 class="text-xs font-black text-white uppercase">Ledger History</h3>
                         <div class="flex items-center space-x-4">
-                            <input type="text" id="historySearch" placeholder="Search by Phone / Order ID" class="bg-black/20 border border-white/5 px-4 py-2 rounded-xl text-[10px] outline-none focus:border-orange-500/50 w-64">
+                            <input type="text" id="historySearch" placeholder="Phone / Order ID" class="bg-black/20 border border-white/5 px-4 py-2 rounded-xl text-[10px] outline-none w-64">
                             <button onclick="searchHistory()" class="px-4 py-2 bg-white/5 rounded-xl text-[10px] font-bold uppercase hover:bg-white/10">Filter</button>
                         </div>
                     </div>
@@ -201,74 +204,114 @@ function renderGatewayForm(active, settings) {
     if (active === 'razorpay') {
         const r = settings.razorpay || {};
         return `
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Key ID</label>
-                    <input type="text" id="rp_key_id" value="${r.keyId || ''}" placeholder="rzp_live_..." class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+            <div class="flex flex-col space-y-6 pt-4">
+                <div class="bg-black/40 p-5 rounded-2xl border border-white/5">
+                    <label class="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Razorpay Plan ID (₹199)</label>
+                    <input type="text" id="rp_plan_id" value="${r.planId || ''}" placeholder="plan_xxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
                 </div>
-                <div>
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Key Secret</label>
-                    <input type="password" id="rp_key_secret" value="${r.keySecret || ''}" placeholder="••••••••" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
+                <div class="grid grid-cols-2 gap-4">
+                    <input type="text" id="rp_key_id" value="${r.keyId || ''}" placeholder="Key ID" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white">
+                    <input type="password" id="rp_key_secret" value="${r.keySecret || ''}" placeholder="Key Secret" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white">
                 </div>
-                <div>
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Plan ID</label>
-                    <input type="text" id="rp_plan_id" value="${r.planId || ''}" placeholder="plan_..." class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
-                </div>
-                <div>
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Webhook Secret</label>
-                    <input type="password" id="rp_webhook_secret" value="${r.webhookSecret || ''}" placeholder="••••••••" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
-                </div>
+                <input type="password" id="rp_webhook_secret" value="${r.webhookSecret || ''}" placeholder="Webhook Secret" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white">
             </div>
         `;
     }
-    if (active === 'phonepe') {
-        const p = settings.phonepe || {};
-        return `
-            <div class="grid grid-cols-2 gap-4">
-                <input type="text" id="pp_merchant_id" value="${p.merchantId || ''}" placeholder="Merchant ID" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="password" id="pp_salt_key" value="${p.saltKey || ''}" placeholder="Salt Key" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="text" id="pp_salt_index" value="${p.saltIndex || '1'}" placeholder="Salt Index" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="password" id="pp_webhook_secret" value="${p.webhookSecret || ''}" placeholder="Webhook Secret" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <select id="pp_env" class="bg-[#12151f] border border-white/5 p-3 rounded-xl outline-none text-xs text-white col-span-2">
-                    <option value="UAT" ${p.env === 'UAT' ? 'selected' : ''}>UAT (Testing)</option>
-                    <option value="PROD" ${p.env === 'PROD' ? 'selected' : ''}>PROD (Production)</option>
-                </select>
-            </div>
-        `;
+    return `<p class="text-xs text-slate-500 text-center py-10 uppercase font-bold italic opacity-30">${active} details detail soon</p>`;
+}
+
+async function savePricingStrategy() {
+    try {
+        const trialVal = document.getElementById('trialPrice').value;
+        const monthlyVal = document.getElementById('monthlyPrice').value;
+
+        const data = await API.getConfig('payment_settings');
+        const settings = data.config || {};
+
+        settings.trialPrice = parseInt(trialVal) || 1;
+        settings.monthlyPrice = parseInt(monthlyVal) || 199;
+
+        await API.updateConfig('payment_settings', settings);
+
+        // BROADCAST CHANGE TO ALL USERS
+        await API.post('/payment/broadcast-status-change', {}).catch(e => {});
+
+        showSystemToast("Pricing Saved", "Strategy updated & Broadcasted", 'bg-emerald-500');
+        loadMonetization();
+    } catch (err) {
+        showSystemToast("Save Failed", "API communication error", 'bg-red-500');
     }
-    if (active === 'cashfree') {
-        const c = settings.cashfree || {};
-        return `
-            <div class="grid grid-cols-1 gap-4">
-                <input type="text" id="cf_app_id" value="${c.appId || ''}" placeholder="App ID" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <input type="password" id="cf_secret_key" value="${c.secretKey || ''}" placeholder="Secret Key" class="bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                <select id="cf_env" class="bg-[#12151f] border border-white/5 p-3 rounded-xl outline-none text-xs text-white">
-                    <option value="SANDBOX" ${c.env === 'SANDBOX' ? 'selected' : ''}>SANDBOX</option>
-                    <option value="PROD" ${c.env === 'PROD' ? 'selected' : ''}>PROD</option>
-                </select>
-            </div>
-        `;
+}
+
+async function saveOfferStrategy() {
+    try {
+        const data = await API.getConfig('payment_settings');
+        const settings = data.config || {};
+
+        settings.isOfferEnabled = document.getElementById('offer_toggle').checked;
+        settings.offerPrice = parseInt(document.getElementById('offerPrice').value) || 99;
+        settings.offerPlanId = document.getElementById('offerPlanId').value;
+        settings.offerStartDay = parseInt(document.getElementById('offerStartDay').value) || 1;
+        settings.offerEndDay = parseInt(document.getElementById('offerEndDay').value) || 7;
+
+        await API.updateConfig('payment_settings', settings);
+
+        // BROADCAST CHANGE TO ALL USERS
+        await API.post('/payment/broadcast-status-change', {}).catch(e => {});
+
+        showSystemToast("Offer Updated", "Campaign active & Broadcasted", 'bg-pink-500');
+        loadMonetization();
+    } catch (err) {
+        showSystemToast("Save Failed", "Campaign update failed", 'bg-red-500');
     }
-    if (active === 'google_play') {
-        const g = settings.google_play || {};
-        return `
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Monthly Plan Product ID</label>
-                    <input type="text" id="gp_product_id" value="${g.productId || 'premium_gold_monthly'}" placeholder="premium_gold_monthly" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
-                </div>
-                <div>
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Trial Plan Product ID</label>
-                    <input type="text" id="gp_trial_product_id" value="${g.trialProductId || 'premium_gold_trial'}" placeholder="premium_gold_trial" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-xs text-white mt-1">
-                </div>
-                <div class="col-span-2">
-                    <label class="text-[8px] font-bold text-slate-500 uppercase ml-1">Service Account Key (JSON String)</label>
-                    <textarea id="gp_service_account" placeholder="{ ... }" class="w-full bg-white/5 border border-white/5 p-3 rounded-xl outline-none text-[10px] text-white mt-1 h-32">${g.serviceAccount ? JSON.stringify(g.serviceAccount) : ''}</textarea>
-                </div>
-            </div>
-        `;
+}
+
+async function savePaymentSettings(activeGateway) {
+    try {
+        const data = await API.getConfig('payment_settings');
+        const settings = data.config || { activeGateway: 'razorpay' };
+
+        settings.isUpiEnabled = document.getElementById('upi_toggle').checked;
+
+        if (activeGateway === 'razorpay') {
+            settings.razorpay = {
+                keyId: document.getElementById('rp_key_id').value,
+                keySecret: document.getElementById('rp_key_secret').value,
+                planId: document.getElementById('rp_plan_id').value,
+                webhookSecret: document.getElementById('rp_webhook_secret').value
+            };
+        }
+        settings.activeGateway = activeGateway;
+        await API.updateConfig('payment_settings', settings);
+        showSystemToast("Gateway Updated", "API credentials synced", 'bg-emerald-500');
+        loadMonetization();
+    } catch (err) {
+        showSystemToast("Sync Failed", "Credential save failed", 'bg-red-500');
     }
-    return `<p class="text-xs text-slate-500 text-center py-10 uppercase">Config not yet detailed for ${active}</p>`;
+}
+
+async function toggleReviewMode(el) {
+    try {
+        // Only call updateConfig. It already handles the broadcast in AdminController.js
+        await API.updateConfig('review_mode_config', { isReviewMode: el.checked });
+
+        showSystemToast("Compliance Changed", `Mode: ${el.checked ? 'REVIEW' : 'LIVE'}`, el.checked ? 'bg-red-500' : 'bg-emerald-500');
+        loadMonetization();
+    } catch (e) {
+        el.checked = !el.checked;
+        showSystemToast("Sync Error", "Server not responding", 'bg-red-500');
+    }
+}
+
+async function toggleGateway(g) {
+    try {
+        const data = await API.getConfig('payment_settings');
+        const settings = data.config || {};
+        settings.activeGateway = g;
+        await API.updateConfig('payment_settings', settings);
+        showSystemToast("Gateway Switched", `Active: ${g.toUpperCase()}`, 'bg-orange-500');
+        loadMonetization();
+    } catch (e) { }
 }
 
 async function loadPaymentHistory(page = 1, search = '') {
@@ -276,7 +319,6 @@ async function loadPaymentHistory(page = 1, search = '') {
     try {
         const data = await API.getPaymentHistory(page);
         const filtered = search ? data.transactions.filter(t => t.userPhone.includes(search) || t.orderId.includes(search)) : data.transactions;
-
         const rows = filtered.map(t => `
             <tr class="hover:bg-white/[0.01]">
                 <td class="p-6">
@@ -284,184 +326,15 @@ async function loadPaymentHistory(page = 1, search = '') {
                     <p class="text-[8px] text-slate-500 uppercase">${t.orderId}</p>
                 </td>
                 <td class="p-6 text-xs font-black text-white">₹${t.amount}</td>
-                <td class="p-6">
-                    ${UI.badge(t.status, t.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}
-                </td>
+                <td class="p-6">${UI.badge(t.status, t.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}</td>
                 <td class="p-6 text-[10px] text-slate-500 font-bold uppercase">${t.gateway}</td>
                 <td class="p-6 text-[9px] text-slate-400 font-medium">${new Date(t.createdAt).toLocaleString()}</td>
             </tr>
         `);
-
         container.innerHTML = UI.table(['Customer', 'Amount', 'Status', 'Gateway', 'Timestamp'], rows);
-    } catch (e) {
-        container.innerHTML = '<p class="p-10 text-center text-red-500 uppercase font-black">History Sync Failed</p>';
-    }
-}
-
-function updateRevenueRealtime(data) {
-    updateCardValue('gross-revenue', '₹' + data.grossRevenue.toLocaleString());
-    updateCardValue('today-earnings', '₹' + data.todayEarnings.toLocaleString());
-    updateCardValue('monthly-revenue', '₹' + data.monthlyRevenue.toLocaleString());
-    updateCardValue('active-premium', data.activePremiumUsers.toLocaleString());
-
-    // Secondary
-    document.querySelectorAll('.glass .text-xl').forEach(el => {
-        const labelEl = el.previousElementSibling;
-        if (!labelEl) return;
-        const label = labelEl.innerText;
-        if (label === 'TOP GATEWAY') el.innerText = data.topGateway.toUpperCase();
-        if (label === 'AVG ARPU') el.innerText = '₹' + data.arpu;
-        if (label === 'FAILED TODAY') el.innerText = data.failedToday;
-        if (label === 'CHURN RATE') el.innerText = data.subscriptionHealth?.churnRate || '0.0%';
-    });
-}
-
-function appendFinanceActivity(data) {
-    const feed = document.getElementById('financeActivity');
-    if (!feed) return;
-
-    if (feed.querySelector('.italic')) feed.innerHTML = '';
-
-    const div = document.createElement('div');
-    div.className = 'p-3 bg-white/5 rounded-xl border-l-2 border-emerald-500 animate-fade';
-    div.innerHTML = `
-        <div class="flex justify-between items-start">
-            <div>
-                <span class="text-emerald-500 font-black">${data.type.toUpperCase()}</span>
-                <p class="text-white mt-1">User ${data.userPhone.replace(/(\d{3})\d{4}(\d{3})/, '$1****$2')} paid ₹${data.amount}</p>
-                <p class="text-slate-500 text-[8px] mt-0.5">VIA ${data.gateway.toUpperCase()}</p>
-            </div>
-            <span class="opacity-30 text-[8px]">${new Date(data.timestamp).toLocaleTimeString()}</span>
-        </div>
-    `;
-    feed.prepend(div);
-    if (feed.children.length > 50) feed.lastChild.remove();
-}
-
-function updateCardValue(id, val) {
-    const el = document.querySelector(`[data-card-id="${id}"] h2`);
-    if (el) el.innerText = val;
-}
-
-async function toggleGateway(gateway) {
-    try {
-        const upiToggle = document.getElementById('upi_toggle');
-        const googlePlayToggle = document.getElementById('google_play_toggle');
-
-        const data = await API.getConfig('payment_settings');
-        const settings = data.config || {};
-        settings.activeGateway = gateway;
-
-        // Sync toggle
-        settings.isUpiEnabled = upiToggle.checked;
-
-        await API.updateConfig('payment_settings', settings);
-        showSystemToast("Gateway Switched", `Switched to ${gateway.toUpperCase()}`, 'bg-emerald-500');
-        loadMonetization();
-    } catch (e) {
-        showSystemToast("Switch Failed", "Could not change gateway", 'bg-red-500');
-    }
-}
-
-async function savePaymentSettings(activeGateway) {
-    try {
-        const upiToggle = document.getElementById('upi_toggle');
-        const googlePlayToggle = document.getElementById('google_play_toggle');
-
-        // PREVENT BOTH OFF: If user tries to turn off UPI while Google Play is already off
-        if (!upiToggle.checked && !googlePlayToggle.checked) {
-            upiToggle.checked = true; // Force it back
-            return showSystemToast("Safety Lock", "At least one payment method must remain active", 'bg-orange-500');
-        }
-
-        const data = await API.getConfig('payment_settings');
-        const settings = data.config || { activeGateway: 'razorpay' };
-
-        // Update Visibility Toggle
-        settings.isUpiEnabled = upiToggle.checked;
-
-        if (activeGateway === 'razorpay') {
-            settings.razorpay = {
-                keyId: document.getElementById('rp_key_id')?.value,
-                keySecret: document.getElementById('rp_key_secret')?.value,
-                planId: document.getElementById('rp_plan_id')?.value,
-                webhookSecret: document.getElementById('rp_webhook_secret')?.value
-            };
-        } else if (activeGateway === 'phonepe') {
-            settings.phonepe = {
-                merchantId: document.getElementById('pp_merchant_id')?.value,
-                saltKey: document.getElementById('pp_salt_key')?.value,
-                saltIndex: document.getElementById('pp_salt_index')?.value,
-                webhookSecret: document.getElementById('pp_webhook_secret')?.value,
-                env: document.getElementById('pp_env')?.value
-            };
-        } else if (activeGateway === 'cashfree') {
-            settings.cashfree = {
-                appId: document.getElementById('cf_app_id')?.value,
-                secretKey: document.getElementById('cf_secret_key')?.value,
-                env: document.getElementById('cf_env')?.value
-            };
-        }
-
-        settings.activeGateway = activeGateway;
-
-        await API.updateConfig('payment_settings', settings);
-        showSystemToast("UPI Updated", "Payment credentials saved successfully", 'bg-emerald-500');
-        loadMonetization();
-    } catch (err) {
-        showSystemToast("Sync Failed", "Could not save credentials", 'bg-red-500');
-    }
-}
-
-async function saveGooglePlaySettings() {
-    try {
-        const upiToggle = document.getElementById('upi_toggle');
-        const googlePlayToggle = document.getElementById('google_play_toggle');
-
-        // PREVENT BOTH OFF: If user tries to turn off Google Play while UPI is already off
-        if (!googlePlayToggle.checked && !upiToggle.checked) {
-            googlePlayToggle.checked = true; // Force it back
-            return showSystemToast("Safety Lock", "At least one payment method must remain active", 'bg-orange-500');
-        }
-
-        let sa = {};
-        try {
-            sa = JSON.parse(document.getElementById('gp_service_account')?.value || '{}');
-        } catch (e) {
-            return showSystemToast("Invalid JSON", "Service account must be valid JSON", 'bg-red-500');
-        }
-
-        const settings = {
-            isEnabled: googlePlayToggle.checked,
-            productId: document.getElementById('gp_product_id')?.value,
-            trialProductId: document.getElementById('gp_trial_product_id')?.value,
-            serviceAccount: sa
-        };
-
-        await API.updateConfig('google_play_settings', settings);
-        showSystemToast("Google Play Updated", "Billing credentials saved successfully", 'bg-blue-500');
-        loadMonetization();
-    } catch (err) {
-        showSystemToast("Sync Failed", "Could not save credentials", 'bg-red-500');
-    }
+    } catch (e) { }
 }
 
 async function searchHistory() {
-    const val = document.getElementById('historySearch').value;
-    loadPaymentHistory(1, val);
-}
-
-async function toggleReviewMode(el) {
-    const isActive = el.checked;
-    const statusText = document.getElementById('reviewModeStatus');
-
-    try {
-        await API.updateConfig('review_mode_config', { isReviewMode: isActive });
-        statusText.innerText = isActive ? 'Review Mode Active (Payments Hidden)' : 'Live Mode Active (Payments Visible)';
-        statusText.className = `text-[9px] font-bold mt-0.5 ${isActive ? 'text-emerald-500' : 'text-slate-500'}`;
-        showSystemToast("System Updated", `Compliance Switch ${isActive ? 'ACTIVATED' : 'DEACTIVATED'}`, isActive ? 'bg-red-500' : 'bg-blue-500');
-    } catch (e) {
-        el.checked = !isActive;
-        showSystemToast("Update Failed", "Could not update compliance mode", 'bg-red-500');
-    }
+    loadPaymentHistory(1, document.getElementById('historySearch').value);
 }

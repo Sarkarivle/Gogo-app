@@ -6,9 +6,19 @@ exports.isAdmin = (req, res, next) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
         if (!token) return res.status(401).json({ success: false, message: "Access denied." });
-        const decoded = jwt.verify(token, JWT_SECRET);
 
-        if (!decoded.role) return res.status(403).json({ success: false, message: "Admin privileges required." });
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (!decoded.role) {
+            // SILENCE LOGGING: If it's just a background sync from a browser with a user token
+            // we don't need to flood the server logs.
+            const url = req.originalUrl;
+            if (url.includes('/api/admin/stats') || url.includes('/api/admin/users')) {
+                 // Skip detailed logging for background auto-refreshes
+            } else {
+                 console.warn(`🔐 Admin Auth Warning: User ${decoded.phone || 'Unknown'} blocked from ${url}`);
+            }
+            return res.status(403).json({ success: false, message: "Admin privileges required." });
+        }
 
         req.admin = decoded;
         next();

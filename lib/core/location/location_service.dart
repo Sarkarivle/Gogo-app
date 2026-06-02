@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -9,61 +10,70 @@ class LocationService {
 
   /// Checks and requests location permissions
   Future<bool> checkAndRequestPermission() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return false;
 
-    // Check if location services are enabled.
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      debugPrint('Location services are disabled.');
-      return false;
-    }
-
-    permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        debugPrint('Location permissions are denied');
-        return false;
-      }
+      if (permission == LocationPermission.denied) return false;
     }
     
-    if (permission == LocationPermission.deniedForever) {
-      debugPrint('Location permissions are permanently denied.');
-      return false;
-    } 
-
+    if (permission == LocationPermission.deniedForever) return false;
     return true;
   }
 
-  /// Gets the current position of the device
+  /// Gets the current position with "Fuzzy Noise" for privacy (Standard in Pro Apps)
   Future<Position?> getCurrentPosition() async {
     try {
       final hasPermission = await checkAndRequestPermission();
       if (!hasPermission) return null;
 
-      return await Geolocator.getCurrentPosition(
+      Position pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.medium,
-          distanceFilter: 100,
+          distanceFilter: 100, // Minimal hardware trigger
         ),
       );
+
+      // Add "Strong Privacy Noise" (Offsetting by ~500-800 meters)
+      // High-level privacy to ensure exact building cannot be identified
+      final random = Random();
+      // 0.009 degrees is approximately 1km. 
+      // (random - 0.5) * 0.009 gives a range of +/- 500 meters roughly.
+      double latOffset = (random.nextDouble() - 0.5) * 0.009; 
+      double lngOffset = (random.nextDouble() - 0.5) * 0.009;
+
+      return Position(
+        latitude: pos.latitude + latOffset,
+        longitude: pos.longitude + lngOffset,
+        timestamp: pos.timestamp,
+        accuracy: pos.accuracy,
+        altitude: pos.altitude,
+        heading: pos.heading,
+        speed: pos.speed,
+        speedAccuracy: pos.speedAccuracy,
+        altitudeAccuracy: pos.altitudeAccuracy,
+        headingAccuracy: pos.headingAccuracy,
+      );
     } catch (e) {
-      debugPrint('Error getting current position: $e');
+      debugPrint('Error getting position: $e');
       return null;
     }
   }
 
-  /// Converts coordinates into a human-readable address (City and Area)
+  /// Optimized Address Extraction
   Future<Map<String, String?>> getAddressFromCoordinates(double lat, double lng) async {
     try {
       List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks[0];
         
-        // Robust address extraction
-        final String? area = place.subLocality ?? place.thoroughfare ?? place.name;
-        final String? city = place.locality ?? place.subAdministrativeArea;
+        String? area = place.subLocality ?? place.thoroughfare ?? place.name;
+        String? city = place.locality ?? place.subAdministrativeArea;
+
+        if (area != null && (area.toLowerCase() == 'null' || area.toLowerCase() == 'unknown')) area = null;
+        if (city != null && (city.toLowerCase() == 'null' || city.toLowerCase() == 'unknown')) city = null;
         
         return {
           'city': city,

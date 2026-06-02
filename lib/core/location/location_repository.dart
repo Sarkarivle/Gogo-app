@@ -10,61 +10,74 @@ class LocationRepository {
   LocationRepository._internal();
 
   int _lastUpdateTime = 0;
-  final int _throttleDuration = 300000; // 5 minutes
+  Position? _lastSentPosition;
+  final int _timeThrottle = 300000; // 5 minutes
+  final double _distanceThrottle = 500.0; // 500 meters
 
-  /// Updates the user's location on the server and locally
+  /// Updates the user's location on the server and locally with Pro-Level Throttling
   Future<void> updateLocation(String phone, {bool force = false}) async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (!force && (now - _lastUpdateTime < _throttleDuration)) {
-      return;
+    
+    // 1. Get Current Position (includes Privacy Fuzzy Noise)
+    final Position? currentPosition = await LocationService().getCurrentPosition();
+    if (currentPosition == null) return;
+
+    // 2. Pro-App Throttling: Check Time AND Distance
+    if (!force) {
+      bool isTimePassed = (now - _lastUpdateTime >= _timeThrottle);
+      
+      double distanceMoved = 0;
+      if (_lastSentPosition != null) {
+        distanceMoved = Geolocator.distanceBetween(
+          _lastSentPosition!.latitude, _lastSentPosition!.longitude,
+          currentPosition.latitude, currentPosition.longitude
+        );
+      }
+
+      // If neither time nor distance threshold is met, skip update
+      if (!isTimePassed && distanceMoved < _distanceThrottle && _lastSentPosition != null) {
+        return;
+      }
     }
+
     _lastUpdateTime = now;
+    _lastSentPosition = currentPosition;
 
     try {
-      final Position? position = await LocationService().getCurrentPosition();
-      if (position == null) return;
-
       // Get readable address
       final address = await LocationService().getAddressFromCoordinates(
-        position.latitude, 
-        position.longitude
+        currentPosition.latitude, 
+        currentPosition.longitude
       );
 
       final String? city = address['city'];
       final String? area = address['area'];
 
-      // Prepare data for server
       final Map<String, dynamic> locationData = {
         'phone': phone,
-        'lat': position.latitude,
-        'lng': position.longitude,
+        'lat': currentPosition.latitude,
+        'lng': currentPosition.longitude,
       };
 
-      if (city != null && city.toLowerCase() != 'unknown') locationData['city'] = city;
-      if (area != null && area.toLowerCase() != 'unknown') locationData['area'] = area;
+      if (city != null) locationData['city'] = city;
+      if (area != null) locationData['area'] = area;
 
-      // 1. Update Server (Fire and forget or async)
-      ApiService.post('/api/user/update-location', locationData).then((response) {
-        if (response.statusCode != 200) {
-          debugPrint('Failed to update location on server: ${response.statusCode}');
-        }
-      }).catchError((e) {
-        debugPrint('Location server sync error: $e');
-      });
+      // Update Server
+      ApiService.post('/api/user/update-location', locationData);
 
-      // 2. Update Local State via UserRepository
+      // Update Local State
       final currentUser = UserRepository().currentUser;
       if (currentUser != null) {
         Map<String, dynamic> updatedUser = Map.from(currentUser);
         if (city != null) updatedUser['city'] = city;
         if (area != null) updatedUser['area'] = area;
-        updatedUser['lat'] = position.latitude;
-        updatedUser['lng'] = position.longitude;
+        updatedUser['lat'] = currentPosition.latitude;
+        updatedUser['lng'] = currentPosition.longitude;
         
         await UserRepository().updateLocalUser(updatedUser);
       }
       
-      debugPrint('✅ Location updated: $city, $area (${position.latitude}, ${position.longitude})');
+      debugPrint('🚀 [PRO_LOCATION] Updated: $city, $area. Force: $force');
     } catch (e) {
       debugPrint('Location update process failed: $e');
     }

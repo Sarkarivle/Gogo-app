@@ -31,6 +31,9 @@ router.get('/policies', PolicyController.getPolicies);
 // News
 router.get('/news/public', NewsController.getPublicNews);
 
+// Public Config
+router.get('/config/:key', UserController.getPublicConfig);
+
 // Tracking Config
 router.get('/tracking-config', MarketingController.getAppTrackingConfig);
 

@@ -14,17 +14,38 @@ class RazorpayProvider extends PaymentProvider {
         });
     }
 
-    async createOrder({ phone, amount, isSubscription = true }) {
+    async createOrder({ phone, amount, isSubscription = true, isTrial = false, overridePlanId = null }) {
         if (isSubscription) {
-            // FIX: Use trialPlanId if amount is 1 and it exists in config
-            const planId = (amount === 1 && this.config.trialPlanId) ? this.config.trialPlanId : this.config.planId;
-            const subscription = await this.client.subscriptions.create({
-                plan_id: planId,
+            // Use overridePlanId for Win-back offers, otherwise fallback to default
+            const targetPlanId = overridePlanId || this.config.planId;
+
+            const subscriptionData = {
+                plan_id: targetPlanId,
                 total_count: 12,
                 quantity: 1,
                 customer_notify: 1,
                 notes: { phone }
-            });
+            };
+
+            // 2. If it's a Trial user, set 24h delay and add ₹1 Add-on
+            if (isTrial) {
+                // Billing starts in 24 hours
+                subscriptionData.start_at = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
+
+                // Add Trial Fee (e.g. ₹1)
+                subscriptionData.addons = [
+                    {
+                        item: {
+                            name: "Trial Period Access",
+                            amount: amount * 100, // paise
+                            currency: "INR"
+                        }
+                    }
+                ];
+            }
+
+            const subscription = await this.client.subscriptions.create(subscriptionData);
+
             return {
                 success: true,
                 orderId: subscription.id,
@@ -83,24 +104,40 @@ class RazorpayProvider extends PaymentProvider {
         const payment = payload.payload.payment ? payload.payload.payment.entity : null;
         const subscription = payload.payload.subscription ? payload.payload.subscription.entity : null;
 
-        // Normalized Status mapping
-        let status = 'FAILED';
-        if (payload.event === 'subscription.charged' || payload.event === 'payment.captured') {
-            status = 'SUCCESS';
-        } else if (payload.event === 'subscription.cancelled' || payload.event === 'subscription.expired') {
-            status = 'CANCELLED';
-        } else if (payload.event === 'subscription.halted' || payload.event === 'subscription.pending') {
-            status = 'PENDING_FAIL';
+        // MAP RAZORPAY EVENTS TO OUR STATE MACHINE
+        let status = 'PENDING_FAIL';
+        let eventType = payload.event;
+
+        switch (payload.event) {
+            case 'subscription.authenticated':
+                status = 'TRIAL_SUCCESS'; // ₹1 Setup fee success
+                break;
+            case 'subscription.charged':
+                status = 'RENEWAL_SUCCESS'; // ₹199 Monthly success
+                break;
+            case 'subscription.cancelled':
+                status = 'CANCELLED';
+                break;
+            case 'subscription.expired':
+                status = 'EXPIRED';
+                break;
+            case 'subscription.halted':
+            case 'payment.failed':
+                status = 'PAYMENT_FAILED';
+                break;
+            case 'payment.captured':
+                status = 'SUCCESS';
+                break;
         }
 
-        // Return normalized event
         return {
-            event: payload.event,
+            event: eventType,
             orderId: subscription ? subscription.id : (payment ? payment.order_id : null),
             paymentId: payment ? payment.id : null,
-            amount: payment ? (payment.amount / 100) : 0, // Convert paise to INR
+            amount: payment ? (payment.amount / 100) : (subscription ? (subscription.paid_count === 0 ? 1 : 199) : 0),
             userPhone: (payment && payment.notes) ? payment.notes.phone : (subscription && subscription.notes ? subscription.notes.phone : null),
             status: status,
+            current_period_end: subscription ? subscription.current_end : null,
             raw: payload
         };
     }

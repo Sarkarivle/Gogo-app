@@ -62,11 +62,15 @@ const API = {
     async getAdmins() {
         return await this.request('/api/admin/admins');
     },
-    async getUsers(search = '') {
-        return await this.request(`/api/admin/users${search ? '?search=' + encodeURIComponent(search) : ''}`);
+    async getUsers(filters = {}) {
+        const query = new URLSearchParams(filters).toString();
+        return await this.request(`/api/admin/users${query ? '?' + query : ''}`);
     },
     async getUserFull(phone) {
         return await this.request(`/api/admin/user/${phone}/full`);
+    },
+    async getUserTimeline(phone) {
+        return await this.request(`/api/admin/user/${phone}/timeline`);
     },
     async updateUserStatus(phone, data) {
         return await this.request(`/api/admin/user/${phone}/update`, {
@@ -95,11 +99,23 @@ const API = {
     async getReports() {
         return await this.request('/api/admin/reports');
     },
+    async updateReportStatus(id, status) {
+        return await this.request(`/api/admin/report/${id}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status })
+        });
+    },
     async getVerificationRequests() {
         return await this.request('/api/admin/verification/requests');
     },
     async approveVerification(phone) {
         return await this.request(`/api/admin/verification/approve/${phone}`, { method: 'POST' });
+    },
+    async rejectVerification(phone, data) {
+        return await this.request(`/api/admin/verification/reject/${phone}`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
     },
     async getUserInboxes(phone) {
         return await this.request(`/api/admin/inbox/${phone}`);

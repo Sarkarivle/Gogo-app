@@ -27,7 +27,9 @@ const getPublicSettings = async (req, res) => {
             activeGateway: settings.activeGateway || 'razorpay',
             config: {
                 isUpiEnabled: settings.isUpiEnabled !== false,
-                isGooglePlayEnabled: gpSettings.isEnabled === true || settings.isGooglePlayEnabled === true
+                isGooglePlayEnabled: gpSettings.isEnabled === true || settings.isGooglePlayEnabled === true,
+                trialPrice: settings.trialPrice || 1,
+                monthlyPrice: settings.monthlyPrice || 199
             }
         });
     } catch (e) {
@@ -55,7 +57,6 @@ const createOrder = async (req, res) => {
 const verifyPayment = async (req, res) => {
     try {
         let { phone } = req.body;
-        // Identity check: Always prefer token phone for users
         if (req.user && !req.user.role) phone = req.user.phone;
 
         if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
@@ -69,10 +70,94 @@ const verifyPayment = async (req, res) => {
     }
 };
 
+const syncUserStatus = async (req, res) => {
+    try {
+        let phone = req.user?.phone;
+        if (!phone) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+        const status = await PaymentService.syncUserStatus(phone);
+        res.json({ success: true, ...status });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const cancelSubscription = async (req, res) => {
+    try {
+        const phone = req.user?.phone;
+        if (!phone) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+        const result = await PaymentService.cancelSubscription(phone);
+
+        // BROADCAST REFRESH (Targeted)
+        const io = req.app.get('socketio');
+        if (io) io.to(`user_${normalize(phone)}`).emit('premium_status_refresh', { phone: phone, message: "Subscription Cancelled ⚠️", type: "warning" });
+
+        res.json(result);
+    } catch (error) {
+        console.error("Cancellation Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const notifyStatusChange = async (req, res) => {
+    try {
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('premium_status_refresh', { timestamp: new Date() });
+            console.log("📢 Broadcast: Premium Status Refresh triggered for all users.");
+        }
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false });
+    }
+};
+
 const handleRazorpayWebhook = async (req, res) => {
     try {
         const signature = req.headers['x-razorpay-signature'];
         await PaymentService.processWebhook('razorpay', req.body, signature);
+
+        // REAL-TIME NOTIFICATION TO APP
+        const io = req.app.get('socketio');
+        if (io) {
+            const payload = req.body;
+            const phone = (payload.payload?.payment?.entity?.notes?.phone) ||
+                          (payload.payload?.subscription?.entity?.notes?.phone);
+
+            if (phone) {
+                let message = "Account status updated";
+                let type = "info";
+
+                switch(payload.event) {
+                    case 'subscription.authenticated':
+                        message = "Trial Activated! Premium Features Unlocked 🚀";
+                        type = "success";
+                        break;
+                    case 'subscription.charged':
+                        message = "Payment Successful! Membership Renewed ✅";
+                        type = "success";
+                        break;
+                    case 'payment.failed':
+                    case 'subscription.halted':
+                        message = "Payment Failed! Please check your balance ❌";
+                        type = "error";
+                        break;
+                    case 'subscription.cancelled':
+                        message = "Subscription Cancelled. Access remains until expiry ⚠️";
+                        type = "warning";
+                        break;
+                }
+
+                io.to(`user_${normalize(phone)}`).emit('premium_status_refresh', {
+                    phone: phone,
+                    message: message,
+                    type: type
+                });
+                console.log(`📢 Webhook Broadcast: ${message} sent to ${phone}`);
+            }
+        }
+
         res.json({ status: 'ok' });
     } catch (err) {
         console.error("Razorpay Webhook Error:", err);
@@ -107,6 +192,9 @@ module.exports = {
     getPublicSettings,
     createOrder,
     verifyPayment,
+    syncUserStatus,
+    cancelSubscription,
+    notifyStatusChange,
     handleRazorpayWebhook,
     handlePhonePeWebhook,
     handleCashfreeWebhook

@@ -50,7 +50,13 @@ app.use('/api/', limiter);
 const io = new Server(server, { cors: { origin: "*" }, pingTimeout: 20000, pingInterval: 5000, transports: ['websocket'] });
 
 const jwt = require('jsonwebtoken');
+// IMPORTANT: In production, always set JWT_SECRET in .env
 const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
+
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+    console.error("❌ CRITICAL: JWT_SECRET is missing in production environment!");
+    process.exit(1);
+}
 
 io.use((socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -73,12 +79,22 @@ app.set('socketio', io);
 app.use(cors());
 app.use(express.json());
 
+// Global Request Logger for Debugging
+app.use((req, res, next) => {
+    if (!req.url.includes('/media/')) {
+        console.log(`🌐 [${new Date().toISOString()}] ${req.method} ${req.url}`);
+    }
+    next();
+});
+
 app.get('/api/media/:filename', require('./src/controllers/ChatController').serveSecureMedia);
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.send('🚀 GoGo Backend Running!'));
 
 app.get('/admin', (req, res) => {
-    const ADMIN_KEY = process.env.ADMIN_PANEL_KEY || 'hpvkashyap';
+    const ADMIN_KEY = process.env.ADMIN_PANEL_KEY;
+    if (!ADMIN_KEY) return res.status(500).send("Server Configuration Error: Admin Key missing");
+
     // Allow both ?key=secret and just ?secret for convenience
     const isAuthorized = req.query.key === ADMIN_KEY || req.query[ADMIN_KEY] !== undefined;
 
@@ -86,10 +102,13 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+const { isUser, isAdmin } = require('./src/middleware/auth');
+
 app.use('/api/user', require('./src/routes/userRoutes'));
 app.use('/api/chat', require('./src/routes/chatRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
 app.use('/api/payment', require('./src/routes/paymentRoutes'));
+app.use('/api/review', require('./src/routes/reviewRoutes'));
 
 // --- GLOBAL ERROR HANDLING (PREVENTS CRASHES) ---
 process.on('uncaughtException', (err) => {
@@ -116,23 +135,24 @@ io.on('connection', (socket) => {
         phoneToSockets.get(myPhone).add(socket.id);
     }
 
-    socket.on('set_online', (phone) => {
+    socket.on('set_online', async (phone) => {
         // Security: Use myPhone from socket to prevent spoofing other users
         const normalized = myPhone;
         if (!normalized) return;
 
-        User.findOneAndUpdate({ phone: normalized }, { isOnline: true, lastSeen: new Date() }).then(() => {
+        try {
+            await User.findOneAndUpdate({ phone: normalized }, { isOnline: true, lastSeen: new Date() });
             socket.broadcast.emit('user_status_change', { phone: normalized, isOnline: true });
 
-            Message.updateMany({ receiverPhone: normalized, isDelivered: false }, { isDelivered: true }).then(result => {
-                if (result.modifiedCount > 0) {
-                    io.to(`user_${normalized}`).emit('pending_messages_delivered', { phone: normalized });
-                    Message.find({ receiverPhone: normalized, isDelivered: true }).distinct('senderPhone').then(senders => {
-                        senders.forEach(s => io.to(`user_${normalize(s)}`).emit('global_delivery_update', { receiverPhone: normalized }));
-                    });
-                }
-            }).catch(e => console.error("set_online updateMany error:", e));
-        }).catch(e => console.error("set_online findOneAndUpdate error:", e));
+            const result = await Message.updateMany({ receiverPhone: normalized, isDelivered: false }, { isDelivered: true });
+            if (result.modifiedCount > 0) {
+                io.to(`user_${normalized}`).emit('pending_messages_delivered', { phone: normalized });
+                const senders = await Message.find({ receiverPhone: normalized, isDelivered: true }).distinct('senderPhone');
+                senders.forEach(s => io.to(`user_${normalize(s)}`).emit('global_delivery_update', { receiverPhone: normalized }));
+            }
+        } catch (e) {
+            console.error("set_online error:", e);
+        }
     });
 
     socket.on('typing', (data) => {
@@ -322,6 +342,7 @@ io.on('connection', (socket) => {
 
             const newMessage = new Message({
                 _id: tempId, roomId, senderPhone: myPhone, receiverPhone: receiver,
+                localId: data.localId, // Save client's local ID
                 message: data.message, imageUrl: data.imageUrl, audioUrl: data.audioUrl,
                 type: data.type || 'text', isViewOnce: data.isViewOnce || false,
                 isDelivered: isReceiverOnline, replyToId: data.replyToId, replyText: data.replyText, replyType: data.replyType, timestamp
@@ -341,7 +362,7 @@ io.on('connection', (socket) => {
                     else if (data.type === 'audio') body = "🎵 Sent a voice message";
                     else if (data.type === 'video') body = "🎥 Sent a video";
 
-                    await notificationService.sendPushNotification(
+                    const result = await notificationService.sendPushNotification(
                         receiverUser.fcmToken,
                         senderName,
                         body,
@@ -354,6 +375,12 @@ io.on('connection', (socket) => {
                             messageId: tempId.toString()
                         }
                     );
+
+                    // If token is invalid, clear it from DB to stop future failed attempts
+                    if (result && result.isInvalidToken) {
+                        console.log(`🧹 Cleaning up invalid FCM token for user: ${receiver}`);
+                        await User.updateOne({ phone: receiver }, { $unset: { fcmToken: 1 } });
+                    }
                 }
             } catch (notifyErr) {
                 console.error("FCM Send Error in server.js:", notifyErr.message);

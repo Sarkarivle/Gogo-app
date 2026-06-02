@@ -1,4 +1,5 @@
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/utils/phone_utils.dart';
 
 class FreemiumRepository {
   static final FreemiumRepository _instance = FreemiumRepository._internal();
@@ -8,7 +9,8 @@ class FreemiumRepository {
   /// Notify backend that user started their free trial
   Future<void> logTrialStart(String phone) async {
     try {
-      await ApiService.post('/api/user/freemium/log-start', {'phone': phone});
+      final nPhone = PhoneUtils.normalize(phone) ?? phone;
+      await ApiService.post('/api/user/freemium/log-start', {'phone': nPhone});
     } catch (e) {
       // Silent error
     }

@@ -7,6 +7,7 @@ const Subscription = require('../models/Subscription');
 const VerificationRequest = require('../models/VerificationRequest');
 const AdminLog = require('../models/AdminLog');
 const FeatureFlag = require('../models/FeatureFlag');
+const AnalyticsEvent = require('../models/AnalyticsEvent');
 const Config = require('../models/Config');
 const analyticsService = require('../services/analyticsService');
 const revenueService = require('../services/revenueService');
@@ -94,25 +95,153 @@ exports.getAdmins = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const q = req.query.search ? { $or: [{ phone: { $regex: req.query.search, $options: 'i' } }, { name: { $regex: req.query.search, $options: 'i' } }] } : {};
-        res.json(await User.find(q).sort({ createdAt: -1 }).limit(100));
-    } catch (e) { res.status(500).json([]); }
+        const { search, status, accountStatus, dateRange, sortBy, sortOrder } = req.query;
+        console.log(`👥 [${new Date().toISOString()}] Admin API: getAllUsers requested. Filters:`, req.query);
+
+        let q = {};
+
+        if (search) {
+            q.$or = [
+                { phone: { $regex: search, $options: 'i' } },
+                { name: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        if (status === 'online') {
+            q.isOnline = true;
+        } else if (status === 'offline') {
+            q.isOnline = false;
+        }
+
+        if (accountStatus && accountStatus !== 'All') {
+            q.accountStatus = accountStatus;
+        }
+
+        if (dateRange && dateRange !== 'all') {
+            const now = new Date();
+            let startDate = new Date();
+            let endDate = new Date();
+
+            if (dateRange === 'today') {
+                startDate.setHours(0, 0, 0, 0);
+                q.createdAt = { $gte: startDate };
+            } else if (dateRange === 'yesterday') {
+                startDate.setDate(now.getDate() - 1);
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setDate(now.getDate() - 1);
+                endDate.setHours(23, 59, 59, 999);
+                q.createdAt = { $gte: startDate, $lte: endDate };
+            } else if (dateRange === 'last7days') {
+                startDate.setDate(now.getDate() - 7);
+                startDate.setHours(0, 0, 0, 0);
+                q.createdAt = { $gte: startDate };
+            }
+        }
+
+        // Sorting Logic
+        let sort = { createdAt: -1 };
+        if (sortBy) {
+            sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+        }
+
+        const usersRaw = await User.find(q)
+            .select('name phone city isOnline isPremium isVerified isShadowBanned accountStatus isDeactivated deviceHistory createdAt')
+            .sort(sort)
+            .limit(100)
+            .lean()
+            .maxTimeMS(5000);
+
+        // Calculate Trust Score for each user
+        const users = usersRaw.map(u => {
+            let score = 70;
+            if (u.isVerified) score += 15;
+            if (u.isPremium) score += 10;
+            if (u.isShadowBanned) score -= 30;
+            if (u.accountStatus === 'Suspended' || u.accountStatus === 'Banned') score = 0;
+            if (u.deviceHistory && u.deviceHistory.length > 2) score -= (u.deviceHistory.length * 3);
+
+            const finalScore = Math.max(0, Math.min(100, score));
+            return { ...u, trustScore: finalScore };
+        });
+
+        // Apply Trust Score Filtering if requested
+        let filteredUsers = users;
+        if (req.query.trustLevel) {
+            if (req.query.trustLevel === 'high') filteredUsers = users.filter(u => u.trustScore >= 80);
+            else if (req.query.trustLevel === 'medium') filteredUsers = users.filter(u => u.trustScore >= 40 && u.trustScore < 80);
+            else if (req.query.trustLevel === 'low') filteredUsers = users.filter(u => u.trustScore < 40);
+        }
+
+        // Fetch Analytics for User Header
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const [totalUsers, onlineUsers, todayJoined] = await Promise.all([
+            User.countDocuments(),
+            User.countDocuments({ isOnline: true }),
+            User.countDocuments({ createdAt: { $gte: todayStart } })
+        ]);
+
+        console.log(`✅ Found ${filteredUsers.length} users with filters and sort`);
+        res.json({
+            users: filteredUsers,
+            stats: {
+                totalUsers,
+                onlineUsers,
+                todayJoined
+            }
+        });
+    } catch (e) {
+        console.error("❌ Admin GetAllUsers Error:", e);
+        try {
+            const fallbackUsers = await User.find({}).select('name phone').limit(20).lean();
+            res.json(fallbackUsers);
+        } catch (err2) {
+            res.status(500).json([]);
+        }
+    }
 };
 
 exports.getUserFullProfile = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
         const pQ = phoneQuery(phone);
-        const [user, reports, blocks, sub, payments] = await Promise.all([
+        const [user, reports, blocksRaw, sub, payments] = await Promise.all([
             User.findOne(pQ),
             Report.find({ reportedPhone: new RegExp(phone + '$') }).sort({ timestamp: -1 }),
             Block.find({ blockedPhone: new RegExp(phone + '$') }).sort({ timestamp: -1 }),
             Subscription.findOne({ userPhone: new RegExp(phone + '$') }),
             revenueService.getPaymentHistory({ userPhone: new RegExp(phone + '$') }, 1, 50)
         ]);
+
         if (!user) return res.status(404).json({ success: false });
-        res.json({ success: true, user, reportsAgainst: reports, blockedBy: blocks, subscription: sub || { status: 'None' }, paymentHistory: payments.history || [] });
-    } catch (error) { res.status(500).json({ success: false }); }
+
+        // Enrich block data with names
+        const blockerPhones = blocksRaw.map(b => b.blockerPhone);
+        const blockers = await User.find({
+            phone: { $in: blockerPhones.map(p => new RegExp(p + '$')) }
+        }).select('phone name');
+
+        const blocks = blocksRaw.map(b => {
+            const blocker = blockers.find(u => normalize(u.phone) === normalize(b.blockerPhone));
+            return {
+                ...b.toObject(),
+                blockerName: blocker ? blocker.name : 'Unknown'
+            };
+        });
+
+        res.json({
+            success: true,
+            user,
+            reportsAgainst: reports,
+            blockedBy: blocks,
+            subscription: sub || { status: 'None' },
+            paymentHistory: payments.transactions || []
+        });
+    } catch (error) {
+        console.error("❌ GetUserFullProfile Error:", error);
+        res.status(500).json({ success: false });
+    }
 };
 
 exports.updateUserStatus = async (req, res) => {
@@ -121,7 +250,7 @@ exports.updateUserStatus = async (req, res) => {
         // Security: Whitelist allowed fields to prevent accidental or malicious escalation
         const allowedUpdates = [
             'accountStatus', 'isBanned', 'isPremium', 'premiumExpiry',
-            'isVerified', 'isDeactivated', 'name', 'bio', 'gender'
+            'isVerified', 'isDeactivated', 'name', 'bio', 'gender', 'isShadowBanned'
         ];
 
         const filteredUpdate = {};
@@ -157,7 +286,12 @@ exports.sendDirectNotification = async (req, res) => {
         const io = req.app.get('socketio');
         if (io) io.to(`user_${phone}`).emit('admin_alert', req.body);
         const user = await User.findOne(phoneQuery(phone), 'fcmToken');
-        if (user?.fcmToken) await notificationService.sendPushNotification(user.fcmToken, req.body.title, req.body.message);
+        if (user?.fcmToken) {
+            const result = await notificationService.sendPushNotification(user.fcmToken, req.body.title, req.body.message);
+            if (result && result.isInvalidToken) {
+                await User.updateOne(phoneQuery(phone), { $unset: { fcmToken: 1 } });
+            }
+        }
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -206,7 +340,47 @@ exports.handleReport = async (req, res) => {
 };
 
 exports.getVerificationRequests = async (req, res) => {
-    try { res.json(await VerificationRequest.find({ status: 'Pending' })); } catch (e) { res.status(500).json([]); }
+    try {
+        const reqs = await VerificationRequest.find({ status: 'Pending' }).sort({ submittedAt: -1 }).lean();
+
+        // Enrich with User Data
+        const enriched = await Promise.all(reqs.map(async (r) => {
+            const user = await User.findOne(phoneQuery(r.userPhone)).select('name profileImages');
+            return {
+                ...r,
+                userName: user ? user.name : 'Unknown User',
+                profileImage: user && user.profileImages?.length ? user.profileImages[0] : null
+            };
+        }));
+
+        res.json(enriched);
+    } catch (e) {
+        console.error("GetVerificationRequests Error:", e);
+        res.status(500).json([]);
+    }
+};
+
+exports.rejectVerification = async (req, res) => {
+    try {
+        const phone = normalize(req.params.phone);
+        const { reason } = req.body;
+
+        await VerificationRequest.findOneAndUpdate(
+            { userPhone: new RegExp(phone + '$') },
+            { status: 'Rejected', reviewedAt: new Date(), adminId: req.admin?.id }
+        );
+
+        await logAction(req, "Reject Identity", phone, `Reason: ${reason || 'Incomplete profile'}`);
+
+        const io = req.app.get('socketio');
+        if (io) {
+            io.to(`user_${phone}`).emit('verification_update', { status: 'Rejected', reason });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
 };
 
 exports.approveVerification = async (req, res) => {
@@ -242,13 +416,17 @@ exports.broadcastNotification = async (req, res) => {
         let successCount = 0;
         const sendPromises = users.map(async (u) => {
             if (u.fcmToken) {
-                const success = await notificationService.sendPushNotification(
+                const result = await notificationService.sendPushNotification(
                     u.fcmToken,
                     title || "Broadcast",
                     message,
                     { type: 'broadcast' }
                 );
-                if (success) successCount++;
+                if (result && result.success) {
+                    successCount++;
+                } else if (result && result.isInvalidToken) {
+                    await User.updateOne({ _id: u._id }, { $unset: { fcmToken: 1 } });
+                }
             }
         });
 
@@ -276,8 +454,32 @@ exports.getUserInboxes = async (req, res) => {
             let other = sP === phone ? rP : sP;
             if (!pMap[other]) pMap[other] = { phone: other, lastMsg: m.message || 'Media', timestamp: m.timestamp };
         }
-        res.json(Object.values(pMap));
-    } catch (e) { res.status(500).json([]); }
+
+        const phones = Object.keys(pMap);
+        const users = await User.find({
+            $or: phones.map(p => ({ phone: new RegExp(p + '$') }))
+        }).select('phone name isOnline');
+
+        for (const user of users) {
+            const normalizedUserPhone = normalize(user.phone);
+            if (pMap[normalizedUserPhone]) {
+                pMap[normalizedUserPhone].name = user.name;
+                pMap[normalizedUserPhone].isOnline = user.isOnline;
+            }
+        }
+
+        // Final cleanup for results
+        const result = Object.values(pMap).map(chat => ({
+            ...chat,
+            name: chat.name || chat.phone, // Fallback to phone if name is missing
+            isOnline: chat.isOnline || false
+        }));
+
+        res.json(result);
+    } catch (e) {
+        console.error("getUserInboxes Error:", e);
+        res.status(500).json([]);
+    }
 };
 
 exports.getMonitoringData = async (req, res) => {
@@ -314,7 +516,18 @@ exports.getConfig = async (req, res) => {
 
 exports.updateConfig = async (req, res) => {
     try {
-        await Config.findOneAndUpdate({ key: req.body.key }, { value: req.body.value, updatedAt: new Date() }, { upsert: true });
+        const { key, value } = req.body;
+        await Config.findOneAndUpdate({ key }, { value, updatedAt: new Date() }, { upsert: true });
+
+        // Auto-broadcast for critical configs
+        if (key === 'review_mode_config' || key === 'payment_settings' || key === 'google_play_settings') {
+            const io = req.app.get('socketio');
+            if (io) {
+                io.emit('premium_status_refresh', { key, timestamp: new Date() });
+                console.log(`📢 Config Broadcast: ${key} updated.`);
+            }
+        }
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 };
@@ -335,34 +548,158 @@ exports.getPaymentHistory = async (req, res) => {
 
 exports.getAllMedia = async (req, res) => {
     try {
+        const { filter, reportedOnly } = req.query;
+        let userQuery = { profileImages: { $exists: true, $not: { $size: 0 } } };
+        let msgQuery = { type: 'image' };
+
+        if (filter) {
+            const pQ = new RegExp(filter + '$');
+            userQuery = { phone: pQ, profileImages: { $exists: true, $not: { $size: 0 } } };
+            msgQuery = { senderPhone: pQ, type: 'image' };
+        }
+
         const [users, messages] = await Promise.all([
-            User.find({ profileImages: { $exists: true, $not: { $size: 0 } } }, 'phone profileImages name'),
-            Message.find({ type: 'image' }, 'senderPhone imageUrl timestamp').sort({ timestamp: -1 }).limit(100)
+            User.find(userQuery, 'phone profileImages name updatedAt'),
+            Message.find(msgQuery, 'senderPhone imageUrl timestamp').sort({ timestamp: -1 }).limit(filter ? 500 : 100)
         ]);
+
         let allMedia = [];
-        users.forEach(u => u.profileImages.forEach(img => allMedia.push({ url: img, owner: normalize(u.phone), ownerName: u.name, type: 'Profile', timestamp: u.updatedAt || new Date() })));
-        messages.forEach(m => m.imageUrl && allMedia.push({ url: m.imageUrl, owner: normalize(m.senderPhone), type: 'Chat', timestamp: m.timestamp }));
-        res.json({ success: true, media: allMedia.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)) });
-    } catch (e) { res.status(500).json({ success: false }); }
+        users.forEach(u => u.profileImages.forEach(img => {
+            allMedia.push({
+                url: img,
+                owner: normalize(u.phone),
+                ownerName: u.name,
+                type: 'Profile',
+                timestamp: u.updatedAt || new Date()
+            });
+        }));
+
+        messages.forEach(m => {
+            if (m.imageUrl) {
+                allMedia.push({
+                    url: m.imageUrl,
+                    owner: normalize(m.senderPhone),
+                    type: 'Chat',
+                    timestamp: m.timestamp
+                });
+            }
+        });
+
+        res.json({
+            success: true,
+            media: allMedia.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        });
+    } catch (e) {
+        console.error("GetAllMedia Error:", e);
+        res.status(500).json({ success: false });
+    }
 };
 
-exports.deleteMedia = async (req, res) => {
+exports.getUserTimeline = async (req, res) => {
     try {
-        const fileName = req.body.url.split('/').pop().split('?')[0];
-        // Security: Prevent path traversal
-        if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
-            return res.status(400).json({ success: false, message: "Invalid filename" });
+        const phone = normalize(req.params.phone);
+        const pQ = new RegExp(phone + '$');
+
+        const [user, firstMsg, analytics, reports, blocks, payments] = await Promise.all([
+            User.findOne(phoneQuery(phone)),
+            Message.findOne({ senderPhone: pQ }).sort({ timestamp: 1 }).lean(),
+            AnalyticsEvent.find({ distinctId: pQ }).sort({ timestamp: 1 }).lean(),
+            Report.find({ reportedPhone: pQ }).sort({ timestamp: -1 }).lean(),
+            Block.find({ blockedPhone: pQ }).sort({ timestamp: -1 }).lean(),
+            revenueService.getPaymentHistory({ userPhone: pQ }, 1, 50)
+        ]);
+
+        if (!user) return res.status(404).json({ success: false });
+
+        let timeline = [];
+
+        // 1. Account Creation
+        timeline.push({
+            type: 'account_created',
+            title: 'Account Created',
+            description: 'User registered on the platform',
+            timestamp: user.createdAt,
+            icon: 'fa-user-plus',
+            color: 'text-blue-500'
+        });
+
+        // 2. Analytics Events
+        analytics.forEach(ev => {
+            let title = ev.type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            let icon = 'fa-fingerprint';
+            let color = 'text-slate-400';
+
+            if (ev.type === 'otp_verified') { icon = 'fa-shield-check'; color = 'text-emerald-500'; }
+            else if (ev.type === 'onboarding_completed') { icon = 'fa-check-circle'; color = 'text-blue-400'; }
+            else if (ev.type === 'premium_activated') { icon = 'fa-crown'; color = 'text-orange-500'; title = 'Premium Membership Activated'; }
+
+            timeline.push({
+                type: ev.type,
+                title,
+                description: `System event: ${ev.type}`,
+                timestamp: ev.timestamp,
+                icon,
+                color
+            });
+        });
+
+        // 3. First Interaction
+        if (firstMsg) {
+            timeline.push({
+                type: 'first_message',
+                title: 'First Message Sent',
+                description: 'User initiated their first conversation',
+                timestamp: firstMsg.timestamp,
+                icon: 'fa-paper-plane',
+                color: 'text-purple-500'
+            });
         }
 
-        const filePath = path.join(__dirname, '../../uploads', fileName);
-
-        // Use fs.promises for non-blocking I/O
-        if (fs.existsSync(filePath)) {
-            await fs.promises.unlink(filePath).catch(err => console.error("File Delete Error:", err));
+        // 4. Payments
+        if (payments && payments.transactions) {
+            payments.transactions.forEach(p => {
+                if (p.status === 'Captured' || p.status === 'success') {
+                    timeline.push({
+                        type: 'payment_success',
+                        title: `Payment Success (₹${p.amount})`,
+                        description: `Order ID: ${p.orderId || 'N/A'}`,
+                        timestamp: p.createdAt,
+                        icon: 'fa-credit-card',
+                        color: 'text-emerald-500'
+                    });
+                }
+            });
         }
 
-        if (req.body.type === 'Profile') await User.findOneAndUpdate(phoneQuery(req.body.owner), { $pull: { profileImages: req.body.url.split('?')[0] } });
-        else if (req.body.type === 'Chat') await Message.findOneAndUpdate({ imageUrl: req.body.url.split('?')[0] }, { $set: { message: "[Deleted]", imageUrl: null, type: 'text' } });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+        // 5. Reports & Blocks (Negative Events)
+        reports.forEach(r => {
+            timeline.push({
+                type: 'reported',
+                title: 'User Reported',
+                description: `Reported for: ${r.category} - "${r.description}"`,
+                timestamp: r.timestamp,
+                icon: 'fa-flag',
+                color: 'text-red-500'
+            });
+        });
+
+        blocks.forEach(b => {
+            timeline.push({
+                type: 'blocked',
+                title: 'User Blocked',
+                description: `Blocked by another user. Reason: ${b.reason}`,
+                timestamp: b.timestamp,
+                icon: 'fa-user-slash',
+                color: 'text-orange-600'
+            });
+        });
+
+        // Sort everything by time descending
+        timeline.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        res.json({ success: true, timeline });
+    } catch (e) {
+        console.error("Timeline Error:", e);
+        res.status(500).json({ success: false });
+    }
 };

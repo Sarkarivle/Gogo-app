@@ -1,30 +1,31 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:geolocator/geolocator.dart';
-import 'services/app_visibility_coordinator.dart';
-import 'services/force_update_coordinator.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/news_home_screen.dart';
-import 'screens/onboarding/location_permission_screen.dart';
-import 'screens/onboarding/trial_onboarding_screen.dart';
-import 'screens/onboarding/profile_setup_screen.dart';
-import 'services/socket_service.dart';
-import 'services/call_service.dart';
-import 'services/user_repository.dart';
-import 'services/app_config_service.dart';
-import 'services/premium_service.dart';
-import 'services/analytics_service.dart';
+
+// Core
+import 'package:gogo/core/services/app_visibility_coordinator.dart';
+import 'package:gogo/core/services/force_update_coordinator.dart';
+import 'package:gogo/core/network/socket_service.dart';
+import 'package:gogo/core/services/analytics_service.dart';
+
+// Features
+import 'package:gogo/features/auth/screens/login_screen.dart';
+import 'package:gogo/features/auth/screens/splash_screen.dart';
+import 'package:gogo/features/home/screens/home_screen.dart';
+import 'package:gogo/features/call/providers/call_service.dart';
+import 'package:gogo/features/profile/repositories/user_repository.dart';
+import 'package:gogo/features/profile/repositories/moderation_repository.dart';
+import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
+import 'package:gogo/features/premium/providers/premium_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await UserRepository().initialize();
+  ModerationRepository().init();
+  ChatRealtimeRepository().init();
   await AppVisibilityCoordinator().init();
   
-  // Track App Open via GTM/Analytics
   AnalyticsService.logAppOpen();
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -32,55 +33,39 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
   
-  final prefs = await SharedPreferences.getInstance();
-  final userDataStr = prefs.getString('user_data');
-  final authToken = prefs.getString('auth_token');
-  
-  // ALWAYS Fetch App Config (Review Mode, Tracking, Login Image etc) on startup
-  await AppConfigService().fetchReviewMode();
-  
-  Widget initialScreen = const LoginScreen();
-  
-  if (AppVisibilityCoordinator().isHidden) {
-    initialScreen = const NewsHomeScreen();
-  } else if (userDataStr != null && authToken != null) {
-    final userData = jsonDecode(userDataStr);
-    
-    // If Review Mode is active, force premium status locally
-    if (AppConfigService().isStandardMode) {
-      userData['isPremium'] = true;
-      userData['premiumPlan'] = 'Standard Access';
-      await prefs.setString('user_data', jsonEncode(userData));
-    }
-    
-    // Always initialize PremiumService to sync latest toggle state
-    await PremiumService().init();
+  runApp(const RestartWidget(
+    child: MyApp(initialScreen: SplashScreen()),
+  ));
+}
 
-    // Agar hasCompletedOnboarding false hai ya missing hai, toh onboarding dikhao
-    if (userData['hasCompletedOnboarding'] == true) {
-      initialScreen = const HomeScreen();
-    } else {
-      // FIX: Check if location permission is already granted to avoid showing the screen again
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-        // If already granted, determine next step
-        if (AppConfigService().isStandardMode) {
-          initialScreen = const ProfileSetupScreen();
-        } else {
-          // Check if already premium (maybe they paid but didn't complete profile)
-          if (userData['isPremium'] == true) {
-            initialScreen = const ProfileSetupScreen();
-          } else {
-            initialScreen = const TrialOnboardingScreen();
-          }
-        }
-      } else {
-        initialScreen = const LocationPermissionScreen();
-      }
-    }
+class RestartWidget extends StatefulWidget {
+  final Widget child;
+  const RestartWidget({super.key, required this.child});
+
+  static void restartApp(BuildContext context) {
+    context.findAncestorStateOfType<_RestartWidgetState>()?.restartApp();
   }
-  
-  runApp(MyApp(initialScreen: initialScreen));
+
+  @override
+  State<RestartWidget> createState() => _RestartWidgetState();
+}
+
+class _RestartWidgetState extends State<RestartWidget> {
+  Key key = UniqueKey();
+
+  void restartApp() {
+    setState(() {
+      key = UniqueKey();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: key,
+      child: widget.child,
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -136,14 +121,22 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkUpdate();
+      _syncLocationOnResume(); 
+    }
+  }
+
+  Future<void> _syncLocationOnResume() async {
+    final currentUser = UserRepository().currentUser;
+    if (currentUser != null && currentUser['phone'] != null) {
+      await UserRepository().updateLocation(currentUser['phone']);
     }
   }
 
   void _checkUpdate({bool forceRefresh = false}) {
-    // We use a small delay to ensure navigatorKey has context if called immediately on start
     Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        ForceUpdateCoordinator().checkAndShowUpdate(context, forceRefresh: forceRefresh);
+      final navContext = MyApp.navigatorKey.currentContext;
+      if (navContext != null && navContext.mounted) {
+        ForceUpdateCoordinator().checkAndShowUpdate(navContext, forceRefresh: forceRefresh);
       }
     });
   }
@@ -151,7 +144,7 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
   void _listenToSocketEvents() {
     CallService().init();
 
-    SocketService().eventStream.listen((event) {
+    SocketService().eventStream.listen((event) async {
       final String type = event['event'];
       final dynamic data = event['data'];
 
@@ -159,28 +152,47 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
         _handleForceLogout(data['reason'] ?? 'Account restricted by moderator');
       } else if (type == 'admin_alert') {
         _showAdminAlert(data['title'], data['message']);
-      } else if (type == 'app_config_sync') {
-        _checkUpdate(forceRefresh: true);
-      } else if (type == 'profile_sync_required') {
+      } else if (type == 'app_config_sync' || type == 'premium_status_refresh') {
+        if (data != null && data['phone'] != null) {
+          final currentUser = UserRepository().currentUser;
+          if (currentUser != null && currentUser['phone'] == data['phone']) {
+             await PremiumService().refreshAccessState();
+
+             final navContext = MyApp.navigatorKey.currentContext;
+             if (navContext != null && navContext.mounted) {
+                final String msg = data['message'] ?? "Account Status Updated! 🚀";
+                final String snackType = data['type'] ?? "success";
+                
+                ScaffoldMessenger.of(navContext).showSnackBar(
+                  SnackBar(
+                    content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    backgroundColor: snackType == "error" ? Colors.red : (snackType == "warning" ? Colors.orange : Colors.green),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+             }
+          }
+        } else {
+          // Global refresh - use the throttled refreshAccessState
+          await PremiumService().refreshAccessState();
+          _checkUpdate(forceRefresh: true);
+        }
+      }
+else if (type == 'profile_sync_required') {
         _handleProfileSync(data);
       }
     });
   }
 
   void _handleForceLogout(String reason) async {
-    final context = MyApp.navigatorKey.currentContext;
-    if (context == null) return;
-
-    // Clear local data
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('user_data');
-    await prefs.remove('auth_token');
+    await UserRepository().updateLocalUser({}); // Clear user data in repo
     SocketService().dispose();
 
-    if (MyApp.navigatorKey.currentContext == null) return;
+    final navContext = MyApp.navigatorKey.currentContext;
+    if (navContext == null || !navContext.mounted) return;
 
     showDialog(
-      context: MyApp.navigatorKey.currentContext!,
+      context: navContext,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
@@ -225,16 +237,14 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
   }
 
   void _handleProfileSync(Map<String, dynamic> data) async {
-    final context = MyApp.navigatorKey.currentContext;
-    if (context == null) return;
+    final navContext = MyApp.navigatorKey.currentContext;
+    if (navContext == null) return;
 
-    // Ignore routine updates like location or generic syncs without changes
     if (data['type'] == 'LOCATION_UPDATE' || 
         (!data.containsKey('isPremium') && !data.containsKey('isVerified') && !data.containsKey('fullUser'))) {
       return;
     }
 
-    // Determine the message based on changes
     String title = "Account Updated";
     String message = "Your profile has been updated by the administrator.";
     
@@ -247,7 +257,7 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
     }
 
     showDialog(
-      context: context,
+      context: navContext,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
@@ -257,29 +267,24 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
         actions: [
           TextButton(
             onPressed: () async {
-              // 1. Update Local Storage
-              final prefs = await SharedPreferences.getInstance();
-              final userDataStr = prefs.getString('user_data');
-              if (userDataStr != null) {
-                Map<String, dynamic> userData = jsonDecode(userDataStr);
+              final currentUser = UserRepository().currentUser;
+              if (currentUser != null) {
+                Map<String, dynamic> updatedData = Map.from(currentUser);
                 if (data.containsKey('fullUser')) {
-                  userData = data['fullUser'];
+                  updatedData = data['fullUser'];
                 } else {
-                  if (data.containsKey('isPremium')) userData['isPremium'] = data['isPremium'];
-                  if (data.containsKey('isVerified')) userData['isVerified'] = data['isVerified'];
-                  if (data.containsKey('isShadowBanned')) userData['isShadowBanned'] = data['isShadowBanned'];
-                  if (data.containsKey('accountStatus')) userData['accountStatus'] = data['accountStatus'];
+                  if (data.containsKey('isPremium')) updatedData['isPremium'] = data['isPremium'];
+                  if (data.containsKey('isVerified')) updatedData['isVerified'] = data['isVerified'];
+                  if (data.containsKey('isShadowBanned')) updatedData['isShadowBanned'] = data['isShadowBanned'];
+                  if (data.containsKey('accountStatus')) updatedData['accountStatus'] = data['accountStatus'];
                 }
-                await prefs.setString('user_data', jsonEncode(userData));
-                
-                // 2. Refresh App State
-                UserRepository().updateLocalUser(userData);
-                SocketService().updateCurrentUser(userData['phone']);
+                await UserRepository().updateLocalUser(updatedData);
+                SocketService().updateCurrentUser(updatedData['phone']);
               }
 
-              // 3. Restart App Navigation to refresh all screens
-              if (MyApp.navigatorKey.currentContext != null) {
-                Navigator.of(MyApp.navigatorKey.currentContext!).pushAndRemoveUntil(
+              final navContext = MyApp.navigatorKey.currentContext;
+              if (navContext != null && navContext.mounted) {
+                Navigator.of(navContext).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const HomeScreen()),
                   (route) => false,
                 );

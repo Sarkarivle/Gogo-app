@@ -1,16 +1,70 @@
-async function loadUsers(search = '') {
+let currentUserFilters = {
+    search: '',
+    status: 'all',
+    accountStatus: 'All',
+    dateRange: 'all',
+    trustLevel: 'all',
+    sortBy: 'createdAt',
+    sortOrder: 'desc'
+};
+
+async function loadUsers(filters = {}) {
+    // Merge provided filters with current state
+    currentUserFilters = { ...currentUserFilters, ...filters };
+
+    const { search, status, accountStatus, dateRange, trustLevel, sortBy, sortOrder } = currentUserFilters;
+
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "User Management";
+
     mainContent.innerHTML = `
         <div class="space-y-6">
-            <div class="flex justify-between items-center">
-                <div class="relative w-96">
+            <!-- Analytics Overview -->
+            <div id="userStatsContainer" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="glass p-6 rounded-[2rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+                <div class="glass p-6 rounded-[2rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+                <div class="glass p-6 rounded-[2rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+            </div>
+
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div class="relative w-full md:w-96">
                     <i class="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
-                    <input type="text" id="userSearch" value="${search}" onkeypress="if(event.key === 'Enter') loadUsers(this.value)" placeholder="Search Identity (Name or Phone)..." class="w-full bg-white/5 border border-white/5 p-4 pl-14 rounded-2xl outline-none text-sm focus:border-orange-500/50 transition">
+                    <input type="text" id="userSearch" value="${search}" onkeypress="if(event.key === 'Enter') applyUserFilters()" placeholder="Search Identity (Name or Phone)..." class="w-full bg-white/5 border border-white/5 p-4 pl-14 rounded-2xl outline-none text-sm focus:border-orange-500/50 transition">
                 </div>
-                <div class="flex space-x-2">
-                    <button onclick="loadUsers()" class="glass p-4 rounded-2xl hover:bg-white/5 transition"><i class="fas fa-sync-alt"></i></button>
+
+                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <select id="trustLevelFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
+                        <option value="all" ${trustLevel === 'all' ? 'selected' : ''}>Integrity: All</option>
+                        <option value="high" ${trustLevel === 'high' ? 'selected' : ''}>High (80%+)</option>
+                        <option value="medium" ${trustLevel === 'medium' ? 'selected' : ''}>Medium (40-80%)</option>
+                        <option value="low" ${trustLevel === 'low' ? 'selected' : ''}>Low (< 40%)</option>
+                    </select>
+
+                    <select id="dateRangeFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
+                        <option value="all" ${dateRange === 'all' ? 'selected' : ''}>All Time</option>
+                        <option value="today" ${dateRange === 'today' ? 'selected' : ''}>Today</option>
+                        <option value="yesterday" ${dateRange === 'yesterday' ? 'selected' : ''}>Yesterday</option>
+                        <option value="last7days" ${dateRange === 'last7days' ? 'selected' : ''}>Last 7 Days</option>
+                    </select>
+
+                    <select id="statusFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
+                        <option value="all" ${status === 'all' ? 'selected' : ''}>Connection: All</option>
+                        <option value="online" ${status === 'online' ? 'selected' : ''}>Online Only</option>
+                        <option value="offline" ${status === 'offline' ? 'selected' : ''}>Offline Only</option>
+                    </select>
+
+                    <select id="accountStatusFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
+                        <option value="All" ${accountStatus === 'All' ? 'selected' : ''}>Status: All</option>
+                        <option value="Active" ${accountStatus === 'Active' ? 'selected' : ''}>Active</option>
+                        <option value="Deactivated" ${accountStatus === 'Deactivated' ? 'selected' : ''}>Deactivated</option>
+                        <option value="Suspended" ${accountStatus === 'Suspended' ? 'selected' : ''}>Suspended</option>
+                        <option value="Banned" ${accountStatus === 'Banned' ? 'selected' : ''}>Banned</option>
+                    </select>
+
+                    <div class="flex space-x-2">
+                        <button onclick="loadUsers({search: '', status: 'all', accountStatus: 'All', dateRange: 'all', trustLevel: 'all', sortBy: 'createdAt', sortOrder: 'desc'})" class="glass p-4 rounded-2xl hover:bg-white/5 transition" title="Reset Filters"><i class="fas fa-sync-alt"></i></button>
+                    </div>
                 </div>
             </div>
             <div id="userTableContainer">${UI.skeletonTable(10)}</div>
@@ -18,7 +72,26 @@ async function loadUsers(search = '') {
     `;
 
     try {
-        const users = await API.getUsers(search);
+        const response = await API.getUsers(currentUserFilters);
+        const users = response.users || [];
+        const stats = response.stats || { totalUsers: 0, onlineUsers: 0, todayJoined: 0 };
+
+        // Update Stats UI
+        document.getElementById('userStatsContainer').innerHTML = `
+            <div class="glass p-6 rounded-[2rem] border-b-2 border-orange-500/20">
+                <p class="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Total Registry</p>
+                <h3 class="text-3xl font-black text-white">${stats.totalUsers.toLocaleString()} <span class="text-[10px] text-slate-500 ml-1 font-bold">USERS</span></h3>
+            </div>
+            <div class="glass p-6 rounded-[2rem] border-b-2 border-emerald-500/20">
+                <p class="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Currently Online</p>
+                <h3 class="text-3xl font-black text-emerald-500">${stats.onlineUsers.toLocaleString()} <span class="text-[10px] text-slate-500 ml-1 font-bold">ACTIVE</span></h3>
+            </div>
+            <div class="glass p-6 rounded-[2rem] border-b-2 border-blue-500/20">
+                <p class="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">New Today</p>
+                <h3 class="text-3xl font-black text-blue-400">+${stats.todayJoined.toLocaleString()} <span class="text-[10px] text-slate-500 ml-1 font-bold">JOINED</span></h3>
+            </div>
+        `;
+
         const rows = users.map(u => `
             <tr class="hover:bg-white/[0.01]">
                 <td class="p-6">
@@ -38,6 +111,12 @@ async function loadUsers(search = '') {
                 <td class="p-6 text-xs font-bold text-slate-400">${u.city || 'Global'}</td>
                 <td class="p-6">
                     <div class="flex items-center space-x-2">
+                        <div class="w-1.5 h-1.5 rounded-full ${u.trustScore >= 80 ? 'bg-emerald-500' : (u.trustScore >= 40 ? 'bg-yellow-500' : 'bg-red-500')}"></div>
+                        <span class="text-[10px] font-black uppercase ${u.trustScore >= 80 ? 'text-emerald-500' : (u.trustScore >= 40 ? 'text-yellow-500' : 'text-red-500')}">${u.trustScore}%</span>
+                    </div>
+                </td>
+                <td class="p-6">
+                    <div class="flex items-center space-x-2">
                         <div class="w-2 h-2 rounded-full ${u.isOnline ? 'bg-emerald-500' : 'bg-slate-700'}"></div>
                         <span class="text-[10px] font-black uppercase ${u.isOnline ? 'text-emerald-500' : 'text-slate-500'}">${u.isOnline ? 'Online' : 'Offline'}</span>
                     </div>
@@ -53,14 +132,42 @@ async function loadUsers(search = '') {
                     ${u.isPremium ? UI.badge('Premium', 'bg-orange-500/10 text-orange-500 ml-1') : ''}
                     ${u.isShadowBanned ? UI.badge('Shadow', 'bg-purple-500/10 text-purple-500 ml-1') : ''}
                 </td>
+                <td class="p-6">
+                    <div class="flex items-center space-x-2">
+                        <button onclick="quickToggleVerify('${u.phone}', ${u.isVerified})" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.isVerified ? 'bg-blue-500/20 text-blue-500' : 'bg-white/5 text-slate-500 hover:bg-white/10'}" title="Quick Verify">
+                            <i class="fas fa-check-circle text-[10px]"></i>
+                        </button>
+                        <button onclick="quickToggleShadow('${u.phone}', ${u.isShadowBanned})" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.isShadowBanned ? 'bg-purple-500/20 text-purple-500' : 'bg-white/5 text-slate-500 hover:bg-white/10'}" title="Quick Shadow Ban">
+                            <i class="fas fa-user-secret text-[10px]"></i>
+                        </button>
+                        <button onclick="quickBanUser('${u.phone}', '${u.accountStatus}')" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.accountStatus === 'Suspended' ? 'bg-red-500 text-white' : 'bg-white/5 text-slate-500 hover:bg-red-500/20 hover:text-red-500'}" title="Quick Ban">
+                            <i class="fas fa-user-slash text-[10px]"></i>
+                        </button>
+                    </div>
+                </td>
                 <td class="p-6 text-right">
                     <button onclick="openUserControl('${u.phone}')" class="px-6 py-2 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase transition hover:scale-105">Manage</button>
                 </td>
             </tr>
         `);
 
+        const getSortIcon = (field) => {
+            if (sortBy !== field) return '<i class="fas fa-sort ml-2 opacity-20"></i>';
+            return sortOrder === 'asc' ? '<i class="fas fa-sort-up ml-2 text-orange-500"></i>' : '<i class="fas fa-sort-down ml-2 text-orange-500"></i>';
+        };
+
+        const headers = [
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('name')">User Identity ${getSortIcon('name')}</div>`,
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('city')">Location ${getSortIcon('city')}</div>`,
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('trustScore')">Integrity ${getSortIcon('trustScore')}</div>`,
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('isOnline')">Status ${getSortIcon('isOnline')}</div>`,
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('accountStatus')">Account Status ${getSortIcon('accountStatus')}</div>`,
+            'Quick Actions',
+            'Action'
+        ];
+
         document.getElementById('userTableContainer').innerHTML = UI.table(
-            ['User Identity', 'Location', 'Status', 'Account Status', 'Action'],
+            headers,
             rows
         );
     } catch (err) {
@@ -77,17 +184,36 @@ async function openUserControl(phone) {
     try {
         const data = await API.getUserFull(phone);
         const u = data.user;
-        const reports = data.reportsAgainst;
+        const reports = data.reportsAgainst || [];
+
+        // Calculate Trust Score
+        let score = 70;
+        if (u.isVerified) score += 15;
+        if (u.isPremium) score += 10;
+        if (u.isShadowBanned) score -= 30;
+        if (u.accountStatus === 'Suspended' || u.accountStatus === 'Banned') score = 0;
+        if (reports.length > 0) score -= (reports.length * 5);
+        if (u.deviceHistory && u.deviceHistory.length > 2) score -= (u.deviceHistory.length * 3);
+        const trustScore = Math.max(0, Math.min(100, score));
 
         UI.modal.show(
             `
-            <div class="flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-2xl bg-orange-500 flex items-center justify-center text-black font-black text-xl">
-                    ${u.name ? u.name[0] : '?'}
+            <div class="flex items-center justify-between w-full">
+                <div class="flex items-center space-x-4">
+                    <div class="w-12 h-12 rounded-2xl bg-orange-500 flex items-center justify-center text-black font-black text-xl">
+                        ${u.name ? u.name[0] : '?'}
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-black text-white uppercase">${u.name || 'Anonymous'}</h2>
+                        <p class="text-xs text-orange-500 font-bold">${u.phone}</p>
+                    </div>
                 </div>
-                <div>
-                    <h2 class="text-xl font-black text-white uppercase">${u.name || 'Anonymous'}</h2>
-                    <p class="text-xs text-orange-500 font-bold">${u.phone}</p>
+                <div class="flex flex-col items-end">
+                    <p class="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Integrity Score</p>
+                    <div class="flex items-center space-x-2 bg-white/5 px-4 py-2 rounded-xl border border-white/5">
+                        <div class="w-2 h-2 rounded-full ${trustScore >= 80 ? 'bg-emerald-500 animate-pulse' : (trustScore >= 40 ? 'bg-yellow-500' : 'bg-red-500 animate-bounce')}"></div>
+                        <span class="text-sm font-black ${trustScore >= 80 ? 'text-emerald-500' : (trustScore >= 40 ? 'text-yellow-500' : 'text-red-500')}">${trustScore}%</span>
+                    </div>
                 </div>
             </div>
             `,
@@ -145,12 +271,13 @@ async function openUserControl(phone) {
                     </div>
                 </div>
                 <div class="col-span-8 space-y-6 flex flex-col">
-                    <div class="flex space-x-3 shrink-0">
-                        <button onclick="loadUserInbox('${u.phone}')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-inbox mr-2 text-orange-500"></i> Inbox</button>
-                        <button onclick="loadUserFinance('${u.phone}')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-credit-card mr-2 text-emerald-500"></i> Finance</button>
-                        <button onclick="loadUserMedia('${u.phone}')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-images mr-2 text-blue-500"></i> Media</button>
-                        <button onclick="loadUserSecurity('${u.phone}')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-shield-alt mr-2 text-red-500"></i> Security</button>
-                        <button onclick="openNotificationModal('${u.phone}')" class="flex-1 glass p-5 rounded-3xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-bell mr-2 text-yellow-500"></i> Notify</button>
+                    <div class="flex space-x-3 shrink-0 overflow-x-auto pb-2 scrollbar-hide">
+                        <button onclick="loadUserTimeline('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-stream mr-2 text-orange-500"></i> Timeline</button>
+                        <button onclick="loadUserInbox('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-inbox mr-2 text-blue-500"></i> Inbox</button>
+                        <button onclick="loadUserFinance('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-credit-card mr-2 text-emerald-500"></i> Finance</button>
+                        <button onclick="loadUserMedia('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-images mr-2 text-purple-500"></i> Media</button>
+                        <button onclick="loadUserSecurity('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-shield-alt mr-2 text-red-500"></i> Security</button>
+                        <button onclick="openNotificationModal('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-bell mr-2 text-yellow-500"></i> Notify</button>
                     </div>
                     <div id="userControlDynamic" class="flex-1 glass rounded-[2.5rem] p-10 min-h-[400px] overflow-y-auto relative">
                         <div class="flex flex-col items-center justify-center h-full opacity-10">
@@ -219,7 +346,8 @@ async function loadUserSecurity(phone) {
     try {
         const data = await API.getUserFull(phone);
         const u = data.user;
-        const reports = data.reportsAgainst;
+        const reports = data.reportsAgainst || [];
+        const blocks = data.blockedBy || [];
 
         const content = `
             <div class="space-y-8 animate-fade">
@@ -249,6 +377,21 @@ async function loadUserSecurity(phone) {
                                 <p class="text-[9px] text-slate-500 font-bold uppercase">${new Date(d.lastUsed).toLocaleString()}</p>
                             </div>
                         `).join('') || '<p class="text-center py-10 opacity-20 uppercase font-black text-[10px]">No login history tracked</p>'}
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Block Registry (Blocked By ${blocks.length} Users)</h4>
+                    <div class="space-y-2">
+                        ${blocks.map(b => `
+                            <div class="p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl">
+                                <div class="flex justify-between items-start mb-2">
+                                    <p class="text-[10px] font-black text-white uppercase">BY: ${b.blockerName || 'Anonymous'}</p>
+                                    <span class="text-[7px] text-slate-500 font-black uppercase">${new Date(b.timestamp).toLocaleString()}</span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 italic">Reason: "${b.reason || 'Manual Block'}"</p>
+                            </div>
+                        `).join('') || '<p class="text-center py-10 opacity-20 uppercase font-black text-[10px]">Not blocked by anyone</p>'}
                     </div>
                 </div>
 
@@ -286,12 +429,28 @@ async function loadUserSecurity(phone) {
     } catch (e) { UI.modal.setDynamicContent('Error loading security data'); }
 }
 
-async function loadUserFinance(phone) {
+async function loadUserFinance(phone, filter = 'all') {
     UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const data = await API.getUserFull(phone);
-        const sub = data.subscription;
-        const payments = data.paymentHistory;
+        const sub = data.subscription || {};
+        let payments = data.paymentHistory || [];
+
+        // Calculate Total Spent (only successful transactions)
+        const totalSpent = payments
+            .filter(p => p.status?.toLowerCase() === 'captured' || p.status?.toLowerCase() === 'success' || p.status?.toLowerCase() === 'active')
+            .reduce((acc, p) => acc + (p.amount || 0), 0);
+
+        // Filter payments for display
+        if (filter !== 'all') {
+            payments = payments.filter(p => {
+                const s = p.status?.toLowerCase();
+                if (filter === 'success') return s === 'captured' || s === 'success' || s === 'active';
+                if (filter === 'pending') return s === 'created' || s === 'pending';
+                if (filter === 'failed') return s === 'failed' || s === 'refunded';
+                return true;
+            });
+        }
 
         const content = `
             <div class="space-y-8 animate-fade">
@@ -300,44 +459,71 @@ async function loadUserFinance(phone) {
                     <div class="flex justify-between items-start mb-6">
                         <div>
                             <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Active Subscription</p>
-                            <h3 class="text-xl font-black text-white uppercase">${sub.planName || 'Free Tier'}</h3>
+                            <h3 class="text-xl font-black text-white uppercase">${sub.planName || (data.user?.isPremium ? 'Premium Plan' : 'Free Tier')}</h3>
+                            <div class="flex items-center space-x-2 mt-2">
+                                <div class="w-2 h-2 rounded-full ${data.user?.isPremium ? 'bg-orange-500 animate-pulse' : 'bg-slate-600'}"></div>
+                                <p class="text-[9px] font-black uppercase ${data.user?.isPremium ? 'text-orange-500' : 'text-slate-500'}">
+                                    ${data.user?.isPremium ? 'PREMIUM USER' : 'FREE USER'}
+                                </p>
+                            </div>
                         </div>
-                        ${UI.badge(sub.status || 'None', sub.status === 'active' ? 'bg-emerald-500 text-black' : 'bg-slate-700 text-white')}
+                        <div class="text-right">
+                             ${UI.badge(sub.status || (data.user?.isPremium ? 'Active' : 'None'), (sub.status === 'active' || data.user?.isPremium) ? 'bg-emerald-500 text-black' : 'bg-slate-700 text-white')}
+                             <p class="text-[8px] font-black text-slate-500 uppercase mt-2">Type: ${sub.planId || 'Standard'}</p>
+                        </div>
                     </div>
                     <div class="grid grid-cols-3 gap-6">
                         <div>
                             <p class="text-[8px] font-black text-slate-500 uppercase">Valid Until</p>
-                            <p class="text-xs font-bold text-white">${sub.expiryDate ? new Date(sub.expiryDate).toLocaleDateString() : 'N/A'}</p>
+                            <p class="text-xs font-bold text-white">${data.user?.premiumExpiry ? new Date(data.user.premiumExpiry).toLocaleDateString() : (sub.expiryDate ? new Date(sub.expiryDate).toLocaleDateString() : 'N/A')}</p>
                         </div>
                         <div>
-                            <p class="text-[8px] font-black text-slate-500 uppercase">Total Spent</p>
-                            <p class="text-xs font-bold text-emerald-500">₹${payments.reduce((acc, p) => acc + (p.amount || 0), 0)}</p>
+                            <p class="text-[8px] font-black text-slate-500 uppercase">Total Spent (Success)</p>
+                            <p class="text-xs font-bold text-emerald-500">₹${totalSpent}</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Payment Logs -->
+                <!-- Payment Logs Header & Filters -->
                 <div>
-                    <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Transaction History</h4>
+                    <div class="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
+                        <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Transaction History</h4>
+                        <div class="flex space-x-2">
+                            <button onclick="loadUserFinance('${phone}', 'all')" class="px-3 py-1 rounded-lg text-[8px] font-black uppercase ${filter === 'all' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}">All</button>
+                            <button onclick="loadUserFinance('${phone}', 'success')" class="px-3 py-1 rounded-lg text-[8px] font-black uppercase ${filter === 'success' ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-emerald-500'}">Success</button>
+                            <button onclick="loadUserFinance('${phone}', 'pending')" class="px-3 py-1 rounded-lg text-[8px] font-black uppercase ${filter === 'pending' ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'text-slate-500 hover:text-yellow-500'}">Pending</button>
+                            <button onclick="loadUserFinance('${phone}', 'failed')" class="px-3 py-1 rounded-lg text-[8px] font-black uppercase ${filter === 'failed' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-slate-500 hover:text-red-500'}">Failed</button>
+                        </div>
+                    </div>
                     <div class="space-y-2">
-                        ${payments.map(p => `
-                            <div class="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                                <div>
-                                    <p class="text-[10px] font-black text-white uppercase">${p.orderId || 'Direct Payment'}</p>
-                                    <p class="text-[8px] text-slate-500 font-bold uppercase">${new Date(p.createdAt).toLocaleString()}</p>
+                        ${payments.map(p => {
+                            const isSuccess = ['captured', 'success', 'active'].includes(p.status?.toLowerCase());
+                            const isFailed = ['failed', 'refunded'].includes(p.status?.toLowerCase());
+                            const color = isSuccess ? 'text-emerald-500' : (isFailed ? 'text-red-500' : 'text-yellow-500');
+
+                            return `
+                                <div class="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                    <div class="flex-1">
+                                        <p class="text-[10px] font-black text-white uppercase">${p.orderId || 'Direct Payment'}</p>
+                                        <div class="flex items-center space-x-2 mt-1">
+                                            <p class="text-[8px] text-slate-500 font-bold uppercase">${new Date(p.createdAt || p.timestamp).toLocaleString()}</p>
+                                            ${p.method ? `<span class="text-[7px] bg-white/5 px-2 py-0.5 rounded text-slate-400 uppercase font-bold">${p.method}</span>` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[10px] font-black ${color} uppercase">₹${p.amount}</p>
+                                        <p class="text-[8px] text-slate-500 font-bold uppercase">${p.status}</p>
+                                    </div>
                                 </div>
-                                <div class="text-right">
-                                    <p class="text-[10px] font-black text-emerald-500 uppercase">₹${p.amount}</p>
-                                    <p class="text-[8px] text-slate-500 font-bold uppercase">${p.status}</p>
-                                </div>
-                            </div>
-                        `).join('') || '<p class="text-center py-10 opacity-20 uppercase font-black text-[10px]">No payments found</p>'}
+                            `;
+                        }).join('') || '<p class="text-center py-10 opacity-20 uppercase font-black text-[10px]">No payments found matching filter</p>'}
                     </div>
                 </div>
             </div>
         `;
         UI.modal.setDynamicContent(content);
     } catch (e) {
+        console.error("loadUserFinance Error:", e);
         UI.modal.setDynamicContent('<p class="text-red-500">Failed to load finance data</p>');
     }
 }
@@ -345,29 +531,79 @@ async function loadUserFinance(phone) {
 async function loadUserMedia(phone) {
     UI.modal.setDynamicContent(UI.skeletonModal());
     try {
-        const data = await API.getUserFull(phone);
-        const u = data.user;
-        const images = u.profileImages || [];
+        // Fetch both user profile and all media filtered by this user
+        const [profileData, mediaData] = await Promise.all([
+            API.getUserFull(phone),
+            API.getAllMedia(phone)
+        ]);
+
+        const media = mediaData.media || [];
 
         const content = `
             <div class="space-y-6 animate-fade">
-                <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 pb-2">Media Assets (Profile)</h4>
+                <div class="flex justify-between items-center border-b border-white/5 pb-2">
+                    <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Media Assets (${media.length})</h4>
+                    <div class="flex space-x-2">
+                        <span class="flex items-center text-[8px] font-bold text-slate-500 uppercase"><div class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></div> Profile</span>
+                        <span class="flex items-center text-[8px] font-bold text-slate-500 uppercase ml-3"><div class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5"></div> Chat</span>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-3 gap-4">
-                    ${images.map(img => `
-                        <div class="relative aspect-square rounded-2xl overflow-hidden group">
-                            <img src="${img}" class="w-full h-full object-cover">
-                            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-2">
-                                <button onclick="window.open('${img}')" class="w-8 h-8 glass rounded-full flex items-center justify-center text-[10px]"><i class="fas fa-expand"></i></button>
-                                <button class="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-[10px]"><i class="fas fa-trash"></i></button>
+                    ${media.map(m => `
+                        <div class="relative aspect-square rounded-2xl overflow-hidden group border-2 ${m.type === 'Profile' ? 'border-blue-500/20' : 'border-orange-500/20'}">
+                            <img src="${m.url}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400?text=Image+Not+Found'">
+
+                            <!-- Overlay Info -->
+                            <div class="absolute top-2 left-2">
+                                <span class="px-2 py-0.5 rounded text-[7px] font-black uppercase ${m.type === 'Profile' ? 'bg-blue-500 text-white' : 'bg-orange-500 text-black'}">
+                                    ${m.type}
+                                </span>
+                            </div>
+
+                            <!-- Hover Actions -->
+                            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-3">
+                                <button onclick="window.open('${m.url}')" class="w-10 h-10 glass rounded-full flex items-center justify-center text-xs hover:bg-white/10 transition">
+                                    <i class="fas fa-expand"></i>
+                                </button>
+                                <button onclick="deleteUserSpecificMedia('${phone}', '${m.url}', '${m.type}')" class="w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:scale-110 transition">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+
+                            <div class="absolute bottom-0 inset-x-0 p-2 bg-black/40 backdrop-blur-sm transform translate-y-full group-hover:translate-y-0 transition">
+                                <p class="text-[8px] text-white font-bold uppercase truncate">${new Date(m.timestamp).toLocaleDateString()} • ${new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                             </div>
                         </div>
-                    `).join('') || '<p class="col-span-3 text-center py-20 opacity-20 uppercase font-black text-[10px]">No media uploaded</p>'}
+                    `).join('') || `
+                        <div class="col-span-3 py-20 flex flex-col items-center justify-center opacity-20">
+                            <i class="fas fa-images text-5xl mb-4"></i>
+                            <p class="uppercase font-black text-[10px] tracking-widest">No Media Uploaded Yet</p>
+                        </div>
+                    `}
                 </div>
             </div>
         `;
         UI.modal.setDynamicContent(content);
     } catch (e) {
+        console.error("loadUserMedia Error:", e);
         UI.modal.setDynamicContent('<p class="text-red-500">Failed to load media assets</p>');
+    }
+}
+
+async function deleteUserSpecificMedia(phone, url, type) {
+    if (!confirm(`Are you sure you want to delete this ${type} image permanently?`)) return;
+
+    try {
+        const res = await API.deleteMedia({ url, owner: phone, type });
+        if (res.success) {
+            UI.showToast("Success", "Media deleted successfully", "bg-emerald-500");
+            loadUserMedia(phone); // Refresh the tab
+        } else {
+            UI.showToast("Error", res.message || "Failed to delete media", "bg-red-500");
+        }
+    } catch (e) {
+        UI.showToast("Error", "System error while deleting", "bg-red-500");
     }
 }
 
@@ -441,4 +677,91 @@ async function loadFullChat(p1, p2) {
     } catch (err) {
         UI.modal.setDynamicContent('<p class="text-red-500">Failed to load logs</p>');
     }
+}
+
+async function loadUserTimeline(phone) {
+    UI.modal.setDynamicContent(UI.skeletonModal());
+    try {
+        const data = await API.getUserTimeline(phone);
+        const timeline = data.timeline || [];
+
+        const content = `
+            <div class="space-y-6 animate-fade">
+                <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 pb-4 mb-8">Activity Timeline (User Journey)</h4>
+
+                <div class="relative ml-4 border-l-2 border-white/5 space-y-10 pb-10">
+                    ${timeline.map(item => `
+                        <div class="relative pl-10">
+                            <!-- Dot -->
+                            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-[#0b0d13] border-2 border-orange-500 flex items-center justify-center">
+                                <div class="w-1 h-1 rounded-full bg-orange-500"></div>
+                            </div>
+
+                            <!-- Content -->
+                            <div class="glass p-6 rounded-3xl border border-white/5 hover:border-white/10 transition group">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div class="flex items-center space-x-3">
+                                        <i class="fas ${item.icon} ${item.color} text-sm"></i>
+                                        <h5 class="text-xs font-black text-white uppercase tracking-tight">${item.title}</h5>
+                                    </div>
+                                    <span class="text-[8px] font-bold text-slate-500 uppercase">${new Date(item.timestamp).toLocaleString()}</span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 font-medium">${item.description}</p>
+                            </div>
+                        </div>
+                    `).join('') || `
+                        <div class="flex flex-col items-center justify-center py-20 opacity-20">
+                            <i class="fas fa-history text-5xl mb-4"></i>
+                            <p class="uppercase font-black text-[10px] tracking-widest">No activity logs found</p>
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+        UI.modal.setDynamicContent(content);
+    } catch (e) {
+        UI.modal.setDynamicContent('<p class="text-red-500">Failed to load timeline</p>');
+    }
+}
+
+function applyUserFilters() {
+    const search = document.getElementById('userSearch')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || 'all';
+    const accountStatus = document.getElementById('accountStatusFilter')?.value || 'All';
+    const dateRange = document.getElementById('dateRangeFilter')?.value || 'all';
+    const trustLevel = document.getElementById('trustLevelFilter')?.value || 'all';
+
+    loadUsers({ search, status, accountStatus, dateRange, trustLevel });
+}
+
+function toggleSort(field) {
+    const newOrder = (currentUserFilters.sortBy === field && currentUserFilters.sortOrder === 'asc') ? 'desc' : 'asc';
+    loadUsers({ sortBy: field, sortOrder: newOrder });
+}
+
+async function quickToggleVerify(phone, current) {
+    try {
+        await API.updateUserStatus(phone, { isVerified: !current });
+        UI.showToast("Success", `User ${!current ? 'Verified' : 'Unverified'}`, "bg-blue-500");
+        loadUsers();
+    } catch (e) { UI.showToast("Error", "Action failed", "bg-red-500"); }
+}
+
+async function quickToggleShadow(phone, current) {
+    try {
+        await API.updateUserStatus(phone, { isShadowBanned: !current });
+        UI.showToast("Success", `Shadow Ban ${!current ? 'Enabled' : 'Disabled'}`, "bg-purple-500");
+        loadUsers();
+    } catch (e) { UI.showToast("Error", "Action failed", "bg-red-500"); }
+}
+
+async function quickBanUser(phone, currentStatus) {
+    const newStatus = currentStatus === 'Suspended' ? 'Active' : 'Suspended';
+    if (!confirm(`Are you sure you want to ${newStatus === 'Suspended' ? 'BAN' : 'RESTORE'} this user?`)) return;
+
+    try {
+        await API.updateUserStatus(phone, { accountStatus: newStatus });
+        UI.showToast("Success", `User status changed to ${newStatus}`, newStatus === 'Suspended' ? "bg-red-500" : "bg-emerald-500");
+        loadUsers();
+    } catch (e) { UI.showToast("Error", "Action failed", "bg-red-500"); }
 }
