@@ -1,81 +1,98 @@
 const RandomRoom = require('../models/RandomRoom');
-const User = require('../models/User');
 const Block = require('../models/Block');
 const { normalize } = require('../utils/phoneUtils');
+const crypto = require('crypto');
 
-const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
+/**
+ * ADVANCED RANDOM MATCH CONTROLLER (High-Concurrency Optimized)
+ */
 
 exports.findPartner = async (io, socket, data) => {
-    // Security: Strictly use socket.userPhone to prevent identity spoofing
     const userId = socket.userPhone;
     if (!userId) return;
 
+    const lastPartnerId = data?.lastPartnerId ? normalize(data.lastPartnerId) : null;
+
     try {
-        console.log(`[RandomMatch] User ${userId} searching for partner...`);
+        // 1. SILENT CLEANUP: Quick check for any dead rooms this user owns
+        // Using deleteMany sparingly to avoid DB lock
+        await RandomRoom.deleteMany({ hostId: userId, status: 'waiting' });
 
-        // Cleanup any stale rooms for this user
-        await RandomRoom.deleteMany({
-            $or: [{ hostId: userId }, { guestId: userId }]
-        });
-
-        // 1. Fetch Blocked Users (Both ways) using regex to handle variations
+        // 2. BLOCKLIST & LOOP PROTECTION
         const blocks = await Block.find({
-            $or: [
-                { blockerPhone: new RegExp(userId + '$') },
-                { blockedPhone: new RegExp(userId + '$') }
-            ]
-        });
+            $or: [{ blockerPhone: userId }, { blockedPhone: userId }]
+        }, 'blockerPhone blockedPhone');
 
-        const blockedPhones = blocks.map(b => {
+        const excludedPhones = blocks.map(b => {
             const b1 = normalize(b.blockerPhone);
             const b2 = normalize(b.blockedPhone);
             return b1 === userId ? b2 : b1;
         });
 
-        // 2. Find waiting rooms excluding blocked users
-        const waitingRooms = await RandomRoom.find({
+        if (lastPartnerId) excludedPhones.push(lastPartnerId);
+
+        // 3. FIND POTENTIAL MATCH (Prioritize Active Hosts)
+        // We limit to 20 to shuffle them and reduce 'thundering herd' effect on a single record
+        let waitingRooms = await RandomRoom.find({
             status: 'waiting',
-            hostId: { $ne: userId, $nin: blockedPhones }
-        }).limit(10);
+            hostId: { $ne: userId, $nin: excludedPhones }
+        }).sort({ createdAt: 1 }).limit(10);
 
         if (waitingRooms.length > 0) {
-            const selectedRoom = getRandomItem(waitingRooms);
+            // Shuffle to prevent multiple users hitting the exact same record
+            waitingRooms = waitingRooms.sort(() => Math.random() - 0.5);
 
-            const joinedRoom = await RandomRoom.findOneAndUpdate(
-                { _id: selectedRoom._id, status: 'waiting' },
-                {
-                    $set: {
-                        guestId: userId,
-                        'socketIds.guest': socket.id,
-                        status: 'connecting'
-                    }
-                },
-                { new: true }
-            );
+            for (const room of waitingRooms) {
+                // ADVANCED: Pre-verification of host socket status
+                const hostSocket = io.sockets.sockets.get(room.socketIds.host);
+                if (!hostSocket || !hostSocket.connected) {
+                    await RandomRoom.deleteOne({ _id: room._id });
+                    continue;
+                }
 
-            if (joinedRoom) {
-                console.log(`[RandomMatch] Atomic Match! ${joinedRoom.hostId} <-> ${userId}`);
+                // ATOMIC MATCHING: Ensures only ONE person can join this room
+                const joinedRoom = await RandomRoom.findOneAndUpdate(
+                    { _id: room._id, status: 'waiting' },
+                    {
+                        $set: {
+                            guestId: userId,
+                            'socketIds.guest': socket.id,
+                            status: 'connecting'
+                        }
+                    },
+                    { new: true }
+                );
 
-                const hostSocket = io.sockets.sockets.get(joinedRoom.socketIds.host);
-                if (hostSocket) hostSocket.join(joinedRoom.roomId);
-                socket.join(joinedRoom.roomId);
+                if (joinedRoom) {
+                    console.log(`[AdvancedMatch] Atomic Success: ${joinedRoom.hostId} <-> ${userId}`);
 
-                io.to(joinedRoom.socketIds.host).emit('random_match_found', {
-                    roomId: joinedRoom.roomId,
-                    partnerId: userId,
-                    role: 'receiver'
-                });
+                    // Server-side Force Join
+                    hostSocket.join(joinedRoom.roomId);
+                    socket.join(joinedRoom.roomId);
 
-                io.to(socket.id).emit('random_match_found', {
-                    roomId: joinedRoom.roomId,
-                    partnerId: joinedRoom.hostId,
-                    role: 'caller'
-                });
-                return;
+                    const matchPayload = {
+                        roomId: joinedRoom.roomId,
+                        partnerId: userId,
+                        partnerSocketId: socket.id,
+                        role: 'receiver',
+                        timestamp: Date.now()
+                    };
+
+                    io.to(joinedRoom.socketIds.host).emit('random_match_found', matchPayload);
+
+                    socket.emit('random_match_found', {
+                        ...matchPayload,
+                        partnerId: joinedRoom.hostId,
+                        partnerSocketId: joinedRoom.socketIds.host,
+                        role: 'caller'
+                    });
+                    return;
+                }
             }
         }
 
-        const roomId = `random_${Date.now()}_${userId.slice(-4)}`;
+        // 4. NO MATCH FOUND: Become the Host
+        const roomId = `rnd_${crypto.randomBytes(4).toString('hex')}_${userId.slice(-4)}`;
         const newRoom = new RandomRoom({
             roomId: roomId,
             hostId: userId,
@@ -84,42 +101,69 @@ exports.findPartner = async (io, socket, data) => {
         });
 
         await newRoom.save();
-        socket.join(roomId);
-        console.log(`[RandomMatch] New waiting room: ${roomId} for ${userId}`);
         socket.emit('random_room_created', { roomId });
 
     } catch (err) {
-        console.error("[RandomMatch] findPartner Error:", err);
+        console.error("[AdvancedMatch] Critical Error:", err);
+        socket.emit('random_error', { message: "Internal matching error" });
+    }
+};
+
+exports.handleSignaling = (io, socket, data, type) => {
+    // CRITICAL FIX: Safety check to prevent crash on null/undefined data
+    if (!data || typeof data !== 'object') return;
+
+    const { partnerSocketId, roomId, partnerId } = data;
+
+    // ADVANCED: Add Signal ID (sid) to prevent triple-processing on client
+    const sid = crypto.randomBytes(6).toString('hex');
+    const enhancedPayload = {
+        ...data,
+        sid: sid,
+        fromSocketId: socket.id,
+        serverTimestamp: Date.now()
+    };
+
+    // 1. Direct Socket (Primary & Fastest)
+    if (partnerSocketId && typeof partnerSocketId === 'string') {
+        io.to(partnerSocketId).emit(`random_${type}`, enhancedPayload);
+    }
+
+    // 2. Room (Secondary/Legacy Support)
+    if (roomId && typeof roomId === 'string') {
+        socket.to(roomId).emit(`random_${type}`, enhancedPayload);
+    }
+
+    // 3. Phone Channel (Fallback/Reliability)
+    if (partnerId) {
+        io.to(`user_${normalize(partnerId)}`).emit(`random_${type}`, enhancedPayload);
     }
 };
 
 exports.leaveRoom = async (io, socket) => {
     try {
-        const normalizedId = socket.userPhone;
-        if (!normalizedId) return;
+        const userId = socket.userPhone;
+        if (!userId) return;
 
-        const room = await RandomRoom.findOne({
-            $or: [{ hostId: normalizedId }, { guestId: normalizedId }]
+        // Atomic find and remove
+        const room = await RandomRoom.findOneAndDelete({
+            $or: [{ hostId: userId }, { guestId: userId }]
         });
 
         if (!room) return;
 
-        console.log(`[RandomMatch] User ${normalizedId} leaving room ${room.roomId}.`);
+        const partnerSocketId = room.hostId === userId ? room.socketIds.guest : room.socketIds.host;
+        const partnerId = room.hostId === userId ? room.guestId : room.hostId;
 
-        const partnerSocket = room.hostId === normalizedId ? room.socketIds.guest : room.socketIds.host;
-
-        if (partnerSocket) {
-            io.to(partnerSocket).emit('random_partner_left', {
-                message: "Partner left",
-                autoSearch: true
-            });
+        if (partnerSocketId) {
+            io.to(partnerSocketId).emit('random_partner_left', { autoSearch: true });
+        } else if (partnerId) {
+            // Fallback to phone channel if socket is lost
+            io.to(`user_${normalize(partnerId)}`).emit('random_partner_left', { autoSearch: true });
         }
 
-        await RandomRoom.deleteOne({ _id: room._id });
-        socket.leave(room.roomId);
-
     } catch (err) {
-        console.error("[RandomMatch] leaveRoom Error:", err);
+        console.error("[AdvancedMatch] leaveRoom Error:", err);
     }
 };
 
@@ -128,55 +172,41 @@ exports.handleNextPartner = async (io, socket, data) => {
     socket.emit('random_searching_again');
 };
 
-exports.handleSignaling = async (io, socket, data, type) => {
-    const { roomId, ...payload } = data;
-    if (!roomId) return;
-
-    try {
-        // Security: Check if the socket is actually in the room it's trying to signal to
-        if (!socket.rooms.has(roomId)) {
-            console.warn(`Unauthorized signaling attempt by ${socket.userPhone} to room ${roomId}`);
-            return;
-        }
-
-        if (type === 'offer') {
-            await RandomRoom.updateOne({ roomId }, { status: 'connected' });
-        }
-        socket.to(roomId).emit(`random_${type}`, payload);
-    } catch (e) {
-        console.error(`[RandomMatch] Signaling Error (${type}):`, e);
-    }
-};
-
 exports.handleBlock = async (io, socket, data) => {
-    const { roomId } = data;
-    if (!roomId) return;
+    // CRITICAL FIX: Safety check
+    if (!data || typeof data !== 'object') return;
+    const { partnerId, partnerSocketId } = data;
+
+    const userId = socket.userPhone;
+    if (!userId || !partnerId) return;
 
     try {
-        // Security: Check if the socket is in the room
-        if (!socket.rooms.has(roomId)) return;
+        await Block.findOneAndUpdate(
+            { blockerPhone: userId, blockedPhone: normalize(partnerId) },
+            { reason: "Random Call Block", timestamp: new Date() },
+            { upsert: true }
+        );
 
-        console.log(`[RandomMatch] User blocked in room ${roomId}.`);
-
-        socket.to(roomId).emit('random_partner_blocked', {
-            message: "You have been blocked by the partner."
-        });
-
-        await RandomRoom.deleteOne({ roomId });
+        if (partnerSocketId && typeof partnerSocketId === 'string') {
+            io.to(partnerSocketId).emit('random_partner_blocked', { message: "Blocked" });
+        }
+        await exports.leaveRoom(io, socket);
     } catch (e) {
-        console.error("[RandomMatch] handleBlock Error:", e);
+        console.error("[AdvancedMatch] handleBlock Error:", e);
     }
 };
 
 exports.performGlobalCleanup = async () => {
     try {
+        // Clean rooms older than 3 minutes to keep DB lean
+        const expiry = new Date(Date.now() - 3 * 60 * 1000);
         await RandomRoom.deleteMany({
             $or: [
-                { expiresAt: { $lt: new Date() } },
-                { status: 'closing' }
+                { createdAt: { $lt: expiry } },
+                { status: { $in: ['closing', 'expired'] } }
             ]
         });
     } catch (e) {
-        console.error("[RandomMatch] Global Cleanup error:", e);
+        console.error("[AdvancedMatch] Cleanup Error:", e);
     }
 };

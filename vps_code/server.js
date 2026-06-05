@@ -506,6 +506,9 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         if (myPhone) {
+            // Clean up random rooms immediately on disconnect
+            randomMatchController.leaveRoom(io, socket);
+
             const sockets = phoneToSockets.get(myPhone);
             if (sockets) {
                 sockets.delete(socket.id);
