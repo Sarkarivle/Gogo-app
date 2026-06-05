@@ -4,19 +4,21 @@ const { normalize } = require('../utils/phoneUtils');
 const crypto = require('crypto');
 
 /**
- * PRODUCTION-READY RANDOM MATCH CONTROLLER (High-Stability Version)
+ * ULTRA-STABLE RANDOM MATCH CONTROLLER (Final Fix for UI Freeze)
  */
 
 exports.findPartner = async (io, socket, data) => {
     const userId = socket.userPhone;
     if (!userId) return;
 
-    const lastPartnerId = data?.lastPartnerId ? normalize(data.lastPartnerId) : null;
-
     try {
-        // 1. DEEP CLEANUP: Pehle purani kisi bhi call se poori tarah bahar niklo
-        // Isse "Stuck Screen" wala issue solve hoga
-        await exports.leaveRoom(io, socket, false);
+        // 1. ABSOLUTE CLEANUP: Remove ALL previous traces of this user from DB
+        // This ensures no ghost rooms or multiple session conflicts exist.
+        await RandomRoom.deleteMany({
+            $or: [{ hostId: userId }, { guestId: userId }]
+        });
+
+        const lastPartnerId = data?.lastPartnerId ? normalize(data.lastPartnerId) : null;
 
         // 2. BLOCKLIST & LOOP PROTECTION
         const blocks = await Block.find({
@@ -28,14 +30,13 @@ exports.findPartner = async (io, socket, data) => {
             const b2 = normalize(b.blockedPhone);
             return b1 === userId ? b2 : b1;
         });
-
         if (lastPartnerId) excludedPhones.push(lastPartnerId);
 
-        // 3. FIND POTENTIAL MATCH
+        // 3. ATTEMPT MATCHING
         let waitingRooms = await RandomRoom.find({
             status: 'waiting',
             hostId: { $ne: userId, $nin: excludedPhones }
-        }).sort({ createdAt: 1 }).limit(15);
+        }).sort({ createdAt: 1 }).limit(10);
 
         if (waitingRooms.length > 0) {
             waitingRooms = waitingRooms.sort(() => Math.random() - 0.5);
@@ -47,7 +48,7 @@ exports.findPartner = async (io, socket, data) => {
                     continue;
                 }
 
-                // ATOMIC JOIN
+                const sessionId = crypto.randomBytes(4).toString('hex');
                 const joinedRoom = await RandomRoom.findOneAndUpdate(
                     { _id: room._id, status: 'waiting' },
                     {
@@ -61,23 +62,26 @@ exports.findPartner = async (io, socket, data) => {
                 );
 
                 if (joinedRoom) {
-                    console.log(`[RandomMatch] Success: ${joinedRoom.hostId} <-> ${userId}`);
-
                     hostSocket.join(joinedRoom.roomId);
                     socket.join(joinedRoom.roomId);
 
-                    const matchPayload = {
+                    const basePayload = {
                         roomId: joinedRoom.roomId,
-                        partnerId: userId,
-                        partnerSocketId: socket.id,
-                        role: 'receiver',
+                        sessionId: sessionId,
                         timestamp: Date.now()
                     };
 
-                    io.to(joinedRoom.socketIds.host).emit('random_match_found', matchPayload);
+                    // Receiver (Host)
+                    io.to(joinedRoom.socketIds.host).emit('random_match_found', {
+                        ...basePayload,
+                        partnerId: userId,
+                        partnerSocketId: socket.id,
+                        role: 'receiver'
+                    });
 
+                    // Caller (Guest)
                     socket.emit('random_match_found', {
-                        ...matchPayload,
+                        ...basePayload,
                         partnerId: joinedRoom.hostId,
                         partnerSocketId: joinedRoom.socketIds.host,
                         role: 'caller'
@@ -87,7 +91,7 @@ exports.findPartner = async (io, socket, data) => {
             }
         }
 
-        // 4. NO MATCH: Host a new room
+        // 4. BECOME HOST
         const roomId = `rnd_${crypto.randomBytes(4).toString('hex')}_${userId.slice(-4)}`;
         const newRoom = new RandomRoom({
             roomId: roomId,
@@ -101,31 +105,47 @@ exports.findPartner = async (io, socket, data) => {
 
     } catch (err) {
         console.error("[RandomMatch] Error:", err);
-        socket.emit('random_error', { message: "Internal error" });
+        // CRITICAL: Tell the app to unlock buttons in case of error
+        socket.emit('random_reset', { message: "Resetting UI due to error" });
     }
 };
 
-/**
- * FIXED SIGNALING: Prevents Triple-Emission (Signal Bombing)
- * This stops UI from getting stuck and buttons from freezing.
- */
 exports.handleSignaling = (io, socket, data, type) => {
     if (!data || typeof data !== 'object') return;
 
-    const { partnerSocketId, roomId, partnerId } = data;
-    const sid = crypto.randomBytes(6).toString('hex');
-    const payload = { ...data, sid, fromSocketId: socket.id, ts: Date.now() };
+    const { partnerSocketId, roomId, sessionId } = data;
 
-    // PRIORITY LOGIC: Send through ONLY ONE path to avoid client-side state freeze
+    // Safety check: Don't signal if we don't know where to go
+    if (!partnerSocketId && !roomId) return;
+
+    const payload = {
+        ...data,
+        fromSocketId: socket.id,
+        ts: Date.now()
+    };
+
+    // PRIORITY ROUTING: Avoids duplicate signals that freeze the UI
     if (partnerSocketId && io.sockets.sockets.has(partnerSocketId)) {
-        // Path 1: Direct Socket (Best)
         io.to(partnerSocketId).emit(`random_${type}`, payload);
     } else if (roomId) {
-        // Path 2: Room (Fallback)
         socket.to(roomId).emit(`random_${type}`, payload);
-    } else if (partnerId) {
-        // Path 3: Phone Channel (Last Resort)
-        io.to(`user_${normalize(partnerId)}`).emit(`random_${type}`, payload);
+    }
+};
+
+exports.handleCancelSearch = async (io, socket) => {
+    try {
+        const userId = socket.userPhone;
+        if (!userId) return;
+
+        console.log(`[RandomMatch] Search cancelled by ${userId}`);
+
+        // Perform full cleanup and notify if someone was just connecting
+        await exports.leaveRoom(io, socket, true);
+
+        // Tell the client that cancellation is successful
+        socket.emit('random_search_cancelled');
+    } catch (err) {
+        console.error("[RandomMatch] handleCancelSearch Error:", err);
     }
 };
 
@@ -134,32 +154,42 @@ exports.leaveRoom = async (io, socket, notifyPartner = true) => {
         const userId = socket.userPhone;
         if (!userId) return;
 
-        const room = await RandomRoom.findOneAndDelete({
+        // 1. Quick fetch for notification details
+        const rooms = await RandomRoom.find({
             $or: [{ hostId: userId }, { guestId: userId }]
-        });
+        }).lean();
 
-        if (!room) return;
+        // 2. Immediate Bulk Delete (Fastest)
+        RandomRoom.deleteMany({
+            $or: [{ hostId: userId }, { guestId: userId }]
+        }).exec();
 
-        if (notifyPartner) {
-            const partnerSocketId = room.hostId === userId ? room.socketIds.guest : room.socketIds.host;
-            const partnerId = room.hostId === userId ? room.guestId : room.hostId;
-
-            if (partnerSocketId) {
-                io.to(partnerSocketId).emit('random_partner_left', { autoSearch: true });
-            } else if (partnerId) {
-                io.to(`user_${normalize(partnerId)}`).emit('random_partner_left', { autoSearch: true });
+        for (const room of rooms) {
+            if (notifyPartner) {
+                const partnerSocketId = room.hostId === userId ? room.socketIds.guest : room.socketIds.host;
+                if (partnerSocketId) {
+                    io.to(partnerSocketId).emit('random_partner_left', { autoSearch: true });
+                }
             }
         }
 
-        socket.leave(room.roomId);
+        // Clear socket rooms
+        const joinedRooms = Array.from(socket.rooms);
+        joinedRooms.forEach(rid => {
+            if (rid.startsWith('rnd_')) socket.leave(rid);
+        });
+
     } catch (err) {
         console.error("[RandomMatch] leaveRoom Error:", err);
     }
 };
 
 exports.handleNextPartner = async (io, socket, data) => {
-    await exports.leaveRoom(io, socket, true);
+    // UNBLOCK UI IMMEDIATELY
     socket.emit('random_searching_again');
+
+    // Background cleanup
+    await exports.leaveRoom(io, socket, true);
 };
 
 exports.handleBlock = async (io, socket, data) => {
@@ -186,7 +216,7 @@ exports.handleBlock = async (io, socket, data) => {
 
 exports.performGlobalCleanup = async () => {
     try {
-        const expiry = new Date(Date.now() - 3 * 60 * 1000);
+        const expiry = new Date(Date.now() - 3 * 60 * 1000); // 3 mins
         await RandomRoom.deleteMany({
             $or: [
                 { createdAt: { $lt: expiry } },
