@@ -421,9 +421,18 @@ exports.getDiscover = async (req, res) => {
         const limitNum = Math.max(1, parseInt(limit));
         const skip = (pageNum - 1) * limitNum;
 
-        // Exclude caller using Variations to ensure they don't see themselves
+        // Exclude caller and incomplete profiles
         const phoneVariations = [normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`];
-        const baseQuery = { phone: { $nin: phoneVariations }, accountStatus: 'Active' };
+
+        // A profile is complete if hasCompletedOnboarding is true OR they have basic info filled (for old users)
+        const baseQuery = {
+            phone: { $nin: phoneVariations },
+            accountStatus: 'Active',
+            $or: [
+                { hasCompletedOnboarding: true },
+                { dobYear: { $exists: true, $ne: null } }
+            ]
+        };
 
         if (tab === 'Online') {
             const io = req.app.get('socketio');

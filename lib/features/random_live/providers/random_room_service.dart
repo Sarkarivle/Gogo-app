@@ -102,7 +102,32 @@ class RandomRoomService with WidgetsBindingObserver {
       case 'random_partner_blocked':
         _onPartnerBlocked();
         break;
+      case 'random_reset':
+        _onRandomReset(data);
+        break;
     }
+  }
+
+  void _onRandomReset(dynamic data) {
+    debugPrint("[RandomRoom] Reset received from server");
+    if (_isExiting) return;
+    _isExiting = true;
+    _cleanupFull();
+    
+    Future.delayed(const Duration(milliseconds: 100), () {
+      final context = MyApp.navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Connection reset. Please try again.")),
+        );
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+          (route) => route.isFirst,
+        ).then((_) => _isExiting = false);
+      } else {
+        _isExiting = false;
+      }
+    });
   }
 
   Future<void> _queueOrProcessSignaling(Map<String, dynamic> msg) async {

@@ -37,6 +37,7 @@ class RandomSocketService {
     socket.on('random_candidate', (data) => _eventController.add({'event': 'random_candidate', 'data': data}));
     socket.on('random_call_state_sync', (data) => _eventController.add({'event': 'random_call_state_sync', 'data': data}));
     socket.on('random_partner_blocked', (data) => _eventController.add({'event': 'random_partner_blocked', 'data': data}));
+    socket.on('random_reset', (data) => _eventController.add({'event': 'random_reset', 'data': data}));
   }
 
   void findPartner(String userId) {

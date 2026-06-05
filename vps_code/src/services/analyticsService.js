@@ -210,12 +210,16 @@ class AnalyticsService {
 
     async getDashboardStats() {
         // Deriving stats for initial load
-        const [total, premium, online, pendingReports, totalMsgs] = await Promise.all([
+        const [total, premium, online, pendingReports, totalMsgs, incomplete] = await Promise.all([
             User.estimatedDocumentCount(),
             User.countDocuments({ isPremium: true }),
             User.countDocuments({ isOnline: true }),
             Report.countDocuments({ status: 'Pending' }),
-            Message.estimatedDocumentCount() // Much faster for large collections
+            Message.estimatedDocumentCount(), // Much faster for large collections
+            User.countDocuments({
+                hasCompletedOnboarding: false,
+                dobYear: { $exists: false }
+            })
         ]);
 
         const maleCount = await User.countDocuments({ gender: 'Male' });
@@ -255,6 +259,7 @@ class AnalyticsService {
 
         return {
             totalUsers: total,
+            incompleteUsers: incomplete,
             premiumUsers: premium,
             onlineUsers: online,
             totalMessages: totalMsgs,

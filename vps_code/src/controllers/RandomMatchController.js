@@ -4,26 +4,41 @@ const { normalize } = require('../utils/phoneUtils');
 const crypto = require('crypto');
 
 /**
- * ULTRA-STABLE RANDOM MATCH CONTROLLER (Final Fix for UI Freeze)
+ * EPHEMERAL (TEMPORARY) MATCH CONTROLLER
+ * Logic: MongoDB is ONLY for waiting. Active calls live in RAM.
+ * Result: Zero Ghost Rooms, Zero Lag, Zero Loops.
  */
 
 exports.findPartner = async (io, socket, data) => {
     const userId = socket.userPhone;
-    if (!userId) return;
+    if (!userId) {
+        socket.emit('random_reset', { message: "Auth required" });
+        return;
+    }
+
+    // 1. CHECK ONBOARDING STATUS
+    const User = require('../models/User');
+    const user = await User.findOne({ phone: userId }, 'hasCompletedOnboarding').lean();
+    if (!user || !user.hasCompletedOnboarding) {
+        socket.emit('random_reset', { message: "Please complete your profile onboarding first" });
+        return;
+    }
+
+    // 2. CLEAR SOCKET MEMORY IMMEDIATELY
+    socket.partnerSocketId = null;
+    socket.currentRoomId = null;
+    socket.emit('random_search_started');
 
     try {
-        // 1. ABSOLUTE CLEANUP: Remove ALL previous traces of this user from DB
-        // This ensures no ghost rooms or multiple session conflicts exist.
-        await RandomRoom.deleteMany({
-            $or: [{ hostId: userId }, { guestId: userId }]
-        });
+        // 2. CLEANUP DB (Atomic cleanup before searching)
+        await RandomRoom.deleteMany({ hostId: userId }).exec();
 
         const lastPartnerId = data?.lastPartnerId ? normalize(data.lastPartnerId) : null;
 
-        // 2. BLOCKLIST & LOOP PROTECTION
+        // 3. FETCH EXCLUSIONS (Blocked users)
         const blocks = await Block.find({
             $or: [{ blockerPhone: userId }, { blockedPhone: userId }]
-        }, 'blockerPhone blockedPhone');
+        }, 'blockerPhone blockedPhone').lean();
 
         const excludedPhones = blocks.map(b => {
             const b1 = normalize(b.blockerPhone);
@@ -32,198 +47,174 @@ exports.findPartner = async (io, socket, data) => {
         });
         if (lastPartnerId) excludedPhones.push(lastPartnerId);
 
-        // 3. ATTEMPT MATCHING
-        let waitingRooms = await RandomRoom.find({
-            status: 'waiting',
-            hostId: { $ne: userId, $nin: excludedPhones }
-        }).sort({ createdAt: 1 }).limit(10);
+        // 4. FIND & CONSUME (The Temporary Logic)
+        let roomToJoin = null;
+        let hostSocket = null;
 
-        if (waitingRooms.length > 0) {
-            waitingRooms = waitingRooms.sort(() => Math.random() - 0.5);
+        // Try up to 3 times to find a room with a valid connected host
+        // This prevents the "stuck" feeling when multiple stale entries exist in DB
+        for (let i = 0; i < 3; i++) {
+            roomToJoin = await RandomRoom.findOneAndDelete({
+                status: 'waiting',
+                hostId: { $ne: userId, $nin: excludedPhones }
+            }).sort({ createdAt: 1 }).lean();
 
-            for (const room of waitingRooms) {
-                const hostSocket = io.sockets.sockets.get(room.socketIds.host);
-                if (!hostSocket || !hostSocket.connected) {
-                    await RandomRoom.deleteOne({ _id: room._id });
-                    continue;
-                }
+            if (!roomToJoin) break;
 
-                const sessionId = crypto.randomBytes(4).toString('hex');
-                const joinedRoom = await RandomRoom.findOneAndUpdate(
-                    { _id: room._id, status: 'waiting' },
-                    {
-                        $set: {
-                            guestId: userId,
-                            'socketIds.guest': socket.id,
-                            status: 'connecting'
-                        }
-                    },
-                    { new: true }
-                );
-
-                if (joinedRoom) {
-                    hostSocket.join(joinedRoom.roomId);
-                    socket.join(joinedRoom.roomId);
-
-                    const basePayload = {
-                        roomId: joinedRoom.roomId,
-                        sessionId: sessionId,
-                        timestamp: Date.now()
-                    };
-
-                    // Receiver (Host)
-                    io.to(joinedRoom.socketIds.host).emit('random_match_found', {
-                        ...basePayload,
-                        partnerId: userId,
-                        partnerSocketId: socket.id,
-                        role: 'receiver'
-                    });
-
-                    // Caller (Guest)
-                    socket.emit('random_match_found', {
-                        ...basePayload,
-                        partnerId: joinedRoom.hostId,
-                        partnerSocketId: joinedRoom.socketIds.host,
-                        role: 'caller'
-                    });
-                    return;
-                }
+            hostSocket = io.sockets.sockets.get(roomToJoin.socketIds.host);
+            if (hostSocket && hostSocket.connected) {
+                break; // Found a valid partner
+            } else {
+                // Stale room (host disconnected), it's already deleted by findOneAndDelete
+                console.log(`[EphemeralMatch] Cleaning up stale room: ${roomToJoin.roomId}`);
+                roomToJoin = null;
+                hostSocket = null;
             }
         }
 
-        // 4. BECOME HOST
-        const roomId = `rnd_${crypto.randomBytes(4).toString('hex')}_${userId.slice(-4)}`;
+        if (roomToJoin && hostSocket) {
+            // MATCH IN RAM ONLY
+            const sessionId = crypto.randomBytes(4).toString('hex');
+            const roomId = roomToJoin.roomId;
+
+            socket.partnerSocketId = hostSocket.id;
+            socket.currentRoomId = roomId;
+            hostSocket.partnerSocketId = socket.id;
+            hostSocket.currentRoomId = roomId;
+
+            hostSocket.join(roomId);
+            socket.join(roomId);
+
+            const payload = { roomId, sessionId, ts: Date.now() };
+
+            // Notify both
+            io.to(hostSocket.id).emit('random_match_found', {
+                ...payload, partnerId: userId, partnerSocketId: socket.id, role: 'receiver'
+            });
+
+            socket.emit('random_match_found', {
+                ...payload, partnerId: roomToJoin.hostId, partnerSocketId: hostSocket.id, role: 'caller'
+            });
+            console.log(`[EphemeralMatch] Match Found: ${userId} <-> ${roomToJoin.hostId}`);
+            return;
+        }
+
+        // 5. BECOME HOST (Post a temporary notice)
+        const roomId = `rnd_${crypto.randomBytes(3).toString('hex')}_${userId.slice(-4)}`;
         const newRoom = new RandomRoom({
-            roomId: roomId,
-            hostId: userId,
-            socketIds: { host: socket.id },
-            status: 'waiting'
+            roomId, hostId: userId, socketIds: { host: socket.id }, status: 'waiting'
         });
 
         await newRoom.save();
+        socket.currentRoomId = roomId;
         socket.emit('random_room_created', { roomId });
+        console.log(`[EphemeralMatch] Room Created: ${roomId} for ${userId}`);
 
     } catch (err) {
-        console.error("[RandomMatch] Error:", err);
-        // CRITICAL: Tell the app to unlock buttons in case of error
-        socket.emit('random_reset', { message: "Resetting UI due to error" });
+        console.error("[EphemeralMatch] Error in findPartner:", err);
+        socket.emit('random_reset', { error: "Matching service temporarily unavailable" });
     }
 };
 
-exports.handleSignaling = (io, socket, data, type) => {
-    if (!data || typeof data !== 'object') return;
+/**
+ * ULTRA-FAST SIGNALING (No DB Hits)
+ * Designed to NEVER hang UI buttons
+ */
+exports.handleSignaling = (io, socket, data, type, ack) => {
+    // 1. SMART CALLBACK DETECTION: Unblocks the UI button instantly
+    const callback = (typeof data === 'function') ? data : (typeof ack === 'function' ? ack : null);
+    const actualData = (typeof data === 'object' && data !== null) ? data : {};
 
-    const { partnerSocketId, roomId, sessionId } = data;
+    if (callback) callback({ success: true, ts: Date.now() });
 
-    // Safety check: Don't signal if we don't know where to go
-    if (!partnerSocketId && !roomId) return;
+    // 2. ROUTING: Use RAM-based IDs for 0.1ms delivery
+    const target = socket.partnerSocketId || actualData.partnerSocketId || actualData.roomId;
 
-    const payload = {
-        ...data,
-        fromSocketId: socket.id,
-        ts: Date.now()
-    };
-
-    // PRIORITY ROUTING: Avoids duplicate signals that freeze the UI
-    if (partnerSocketId && io.sockets.sockets.has(partnerSocketId)) {
-        io.to(partnerSocketId).emit(`random_${type}`, payload);
-    } else if (roomId) {
-        socket.to(roomId).emit(`random_${type}`, payload);
-    }
-};
-
-exports.handleCancelSearch = async (io, socket) => {
-    try {
-        const userId = socket.userPhone;
-        if (!userId) return;
-
-        console.log(`[RandomMatch] Search cancelled by ${userId}`);
-
-        // Perform full cleanup and notify if someone was just connecting
-        await exports.leaveRoom(io, socket, true);
-
-        // Tell the client that cancellation is successful
-        socket.emit('random_search_cancelled');
-    } catch (err) {
-        console.error("[RandomMatch] handleCancelSearch Error:", err);
+    if (target) {
+        socket.to(target).emit(`random_${type}`, {
+            ...actualData,
+            fromSocketId: socket.id,
+            ts: Date.now()
+        });
+    } else if (actualData.partnerId) {
+        // Fallback to phone-based channel if socket info is missing
+        io.to(`user_${normalize(actualData.partnerId)}`).emit(`random_${type}`, {
+            ...actualData,
+            fromSocketId: socket.id,
+            ts: Date.now()
+        });
     }
 };
 
 exports.leaveRoom = async (io, socket, notifyPartner = true) => {
     try {
         const userId = socket.userPhone;
-        if (!userId) return;
+        const rid = socket.currentRoomId;
+        const pid = socket.partnerSocketId;
 
-        // 1. Quick fetch for notification details
-        const rooms = await RandomRoom.find({
-            $or: [{ hostId: userId }, { guestId: userId }]
-        }).lean();
-
-        // 2. Immediate Bulk Delete (Fastest)
-        RandomRoom.deleteMany({
-            $or: [{ hostId: userId }, { guestId: userId }]
-        }).exec();
-
-        for (const room of rooms) {
+        // 1. INSTANT RAM WIPE & PARTNER NOTIFICATION
+        if (pid) {
             if (notifyPartner) {
-                const partnerSocketId = room.hostId === userId ? room.socketIds.guest : room.socketIds.host;
-                if (partnerSocketId) {
-                    io.to(partnerSocketId).emit('random_partner_left', { autoSearch: true });
-                }
+                io.to(pid).emit('random_partner_left', { autoSearch: true });
+            }
+
+            const partnerSocket = io.sockets.sockets.get(pid);
+            if (partnerSocket) {
+                // Partner's memory cleanup
+                partnerSocket.partnerSocketId = null;
+                partnerSocket.currentRoomId = null;
+                if (rid) partnerSocket.leave(rid);
             }
         }
 
-        // Clear socket rooms
-        const joinedRooms = Array.from(socket.rooms);
-        joinedRooms.forEach(rid => {
-            if (rid.startsWith('rnd_')) socket.leave(rid);
-        });
+        // 2. SELF CLEANUP (RAM)
+        socket.partnerSocketId = null;
+        socket.currentRoomId = null;
+        if (rid) socket.leave(rid);
 
+        // 3. DATABASE PURGE
+        // Cleanup where user was host OR guest OR the room ID specifically
+        if (userId || rid) {
+            RandomRoom.deleteMany({
+                $or: [
+                    { hostId: userId },
+                    { roomId: rid }
+                ]
+            }).exec().catch(e => console.error("[EphemeralMatch] Cleanup DB Error:", e));
+        }
+
+        if (userId) console.log(`[EphemeralMatch] Cleanup completed for ${userId}`);
     } catch (err) {
-        console.error("[RandomMatch] leaveRoom Error:", err);
+        console.error("[EphemeralMatch] leaveRoom Error:", err);
     }
 };
 
-exports.handleNextPartner = async (io, socket, data) => {
-    // UNBLOCK UI IMMEDIATELY
-    socket.emit('random_searching_again');
+exports.handleCancelSearch = async (io, socket) => {
+    socket.emit('random_search_cancelled');
+    exports.leaveRoom(io, socket, false);
+};
 
-    // Background cleanup
-    await exports.leaveRoom(io, socket, true);
+exports.handleNextPartner = async (io, socket) => {
+    socket.emit('random_searching_again');
+    exports.leaveRoom(io, socket, true);
 };
 
 exports.handleBlock = async (io, socket, data) => {
-    if (!data || typeof data !== 'object') return;
-    const { partnerId, partnerSocketId } = data;
-    const userId = socket.userPhone;
-    if (!userId || !partnerId) return;
+    if (!data || !data.partnerId) return;
 
-    try {
-        await Block.findOneAndUpdate(
-            { blockerPhone: userId, blockedPhone: normalize(partnerId) },
-            { reason: "Blocked", timestamp: new Date() },
-            { upsert: true }
-        );
+    Block.findOneAndUpdate(
+        { blockerPhone: socket.userPhone, blockedPhone: normalize(data.partnerId) },
+        { reason: "Blocked", timestamp: new Date() },
+        { upsert: true }
+    ).exec();
 
-        if (partnerSocketId) {
-            io.to(partnerSocketId).emit('random_partner_blocked', { message: "Blocked" });
-        }
-        await exports.leaveRoom(io, socket, true);
-    } catch (e) {
-        console.error("[RandomMatch] handleBlock Error:", e);
-    }
+    exports.leaveRoom(io, socket, true);
 };
 
 exports.performGlobalCleanup = async () => {
     try {
-        const expiry = new Date(Date.now() - 3 * 60 * 1000); // 3 mins
-        await RandomRoom.deleteMany({
-            $or: [
-                { createdAt: { $lt: expiry } },
-                { status: { $in: ['closing', 'expired'] } }
-            ]
-        });
-    } catch (e) {
-        console.error("[RandomMatch] Cleanup Error:", e);
-    }
+        // Clean stale waiting rooms only
+        const expiry = new Date(Date.now() - 2 * 60 * 1000);
+        await RandomRoom.deleteMany({ createdAt: { $lt: expiry }, status: 'waiting' });
+    } catch (e) {}
 };

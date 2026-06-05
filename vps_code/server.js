@@ -499,9 +499,11 @@ io.on('connection', (socket) => {
     socket.on('find_partner', (data) => randomMatchController.findPartner(io, socket, data));
     socket.on('leave_random_room', () => randomMatchController.leaveRoom(io, socket));
     socket.on('next_partner', (data) => randomMatchController.handleNextPartner(io, socket, data));
-    socket.on('random_offer', (data) => randomMatchController.handleSignaling(io, socket, data, 'offer'));
-    socket.on('random_answer', (data) => randomMatchController.handleSignaling(io, socket, data, 'answer'));
-    socket.on('random_candidate', (data) => randomMatchController.handleSignaling(io, socket, data, 'candidate'));
+    socket.on('random_offer', (data, cb) => randomMatchController.handleSignaling(io, socket, data, 'offer', cb));
+    socket.on('random_answer', (data, cb) => randomMatchController.handleSignaling(io, socket, data, 'answer', cb));
+    socket.on('random_candidate', (data, cb) => randomMatchController.handleSignaling(io, socket, data, 'candidate', cb));
+    socket.on('random_message', (data, cb) => randomMatchController.handleSignaling(io, socket, data, 'message', cb));
+    socket.on('random_hi', (data, cb) => randomMatchController.handleSignaling(io, socket, data, 'hi', cb));
     socket.on('random_block', (data) => randomMatchController.handleBlock(io, socket, data));
 
     socket.on('disconnect', () => {

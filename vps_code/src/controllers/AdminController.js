@@ -95,10 +95,20 @@ exports.getAdmins = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const { search, status, accountStatus, dateRange, sortBy, sortOrder } = req.query;
+        const { search, status, accountStatus, dateRange, sortBy, sortOrder, onboardingStatus } = req.query;
         console.log(`👥 [${new Date().toISOString()}] Admin API: getAllUsers requested. Filters:`, req.query);
 
         let q = {};
+
+        if (onboardingStatus === 'incomplete') {
+            q.hasCompletedOnboarding = false;
+            q.dobYear = { $exists: false };
+        } else if (onboardingStatus === 'complete') {
+            q.$or = [
+                { hasCompletedOnboarding: true },
+                { dobYear: { $exists: true, $ne: null } }
+            ];
+        }
 
         if (search) {
             q.$or = [
