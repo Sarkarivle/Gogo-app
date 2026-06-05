@@ -118,7 +118,32 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(),
-              Image.asset('assets/app_logo.png', width: 100, height: 100, errorBuilder: (c, e, s) => const Icon(Icons.bolt, color: Colors.orangeAccent, size: 80)),
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.orangeAccent.withValues(alpha: 0.3),
+                      blurRadius: 30,
+                      spreadRadius: 5,
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/app_logo.png',
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                    errorBuilder: (c, e, s) => Container(
+                      color: const Color(0xFF1A1A1A),
+                      child: const Icon(Icons.bolt, color: Colors.orangeAccent, size: 80),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               const Text("GoGo", style: TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: 2)),
               const Spacer(),
