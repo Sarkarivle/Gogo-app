@@ -55,7 +55,7 @@ class ModerationRepository {
     required String reportedPhone,
     required String category,
     String? description,
-    String reportType = 'General',
+    String reportType = 'Profile Report',
   }) async {
     try {
       final response = await ApiService.post('/api/user/report', {

@@ -2,14 +2,21 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:gogo/features/chat/models/chat_message.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
-
 import 'package:gogo/features/premium/providers/premium_service.dart';
+
+/// Helper for background parsing to keep UI thread 100% smooth
+List<ChatMessage> parseMessages(Map<String, dynamic> data) {
+  final List<dynamic> history = data['messages'] ?? [];
+  final String myPhone = data['myPhone'];
+  return history.map((m) => ChatMessage.fromJson(m, myPhone)).toList();
+}
 
 class ChatRepository {
   static final ChatRepository _instance = ChatRepository._internal();
@@ -41,7 +48,8 @@ class ChatRepository {
       return {
         'messages': _chatCache[cacheKey]!,
         'isBlocked': false, // Placeholder, will be updated by refresh
-        'isPartnerDeactivated': false
+        'isPartnerDeactivated': false,
+        'hasReviewed': false
       };
     }
 
@@ -52,8 +60,11 @@ class ChatRepository {
       final decoded = jsonDecode(response.body);
       
       if (page == 1 && decoded is Map) {
-        final List<dynamic> history = decoded['messages'] ?? [];
-        final List<ChatMessage> messages = history.map((m) => ChatMessage.fromJson(m, mPhone)).toList();
+        // Use background isolate for parsing large history batches
+        final List<ChatMessage> messages = await compute(parseMessages, {
+          'messages': decoded['messages'],
+          'myPhone': mPhone
+        });
         
         // Ensure Newest First (Sort by timestamp just in case server/reverse logic varies)
         messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -63,10 +74,14 @@ class ChatRepository {
           'messages': messages,
           'isBlocked': decoded['isBlocked'] ?? false,
           'blockerPhone': decoded['blockerPhone'],
-          'isPartnerDeactivated': decoded['isPartnerDeactivated'] ?? false
+          'isPartnerDeactivated': decoded['isPartnerDeactivated'] ?? false,
+          'hasReviewed': decoded['hasReviewed'] ?? false,
         };
       } else if (decoded is List) {
-        final List<ChatMessage> messages = decoded.map((m) => ChatMessage.fromJson(m, mPhone)).toList();
+        final List<ChatMessage> messages = await compute(parseMessages, {
+          'messages': decoded,
+          'myPhone': mPhone
+        });
         // Newest first for this batch
         messages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
         return {'messages': messages};
@@ -126,13 +141,31 @@ class ChatRepository {
       request.fields['phone'] = nPhone;
       request.fields['type'] = type;
       
+      // Smart MIME Type detection and extension enforcement
+      String mimeType = 'image/jpeg';
+      String extension = '.jpg';
+      if (type == 'video') {
+        mimeType = 'video/mp4';
+        extension = '.mp4';
+      } else if (type == 'audio') {
+        mimeType = 'audio/m4a';
+        extension = '.m4a';
+      }
+
+      // Generate a clean filename with the correct extension for server-side multer filter
+      String fileName = 'upload_${DateTime.now().millisecondsSinceEpoch}$extension';
+
       request.files.add(await http.MultipartFile.fromPath(
         'image', 
         file.path,
-        filename: file.path.split('/').last
+        filename: fileName,
+        contentType: MediaType.parse(mimeType),
       ));
       
-      var streamedResponse = await request.send().timeout(const Duration(seconds: 40));
+      // Increased timeout for videos (2 minutes)
+      var streamedResponse = await request.send().timeout(
+        Duration(seconds: type == 'video' ? 120 : 45)
+      );
       var response = await http.Response.fromStream(streamedResponse);
       
       debugPrint("📡 [CHAT_UPLOAD] Response Status: ${response.statusCode}");
@@ -192,6 +225,15 @@ class ChatRepository {
   void markOpened(String messageId, String myPhone, String otherPhone) {
     SocketService().emit('mark_opened', {
       'messageId': messageId,
+      'myPhone': myPhone,
+      'otherPhone': otherPhone
+    });
+  }
+
+  void markDelivered(String messageId, String myPhone, String otherPhone, {String? localId}) {
+    SocketService().emit('mark_delivered', {
+      'messageId': messageId,
+      'localId': localId,
       'myPhone': myPhone,
       'otherPhone': otherPhone
     });
@@ -331,6 +373,10 @@ class ChatRepository {
     _chatCache.remove(phones.join('_'));
   }
 
+  static void clearAllCache() {
+    _chatCache.clear();
+  }
+
   /// Update the memory cache with a new message
   void updateCacheWithNewMessage(String myPhone, String otherPhone, ChatMessage message) {
     final String cacheKey = _getCacheKey(myPhone, otherPhone);
@@ -340,6 +386,24 @@ class ChatRepository {
       // Avoid duplicates
       if (!cached.any((m) => m.id == message.id || (m.localId != null && m.localId == message.localId))) {
         cached.insert(0, message);
+      }
+    }
+  }
+
+  /// Update a message in the cache when it's opened (Seen)
+  void updateMessageOpenedInCache(String myPhone, String otherPhone, String messageId) {
+    final String cacheKey = _getCacheKey(myPhone, otherPhone);
+    
+    if (_chatCache.containsKey(cacheKey)) {
+      final List<ChatMessage> cached = _chatCache[cacheKey]!;
+      final int index = cached.indexWhere((m) => m.id == messageId);
+      if (index != -1) {
+        cached[index].status = MessageStatus.seen;
+        if (cached[index].isViewOnce) {
+           cached[index].isOpened = true;
+           cached[index].imageUrl = null;
+           cached[index].audioUrl = null;
+        }
       }
     }
   }

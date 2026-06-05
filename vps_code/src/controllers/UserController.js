@@ -149,6 +149,12 @@ exports.getProfile = async (req, res) => {
 
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+        // REALTIME STATUS CHECK: Ensure status is accurate from socket state
+        const io = req.app.get('socketio');
+        if (io) {
+            user.isOnline = io.sockets.adapter.rooms.has(`user_${normalize(phone)}`);
+        }
+
         const isStandardMode = reviewConfig?.value?.isReviewMode === true;
         await syncUserStatus(user, isStandardMode);
 
@@ -419,7 +425,20 @@ exports.getDiscover = async (req, res) => {
         const phoneVariations = [normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`];
         const baseQuery = { phone: { $nin: phoneVariations }, accountStatus: 'Active' };
 
-        if (isOnlineOnly === 'true' || tab === 'Online') baseQuery.isOnline = true;
+        if (tab === 'Online') {
+            const io = req.app.get('socketio');
+            if (io) {
+                const onlinePhones = Array.from(io.sockets.adapter.rooms.keys())
+                    .filter(room => room.startsWith('user_'))
+                    .map(room => room.replace('user_', ''));
+                baseQuery.phone = { $in: onlinePhones, $nin: phoneVariations };
+            } else {
+                baseQuery.isOnline = true;
+            }
+        } else if (isOnlineOnly === 'true') {
+            baseQuery.isOnline = true;
+        }
+
         if (havePlace && havePlace !== 'Any') baseQuery.havePlace = havePlace;
         if (position && position !== 'Any') {
             const searchTerms = position.split(',').map(p => p.trim()).filter(p => p);
@@ -442,20 +461,31 @@ exports.getDiscover = async (req, res) => {
             users = await User.find({ ...baseQuery, location: { $near: { $geometry: { type: "Point", coordinates: [userLng, userLat] }, $maxDistance: maxDist } } }).skip(skip).limit(limitNum).lean();
         } else {
             let sort = { lastSeen: -1 };
-            if (tab === 'New') sort = { createdAt: -1 };
-            else if (tab === 'Popular') sort = { isPremium: -1, lastSeen: -1 };
+            if (tab === 'New') {
+                sort = { createdAt: -1 };
+            } else if (tab === 'Popular') {
+                sort = { chatCount: -1, lastSeen: -1 };
+            }
             users = await User.find(baseQuery).sort(sort).skip(skip).limit(limitNum).lean();
         }
 
         console.log(`✅ Discovery Found: ${users.length} users`);
+        const io = req.app.get('socketio');
         const processedUsers = users.map(u => {
             const uLat = u.lat || u.location?.coordinates?.[1];
             const uLng = u.lng || u.location?.coordinates?.[0];
             const distStr = (userLat && userLng && uLat && uLng) ? calculateDistance(userLat, userLng, uLat, uLng) : "";
             const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
             const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
+
+            // REALTIME STATUS CHECK: Accurate online status from socket state
+            let isOnline = u.isOnline;
+            if (io) {
+                isOnline = io.sockets.adapter.rooms.has(`user_${normalize(u.phone)}`);
+            }
+
             const { lat, lng, location, ...rest } = u;
-            return { ...rest, city: cleanArea || cleanCity || 'Nearby', area: '', distance: distStr };
+            return { ...rest, isOnline, city: cleanArea || cleanCity || 'Nearby', area: '', distance: distStr };
         });
         res.json({ success: true, page: pageNum, users: processedUsers });
     } catch (e) {

@@ -125,13 +125,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       }
       _currentPage = 1;
       _hasMore = true;
-      // We set this to true if we have no data to show, to trigger the spinner
       _isLoadingProfiles = _profiles.isEmpty;
     });
     
     // Ensure we don't hit the "is already loading" block by using a slight delay or resetting flag
     _isRequestInProgress = false;
-    _fetchProfiles();
+    _fetchProfiles(isReset: true);
   }
 
   Future<void> _initHomeScreen() async {
@@ -152,35 +151,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     // Background unread sync every 30s (backup for socket)
     _unreadTimer = Timer.periodic(const Duration(seconds: 30), (t) => _fetchUnreadCount());
 
-    _loadInitialData();
-
-    // Location & Profiles
+    // Location & Profiles - this will also trigger the initial profile fetch
     _updateLocationAndProfiles();
   }
 
-  void _loadInitialData() {
-    final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
-    final cached = ProfileRepository.getCachedProfiles(tabName);
-    if (cached != null && cached.isNotEmpty) {
-      setState(() {
-        _profiles = List.from(cached);
-        _isLoadingProfiles = false;
-      });
-    } else {
-      _fetchProfiles();
-    }
-  }
+  // _loadInitialData is now integrated into _updateLocationAndProfiles to prevent double fetch
 
   Future<void> _updateLocationAndProfiles() async {
     if (currentUser != null && mounted) {
       try {
         await LocationRepository().updateLocation(currentUser!['phone']);
-        // After location update, refresh current user and profiles
+        // After location update, refresh current user
         final updatedUser = await _userRepository.getCurrentUser();
         if (mounted && updatedUser != null) {
-          setState(() {
-            currentUser = updatedUser;
-          });
+          currentUser = updatedUser; // Reference update, _onUserUpdated listener will handle setState if needed
         }
       } catch (e) {
         debugPrint("Location update error: $e");
@@ -189,7 +173,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     
     _lastKnownPosition ??= await LocationService().getCurrentPosition();
     
-    if (mounted) _fetchProfiles();
+    // Initial data load from cache or fetch
+    if (mounted) {
+      final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
+      final cached = ProfileRepository.getCachedProfiles(tabName);
+      if (cached != null && cached.isNotEmpty) {
+        setState(() {
+          _profiles = List.from(cached);
+          _isLoadingProfiles = false;
+        });
+      } else {
+        _fetchProfiles();
+      }
+    }
   }
 
   void _listenToSocketEvents() {
@@ -231,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     });
   }
 
-  Future<void> _fetchProfiles({bool loadMore = false}) async {
+  Future<void> _fetchProfiles({bool loadMore = false, bool isReset = false}) async {
     final int requestTimestamp = DateTime.now().millisecondsSinceEpoch;
     
     if (loadMore) {
@@ -239,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       setState(() => _isLoadingMore = true);
     } else {
       _lastRequestTimestamp = requestTimestamp;
-      if (_profiles.isEmpty) {
+      if (_profiles.isEmpty && !isReset) {
         setState(() => _isLoadingProfiles = true);
       }
     }
@@ -315,6 +311,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           // We use that directly instead of calculating it locally to ensure consistency.
           for (var p in processedProfiles) {
             p['calculated_dist'] = (p['distance'] ?? '').replaceAll(' away', '');
+            
+            // SYNC PRESENCE: Ensure the PresenceManager is aware of the latest status from API
+            if (p['phone'] != null) {
+              PresenceManager().updateStatus(p['phone'], p['isOnline'] ?? false);
+            }
           }
 
           if (loadMore) {

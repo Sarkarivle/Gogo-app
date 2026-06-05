@@ -9,11 +9,19 @@ class PresenceManager {
   // Map of phone -> ValueNotifier<bool>
   // Isse har user ke paas apna khud ka listener hoga
   final Map<String, ValueNotifier<bool>> _notifiers = {};
+  final Map<String, String> _normalizedCache = {};
+
+  String _getNormalized(String phone) {
+    if (_normalizedCache.containsKey(phone)) return _normalizedCache[phone]!;
+    final normalized = PhoneUtils.normalize(phone) ?? phone;
+    _normalizedCache[phone] = normalized;
+    return normalized;
+  }
 
   /// Gets a ValueNotifier for a specific user's online status
   ValueNotifier<bool> getStatusNotifier(String? phone, bool initialValue) {
     if (phone == null) return ValueNotifier<bool>(false);
-    final normalized = PhoneUtils.normalize(phone) ?? phone;
+    final normalized = _getNormalized(phone);
     
     if (!_notifiers.containsKey(normalized)) {
       _notifiers[normalized] = ValueNotifier<bool>(initialValue);
@@ -24,7 +32,7 @@ class PresenceManager {
   /// Updates status for a specific user
   void updateStatus(String? phone, bool isOnline) {
     if (phone == null) return;
-    final normalized = PhoneUtils.normalize(phone) ?? phone;
+    final normalized = _getNormalized(phone);
     
     if (_notifiers.containsKey(normalized)) {
       if (_notifiers[normalized]!.value != isOnline) {
@@ -33,6 +41,13 @@ class PresenceManager {
     } else {
       _notifiers[normalized] = ValueNotifier<bool>(isOnline);
     }
+  }
+
+  /// Checks if a user is online without creating a notifier
+  bool isOnline(String? phone) {
+    if (phone == null) return false;
+    final normalized = _getNormalized(phone);
+    return _notifiers[normalized]?.value ?? false;
   }
 
   /// Bulk update from initial server data

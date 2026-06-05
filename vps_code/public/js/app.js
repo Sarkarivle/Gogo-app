@@ -66,6 +66,7 @@ async function changeModule(mod) {
             case 'media': await loadMedia(); break;
             case 'notifications': await loadNotifications(); break;
             case 'policies': await loadPolicies(); break;
+            case 'security': await loadSecurity(); break;
             case 'messages': await loadSupportMessages(); break;
             case 'app_update': await loadAppUpdate(); break;
             case 'news': await loadNews(); break;

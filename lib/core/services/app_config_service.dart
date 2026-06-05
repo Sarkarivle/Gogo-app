@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:gogo/core/api/api_service.dart';
 
@@ -48,6 +49,19 @@ class AppConfigService {
   final ValueNotifier<bool> isOneMessageTrialEnabledNotifier = ValueNotifier<bool>(false);
   bool get isOneMessageTrialEnabled => isOneMessageTrialEnabledNotifier.value;
 
+  final ValueNotifier<bool> isScreenshotDisabledNotifier = ValueNotifier<bool>(true);
+  bool get isScreenshotDisabled => isScreenshotDisabledNotifier.value;
+
+  static const _channel = MethodChannel('com.gogo.app/phone_hint');
+
+  Future<void> _updateNativeSecureMode(bool enabled) async {
+    try {
+      await _channel.invokeMethod('toggleSecureMode', {'enabled': enabled});
+    } catch (e) {
+      debugPrint('Error updating native secure mode: $e');
+    }
+  }
+
   // New Freemium Configs with Notifiers for Real-time UI updates
   final ValueNotifier<bool> isFreemiumActiveNotifier = ValueNotifier<bool>(false);
   bool get isFreemiumActive => isFreemiumActiveNotifier.value;
@@ -88,6 +102,12 @@ class AppConfigService {
         final bool newOneMessageTrial = data['isOneMessageTrialEnabled'] ?? false;
         if (isOneMessageTrialEnabledNotifier.value != newOneMessageTrial) {
           isOneMessageTrialEnabledNotifier.value = newOneMessageTrial;
+        }
+
+        final bool newScreenshotDisabled = data['isScreenshotDisabled'] ?? true;
+        if (isScreenshotDisabledNotifier.value != newScreenshotDisabled) {
+          isScreenshotDisabledNotifier.value = newScreenshotDisabled;
+          _updateNativeSecureMode(newScreenshotDisabled);
         }
 
         final bool newFreemiumMode = data['isFreemiumActive'] ?? data['isStandardMode'] ?? false;

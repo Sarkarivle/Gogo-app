@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/services/analytics_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/home/screens/home_screen.dart';
 
@@ -128,6 +129,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       final data = jsonDecode(response.body);
       if (data['success'] == true) {
         await UserRepository().updateLocalUser(data['user']);
+        await AnalyticsService.logSignUp('phone');
         if (mounted) {
           Navigator.pushAndRemoveUntil(
             context,

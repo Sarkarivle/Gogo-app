@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gogo/core/guards/access_guard.dart';
-import 'package:gogo/core/network/socket_service.dart';
+import 'package:gogo/core/services/presence_manager.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/features/chat/screens/chat_screen.dart';
@@ -403,10 +403,9 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                                 ],
                               ),
                             ),
-                            ValueListenableBuilder<Map<String, bool>>(
-                              valueListenable: SocketService().onlineUsers,
-                              builder: (context, onlineMap, _) {
-                                final bool isOnline = onlineMap[widget.phone] ?? widget.isOnline;
+                            ValueListenableBuilder<bool>(
+                              valueListenable: PresenceManager().getStatusNotifier(widget.phone, widget.isOnline),
+                              builder: (context, isOnline, _) {
                                 return Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                   decoration: BoxDecoration(
@@ -458,7 +457,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                         const Text('ABOUT ME', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white24, letterSpacing: 1.2)),
                         const SizedBox(height: 12),
                         Text(
-                          'Hey! मैं $_name हूँ। मैं ${_city != "Unknown" ? _city : 'यहीं'} से हूँ और किसी ऐसे इंसान की तलाश में हूँ जिससे मैं कनेक्ट हो sakूँ।',
+                          'Hi मैं $_name हूँ। मैं ${_city != "Unknown" ? _city : 'यहीं'} से हूँ और किसी ऐसे इंसान की तलाश में हूँ जिससे मैं mil saku.',
                           style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.6), height: 1.5)
                         ),
 

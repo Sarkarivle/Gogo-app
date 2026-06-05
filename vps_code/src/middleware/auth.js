@@ -49,6 +49,12 @@ exports.isUser = (req, res, next) => {
         const sensitiveMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
         let requestedPhone = req.params.phone || req.body.phone || req.query.phone;
 
+        // MULTIPART FIX: If it's a multipart upload, multer hasn't parsed req.body yet.
+        // We should ensure we check headers or query as a fallback.
+        if (!requestedPhone && req.headers['content-type']?.includes('multipart/form-data')) {
+            requestedPhone = req.query.phone;
+        }
+
         if (requestedPhone && sensitiveMethods.includes(req.method)) {
             const tP = normalize(requestedPhone);
             if (userPhone !== tP) {

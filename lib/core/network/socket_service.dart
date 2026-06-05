@@ -10,6 +10,7 @@ import 'package:gogo/core/services/notification_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 
 import 'package:gogo/core/services/presence_manager.dart';
+import 'package:gogo/core/services/typing_manager.dart';
 
 class SocketService with WidgetsBindingObserver {
   static final SocketService _instance = SocketService._internal();
@@ -21,9 +22,8 @@ class SocketService with WidgetsBindingObserver {
   String? _activeRoomId;
   String? get activeRoomId => _activeRoomId;
   
-  final ValueNotifier<Map<String, bool>> onlineUsers = ValueNotifier({});
-  final ValueNotifier<Map<String, bool>> typingUsers = ValueNotifier({});
-  final ValueNotifier<bool> connectionStatus = ValueNotifier(false);
+  final typingUsers = ValueNotifier<Map<String, bool>>({}); // Legacy support for now
+  final connectionStatus = ValueNotifier<bool>(false);
 
   final _messageController = StreamController<dynamic>.broadcast();
   Stream<dynamic> get messageStream => _messageController.stream;
@@ -88,11 +88,6 @@ class SocketService with WidgetsBindingObserver {
       
       // Update PresenceManager for granular UI updates
       PresenceManager().updateStatus(phone, isOnline);
-
-      // Legacy support for any old listeners
-      final updated = Map<String, bool>.from(onlineUsers.value);
-      updated[phone] = isOnline;
-      onlineUsers.value = updated;
     });
 
     _socket!.on('display_typing', (data) => _setTypingStatus(data['phone'], true));
@@ -143,9 +138,10 @@ class SocketService with WidgetsBindingObserver {
     _socket!.on('random_match_found', (data) => _eventController.add({'event': 'random_match_found', 'data': data}));
 
     // --- REALTIME ADMIN ACTIONS ---
-    _socket!.on('profile_sync_required', (data) {
+    _socket!.on('profile_sync_required', (data) async {
       debugPrint('🔄 Admin forced profile sync: $data');
       _eventController.add({'event': 'profile_sync_required', 'data': data});
+      await PremiumService().refreshAccessState();
     });
 
     _socket!.on('force_action', (data) {
@@ -170,11 +166,6 @@ class SocketService with WidgetsBindingObserver {
       await PremiumService().refreshAccessState();
     });
     
-    _socket!.on('profile_sync_required', (data) async {
-      debugPrint('🔄 Admin forced profile sync');
-      await PremiumService().refreshAccessState();
-    });
-
     if (_currentUserPhone != null) {
       _socket!.on('premium_update_$_currentUserPhone', (data) {
         PremiumService().updatePremiumStatus(true);
@@ -233,23 +224,16 @@ class SocketService with WidgetsBindingObserver {
     if (_currentUserPhone != normalized && normalized != null) {
       _currentUserPhone = normalized;
       _connectSocket(); // Reconnect to refresh token and identity
-      
-      // Re-bind premium update listener for new phone
-      if (_socket != null) {
-        _socket!.off('premium_update'); // Clear old ones if any generic ones existed
-        _socket!.on('premium_update_$normalized', (data) {
-          PremiumService().updatePremiumStatus(true);
-          _eventController.add({'event': 'premium_update', 'data': data});
-        });
-      }
     }
   }
 
   void _setTypingStatus(String? phone, bool isTyping) {
     if (phone == null) return;
+    TypingManager().setTyping(phone, isTyping);
+    
+    // Support legacy listeners for a short transition period
     final String? normalizedPhone = PhoneUtils.normalize(phone);
     if (normalizedPhone == null) return;
-
     final updated = Map<String, bool>.from(typingUsers.value);
     updated[normalizedPhone] = isTyping;
     typingUsers.value = updated;

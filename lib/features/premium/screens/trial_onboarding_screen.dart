@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:confetti/confetti.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/services/analytics_service.dart';
 import 'package:gogo/features/premium/providers/payment_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
@@ -237,6 +238,13 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
       if (phone == null) throw "Phone not found";
 
       UserRepository().trackEvent('payment_started', customId: phone);
+      await AnalyticsService.logEvent(
+        'trial_started',
+        parameters: {
+          'amount': 1,
+          'currency': 'INR',
+        },
+      );
 
       // Use preferred gateway (e.g. if UPI disabled, trigger Play Store)
       final orderData = await PaymentService.createOrder(phone, gateway: preferredGateway);
@@ -284,6 +292,12 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
       if (verifyRes['success'] == true) {
         await UserRepository().updateLocalUser(verifyRes['user']);
         await PremiumService().updatePremiumStatus(true);
+        await AnalyticsService.logEvent(
+          'premium_activated',
+          parameters: {
+            'plan': 'monthly',
+          },
+        );
         _confettiController.play();
         _showSuccessDialog();
       } else {

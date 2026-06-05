@@ -54,6 +54,17 @@ const MarketingModule = {
                             <input type="text" id="fbPixelId" value="${config.fbPixelId || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="e.g. 1234567890">
                         </div>
 
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Meta App ID</label>
+                                <input type="text" id="fbAppId" value="${config.fbAppId || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="App ID">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Meta Client Token</label>
+                                <input type="text" id="fbClientToken" value="${config.fbClientToken || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="Token">
+                            </div>
+                        </div>
+
                         <div>
                             <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Google Ads Conversion ID</label>
                             <input type="text" id="googleAdsId" value="${config.googleAdsId || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="e.g. AW-123456789">
@@ -115,6 +126,32 @@ const MarketingModule = {
                                     <p class="text-xs text-slate-500">Send User IP to third party networks (GDPR Caution)</p>
                                 </div>
                                 <input type="checkbox" id="logUserIp" ${config.logUserIp ? 'checked' : ''} class="w-6 h-6 accent-orange-500">
+                            </div>
+                        </div>
+
+                        <div class="mt-8 pt-8 border-t border-white/5">
+                            <h4 class="text-xs font-black text-slate-500 uppercase tracking-widest mb-6">Granular SDK & Event Controls</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div class="p-4 bg-white/5 rounded-2xl flex items-center justify-between">
+                                    <span class="text-sm font-bold text-white">Firebase SDK</span>
+                                    <input type="checkbox" id="isFirebaseEnabled" ${config.isFirebaseEnabled !== false ? 'checked' : ''} class="w-5 h-5 accent-orange-500">
+                                </div>
+                                <div class="p-4 bg-white/5 rounded-2xl flex items-center justify-between">
+                                    <span class="text-sm font-bold text-white">Meta SDK</span>
+                                    <input type="checkbox" id="isMetaEnabled" ${config.isMetaEnabled ? 'checked' : ''} class="w-5 h-5 accent-orange-500">
+                                </div>
+                                <div class="p-4 bg-white/5 rounded-2xl flex items-center justify-between">
+                                    <span class="text-sm font-bold text-white">Track Sign-Up</span>
+                                    <input type="checkbox" id="trackSignUp" ${config.trackSignUp !== false ? 'checked' : ''} class="w-5 h-5 accent-orange-500">
+                                </div>
+                                <div class="p-4 bg-white/5 rounded-2xl flex items-center justify-between">
+                                    <span class="text-sm font-bold text-white">Track Purchase</span>
+                                    <input type="checkbox" id="trackPurchase" ${config.trackPurchase !== false ? 'checked' : ''} class="w-5 h-5 accent-orange-500">
+                                </div>
+                                <div class="p-4 bg-white/5 rounded-2xl flex items-center justify-between">
+                                    <span class="text-sm font-bold text-white">Track Trial</span>
+                                    <input type="checkbox" id="trackTrial" ${config.trackTrial !== false ? 'checked' : ''} class="w-5 h-5 accent-orange-500">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -269,6 +306,8 @@ const MarketingModule = {
         try {
             const data = {
                 fbPixelId: document.getElementById('fbPixelId').value,
+                fbAppId: document.getElementById('fbAppId').value,
+                fbClientToken: document.getElementById('fbClientToken').value,
                 googleAdsId: document.getElementById('googleAdsId').value,
                 tiktokPixelId: document.getElementById('tiktokPixelId').value,
                 installPostbackUrl: document.getElementById('installPostbackUrl').value,
@@ -277,6 +316,11 @@ const MarketingModule = {
                 onboardingVideoUrl: document.getElementById('onboardingVideoUrl').value,
                 youtubeEmbedCode: document.getElementById('youtubeEmbedCode').value,
                 isTrackingEnabled: document.getElementById('isTrackingEnabled').checked,
+                isFirebaseEnabled: document.getElementById('isFirebaseEnabled').checked,
+                isMetaEnabled: document.getElementById('isMetaEnabled').checked,
+                trackSignUp: document.getElementById('trackSignUp').checked,
+                trackPurchase: document.getElementById('trackPurchase').checked,
+                trackTrial: document.getElementById('trackTrial').checked,
                 logUserIp: document.getElementById('logUserIp').checked,
                 loginImageUrl: document.getElementById('loginImageUrl').value
             };

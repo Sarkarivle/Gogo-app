@@ -275,7 +275,7 @@ class _AnimatedTypingIndicatorState extends State<AnimatedTypingIndicator> with 
     super.initState();
     _controller = AnimationController(
       vsync: this, 
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 250),
     );
     _heightFactor = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     if (widget.isTyping) _controller.value = 1.0;
@@ -356,7 +356,7 @@ class _BlinkingCircleState extends State<_BlinkingCircle> with SingleTickerProvi
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
     Future.delayed(Duration(milliseconds: widget.delay), () {
       if (mounted) _controller.repeat(reverse: true);
     });

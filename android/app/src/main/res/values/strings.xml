@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gogo</string>
+    <!-- The following values are placeholders. They will be managed by the AppConfigService in Flutter,
+         but Android Manifest requires them to exist at compile time to avoid crashes. -->
+    <string name="facebook_app_id">REPLACE_WITH_ID_IN_ADMIN</string>
+    <string name="facebook_client_token">REPLACE_WITH_TOKEN_IN_ADMIN</string>
+</resources>

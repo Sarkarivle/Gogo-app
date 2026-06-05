@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gogo/features/chat/models/chat_message.dart';
 
 class ChatBubble extends StatelessWidget {
@@ -35,7 +36,21 @@ class ChatBubble extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: msg.localFilePath != null 
                         ? Image.file(File(msg.localFilePath!), width: 200, height: 200, fit: BoxFit.cover)
-                        : (msg.imageUrl != null ? Image.network(msg.imageUrl!, width: 200, height: 200, fit: BoxFit.cover) : const SizedBox.shrink()),
+                        : (msg.imageUrl != null 
+                            ? CachedNetworkImage(
+                                imageUrl: msg.imageUrl!, 
+                                width: 200, 
+                                height: 200, 
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Container(
+                                  width: 200,
+                                  height: 200,
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent)),
+                                ),
+                                errorWidget: (context, url, error) => const Icon(Icons.error),
+                              ) 
+                            : const SizedBox.shrink()),
                   ),
                 ),
               if (msg.text != null && msg.text!.isNotEmpty)

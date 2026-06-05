@@ -206,6 +206,24 @@ io.on('connection', (socket) => {
         if (other) io.to(`user_${other}`).emit('ice_candidate', { candidate: data.candidate, from: myPhone });
     });
 
+    socket.on('mark_delivered', async (data) => {
+        try {
+            const { messageId, localId } = data;
+            const msg = await Message.findById(messageId);
+            if (msg && !msg.isDelivered) {
+                msg.isDelivered = true;
+                await msg.save();
+                io.to(`user_${normalizePhone(msg.senderPhone)}`).emit('message_delivered', {
+                    messageId: messageId,
+                    localId: localId || msg.localId,
+                    roomId: getRoomId(msg.senderPhone, msg.receiverPhone)
+                });
+            }
+        } catch (e) {
+            console.error("mark_delivered error:", e);
+        }
+    });
+
     socket.on('mark_opened', async (data) => {
         try {
             const { messageId, otherPhone } = data;
@@ -220,7 +238,15 @@ io.on('connection', (socket) => {
                 }
                 await msg.save();
                 const roomId = getRoomId(myPhone, otherPhone);
-                io.to(roomId).emit('message_opened', { messageId, roomId });
+                const statusData = {
+                    messageId,
+                    roomId,
+                    senderPhone: msg.senderPhone,
+                    receiverPhone: msg.receiverPhone
+                };
+                io.to(roomId).emit('message_opened', statusData);
+                // Also notify sender via their private channel in case they left the room
+                io.to(`user_${normalizePhone(msg.senderPhone)}`).emit('message_opened', statusData);
             }
         } catch (e) {
             console.error("mark_opened error:", e);
@@ -334,10 +360,24 @@ io.on('connection', (socket) => {
 
             const responseData = { ...data, _id: tempId, senderPhone: myPhone, receiverPhone: receiver, roomId, timestamp, isDelivered: isReceiverOnline };
 
-            io.to(roomId).emit('receive_message', responseData);
+            // Sequential Flow Fix: Use socket.to(roomId) instead of io.to(roomId)
+            // so the sender doesn't receive their own message back.
+            // Receiver will get it via room if they are in it, otherwise via private channel.
+            socket.to(roomId).emit('receive_message', responseData);
+
+            const receiverRoom = io.sockets.adapter.rooms.get(roomId);
+            const receiverInRoom = receiverRoom && Array.from(receiverRoom).some(sid => {
+                const s = io.sockets.sockets.get(sid);
+                return s && s.userPhone === receiver;
+            });
+
+            if (!receiverInRoom) {
+                io.to(`user_${receiver}`).emit('receive_message', responseData);
+            }
+
             io.to(`user_${receiver}`).emit('hide_typing', { phone: myPhone });
 
-            if (isReceiverOnline) io.to(`user_${myPhone}`).emit('message_delivered', { messageId: tempId.toString(), roomId });
+            if (isReceiverOnline) io.to(`user_${myPhone}`).emit('message_delivered', { messageId: tempId.toString(), localId: data.localId, roomId });
             if (callback) callback({ success: true, messageId: tempId.toString(), localId: data.localId });
 
             const newMessage = new Message({
@@ -348,6 +388,7 @@ io.on('connection', (socket) => {
                 isDelivered: isReceiverOnline, replyToId: data.replyToId, replyText: data.replyText, replyType: data.replyType, timestamp
             });
             await newMessage.save();
+            await User.updateOne({ phone: myPhone }, { $inc: { chatCount: 1 } });
             updateConversationSummary(newMessage);
 
             // --- SEND PUSH NOTIFICATION ---
@@ -410,7 +451,20 @@ io.on('connection', (socket) => {
             );
 
             await resetUnreadCount(myPhone, other);
-            socket.to(roomId).emit('chat_seen_update', { by: myPhone });
+
+            // Optimization: Prevent duplicate 'chat_seen_update' emissions
+            const room = io.sockets.adapter.rooms.get(roomId);
+            const otherInRoom = room && Array.from(room).some(sid => {
+                const s = io.sockets.sockets.get(sid);
+                return s && s.userPhone === other;
+            });
+
+            if (otherInRoom) {
+                socket.to(roomId).emit('chat_seen_update', { by: myPhone, roomId });
+            } else {
+                io.to(`user_${other}`).emit('chat_seen_update', { by: myPhone, roomId });
+            }
+
             io.to(`user_${other}`).emit('unread_update', { phone: myPhone, unreadCount: 0 });
         } catch (e) {
             console.error("mark_chat_seen error:", e);
@@ -434,6 +488,10 @@ io.on('connection', (socket) => {
         if (other) {
             const isOnline = phoneToSockets.has(other) && phoneToSockets.get(other).size > 0;
             socket.emit('user_status_change', { phone: other, isOnline });
+
+            // Also notify the other user that we are active in the room
+            // This helps with immediate delivery/seen synchronization
+            io.to(`user_${other}`).emit('chat_status_update', { roomId: cleanRoomId, phone: myPhone, status: 'active' });
         }
     });
 

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/core/location/location_repository.dart';
+import 'package:gogo/core/services/presence_manager.dart';
 
 class UserRepository {
   static final UserRepository _instance = UserRepository._internal();
@@ -34,20 +35,32 @@ class UserRepository {
     await LocationRepository().updateLocation(normalizedPhone, force: force);
   }
 
+  bool _isInitializing = false;
   Future<Map<String, dynamic>?> getCurrentUser() async {
     if (userNotifier.value != null) return userNotifier.value;
     
-    _prefs ??= await SharedPreferences.getInstance();
-    final userDataStr = _prefs?.getString('user_data');
-    if (userDataStr != null) {
-      final Map<String, dynamic> userData = jsonDecode(userDataStr);
-      if (userData['profileImages'] != null) {
-        userData['profileImages'] = (userData['profileImages'] as List)
-          .map((img) => ApiService.getSecureUrl(img))
-          .toList();
+    if (_isInitializing) {
+      // Wait for existing initialization to finish
+      await Future.delayed(const Duration(milliseconds: 100));
+      return userNotifier.value;
+    }
+
+    _isInitializing = true;
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final userDataStr = _prefs?.getString('user_data');
+      if (userDataStr != null) {
+        final Map<String, dynamic> userData = jsonDecode(userDataStr);
+        if (userData['profileImages'] != null) {
+          userData['profileImages'] = (userData['profileImages'] as List)
+            .map((img) => ApiService.getSecureUrl(img))
+            .toList();
+        }
+        userNotifier.value = userData;
+        return userData;
       }
-      userNotifier.value = userData;
-      return userData;
+    } finally {
+      _isInitializing = false;
     }
     return null;
   }
@@ -71,6 +84,11 @@ class UserRepository {
         if (data['success'] == true && data['user'] != null) {
           final Map<String, dynamic> userData = data['user'];
           
+          // Update PresenceManager with the latest isOnline status from server
+          if (userData['phone'] != null) {
+            PresenceManager().updateStatus(userData['phone'], userData['isOnline'] ?? false);
+          }
+
           // Update Cache
           _profileCache[normalizedPhone] = userData;
           _profileCacheTime[normalizedPhone] = DateTime.now().millisecondsSinceEpoch;

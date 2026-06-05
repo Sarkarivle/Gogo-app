@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
+import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/core/guards/access_guard.dart';
+import 'package:gogo/core/services/presence_manager.dart';
+import 'package:gogo/core/services/typing_manager.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/chat/screens/chat_screen.dart';
@@ -20,6 +24,7 @@ class InboxScreen extends StatefulWidget {
 
 class InboxScreenState extends State<InboxScreen> {
   final List<dynamic> _chats = [];
+  List<dynamic> _filteredChatsCache = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
   int _currentPage = 1;
@@ -67,7 +72,7 @@ class InboxScreenState extends State<InboxScreen> {
     if (_currentUser != null) {
       _listenToSocketEvents();
     }
-    _fetchInbox();
+    await _fetchInbox();
   }
 
   // Public refresh method for parent access
@@ -141,6 +146,7 @@ class InboxScreenState extends State<InboxScreen> {
 
       // Move to top
       _chats.insert(0, chatData);
+      _updateFilterCache();
     });
   }
 
@@ -205,6 +211,7 @@ class InboxScreenState extends State<InboxScreen> {
             _currentPage = 1;
           }
           _hasMore = fetchedChats.length >= 20;
+          _updateFilterCache();
         });
         
         // Prefetch top 5 chats for instant opening
@@ -222,21 +229,10 @@ class InboxScreenState extends State<InboxScreen> {
     }
   }
 
-  void _prefetchTopChats() {
-    if (_currentUser == null) return;
-    // Prefetch first 5 chats that have messages
-    final chatsToPrefetch = _chats.take(5);
-    for (var chat in chatsToPrefetch) {
-      _chatRepository.prefetchHistory(_currentUser!['phone'], chat['phone']);
-    }
-  }
-
-  List<dynamic> _getFilteredChats() {
-    return _chats.where((chat) {
-      final String chatPhoneNormalized = PhoneUtils.normalize(chat['phone']) ?? '';
+  void _updateFilterCache() {
+    _filteredChatsCache = _chats.where((chat) {
       if (_isOnlineOnly) {
-        bool isOnline = SocketService().onlineUsers.value[chatPhoneNormalized] ?? chat['isOnline'] ?? false;
-        if (!isOnline) return false;
+        if (!PresenceManager().isOnline(chat['phone'])) return false;
       }
       if (_selectedDistance != 'Any') {
         double maxDist = double.tryParse(_selectedDistance.replaceAll('km', '')) ?? 999.0;
@@ -247,9 +243,18 @@ class InboxScreenState extends State<InboxScreen> {
     }).toList();
   }
 
+  void _prefetchTopChats() {
+    if (_currentUser == null) return;
+    // Prefetch first 5 chats that have messages
+    final chatsToPrefetch = _chats.take(5);
+    for (var chat in chatsToPrefetch) {
+      _chatRepository.prefetchHistory(_currentUser!['phone'], chat['phone']);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filteredChats = _getFilteredChats();
+    final filteredChats = _filteredChatsCache;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
@@ -368,16 +373,26 @@ class InboxScreenState extends State<InboxScreen> {
         child: Row(
           children: [
             _buildFilterChip('Distance: $_selectedDistance', () {
-              _showFilterDialog('Distance Range', ['Any', '5km', '10km', '25km', '50km'], _selectedDistance, (v) => setState(() => _selectedDistance = v));
+              _showFilterDialog('Distance Range', ['Any', '5km', '10km', '25km', '50km'], _selectedDistance, (v) {
+                setState(() => _selectedDistance = v);
+                _updateFilterCache();
+              });
             }, isActive: _selectedDistance != 'Any'),
             _buildFilterChip('Age: $_selectedAge', () {
-              _showFilterDialog('Age Selection', ['Any', '18-25', '26-35', '36+'], _selectedAge, (v) => setState(() => _selectedAge = v));
+              _showFilterDialog('Age Selection', ['Any', '18-25', '26-35', '36+'], _selectedAge, (v) {
+                setState(() => _selectedAge = v);
+                _updateFilterCache();
+              });
             }, isActive: _selectedAge != 'Any'),
             _buildFilterChip('Online', () {
               setState(() => _isOnlineOnly = !_isOnlineOnly);
+              _updateFilterCache();
             }, isActive: _isOnlineOnly, isLive: _isOnlineOnly),
             _buildFilterChip('Room: $_havePlaceStatus', () {
-              _showFilterDialog('Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (v) => setState(() => _havePlaceStatus = v));
+              _showFilterDialog('Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (v) {
+                setState(() => _havePlaceStatus = v);
+                _updateFilterCache();
+              });
             }, isActive: _havePlaceStatus != 'Any'),
           ],
         ),
@@ -441,7 +456,7 @@ class InboxScreenState extends State<InboxScreen> {
             itemCount: favourites.length,
             itemBuilder: (context, index) {
               final chat = favourites[index];
-              final bool isOnline = SocketService().onlineUsers.value[PhoneUtils.normalize(chat['phone'])] ?? chat['isOnline'] ?? false;
+              final bool isOnline = PresenceManager().getStatusNotifier(chat['phone'], chat['isOnline'] ?? false).value;
 
               return GestureDetector(
                 onTap: () => _openChat(chat),
@@ -644,144 +659,156 @@ class InboxScreenState extends State<InboxScreen> {
   }
 
   Widget _buildChatItem(dynamic chat, {Key? key}) {
-    return ValueListenableBuilder<Map<String, bool>>(
+    final String nPhone = PhoneUtils.normalize(chat['phone']) ?? '';
+    
+    return ValueListenableBuilder<bool>(
       key: key,
-      valueListenable: SocketService().onlineUsers,
-      builder: (context, onlineMap, _) {
-        return ValueListenableBuilder<Map<String, bool>>(
-          valueListenable: SocketService().typingUsers,
-          builder: (context, typingMap, _) {
-            final String nPhone = PhoneUtils.normalize(chat['phone']) ?? '';
-            final bool isOnline = onlineMap[nPhone] ?? chat['isOnline'] ?? false;
-            final bool isTyping = typingMap[nPhone] ?? false;
-            final bool isDeactivated = chat['accountStatus'] == 'Deactivated' || chat['isDeactivated'] == true;
-            final int unreadCount = chat['unread'] ?? 0;
+      valueListenable: PresenceManager().getStatusNotifier(nPhone, chat['isOnline'] ?? false),
+      builder: (context, isOnline, _) {
+        return InkWell(
+          onTap: () => _openChat(chat),
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            _showChatActions(chat);
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: ValueListenableBuilder<bool>(
+            valueListenable: TypingManager().getTypingNotifier(nPhone),
+            builder: (context, isTyping, _) {
+              final bool isDeactivated = chat['accountStatus'] == 'Deactivated' || chat['isDeactivated'] == true;
+              final int unreadCount = chat['unread'] ?? 0;
 
-            return InkWell(
-              onTap: () => _openChat(chat),
-              onLongPress: () {
-                HapticFeedback.mediumImpact();
-                _showChatActions(chat);
-              },
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 2),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  color: unreadCount > 0 ? Colors.white.withValues(alpha: 0.02) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    Stack(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(1.5),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.03),
-                              width: 1,
+              return RepaintBoundary(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: unreadCount > 0 ? Colors.white.withValues(alpha: 0.02) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Stack(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(1.5),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.03),
+                                width: 1,
+                              ),
                             ),
-                          ),
-                          child: CircleAvatar(
+                            child: CircleAvatar(
                             radius: 28,
                             backgroundColor: Colors.white.withValues(alpha: 0.03),
-                            child: Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
+                            child: chat['profileImage'] != null 
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(28),
+                                  child: CachedNetworkImage(
+                                    imageUrl: ApiService.getSecureUrl(chat['profileImage']),
+                                    fit: BoxFit.cover,
+                                    memCacheWidth: 160,
+                                    memCacheHeight: 160,
+                                    placeholder: (c, u) => Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
+                                  ),
+                                )
+                              : Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
                           ),
-                        ),
-                        if (isOnline)
-                          Positioned(
-                            right: 4,
-                            bottom: 4,
-                            child: Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: Colors.greenAccent,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: const Color(0xFF0F0F0F), width: 2),
+                          ),
+                          if (isOnline)
+                            Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: Colors.greenAccent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: const Color(0xFF0F0F0F), width: 2),
+                                ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  chat['name'],
-                                  style: TextStyle(
-                                    color: unreadCount > 0 ? Colors.white : Colors.white70,
-                                    fontWeight: unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
-                                    fontSize: 15,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Text(
-                                _formatTime(chat['timestamp']),
-                                style: TextStyle(
-                                  color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.8) : Colors.white24,
-                                  fontSize: 10,
-                                  fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            chat['dist_str'],
-                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  isDeactivated ? "Account Deactivated" : (isTyping ? "typing..." : (chat['msg'] ?? '')),
-                                  style: TextStyle(
-                                    color: isTyping ? Colors.greenAccent.withValues(alpha: 0.8) : (unreadCount > 0 ? Colors.white54 : Colors.white38),
-                                    fontSize: 13,
-                                    fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
-                                    fontStyle: isTyping ? FontStyle.italic : FontStyle.normal,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (unreadCount > 0)
-                                Container(
-                                  margin: const EdgeInsets.only(left: 8),
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orangeAccent.withValues(alpha: 0.9),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    unreadCount.toString(),
-                                    style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800),
-                                  ),
-                                ),
-                            ],
-                          ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    chat['name'],
+                                    style: TextStyle(
+                                      color: unreadCount > 0 ? Colors.white : Colors.white70,
+                                      fontWeight: unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
+                                      fontSize: 15,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text(
+                                  _formatTime(chat['timestamp']),
+                                  style: TextStyle(
+                                    color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.8) : Colors.white24,
+                                    fontSize: 10,
+                                    fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              chat['dist_str'],
+                              style: const TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    isDeactivated ? "Account Deactivated" : (isTyping ? "typing..." : (chat['msg'] ?? '')),
+                                    style: TextStyle(
+                                      color: isTyping ? Colors.greenAccent.withValues(alpha: 0.8) : (unreadCount > 0 ? Colors.white54 : Colors.white38),
+                                      fontSize: 13,
+                                      fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
+                                      fontStyle: isTyping ? FontStyle.italic : FontStyle.normal,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (unreadCount > 0)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orangeAccent.withValues(alpha: 0.9),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      unreadCount.toString(),
+                                      style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
+              );
+            },
+          ),
         );
-      }
+      },
     );
   }
 

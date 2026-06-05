@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:gogo/features/auth/screens/profile_setup_screen.dart';
 import 'package:gogo/features/home/screens/home_screen.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/services/analytics_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/premium/providers/payment_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
@@ -214,6 +215,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (verifyRes['success'] == true) {
         await UserRepository().updateLocalUser(verifyRes['user']);
         await PremiumService().updatePremiumStatus(true);
+        await AnalyticsService.logPurchase(
+          199,
+          'INR',
+          'monthly_plan',
+        );
         _confettiController.play();
         _showSuccessDialog();
       } else {

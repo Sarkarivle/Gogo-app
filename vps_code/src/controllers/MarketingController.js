@@ -49,7 +49,7 @@ exports.uploadLoginImage = async (req, res) => {
 // Public route for the App to fetch tracking IDs
 exports.getAppTrackingConfig = async (req, res) => {
     try {
-        const config = await MarketingConfig.findOne({ key: 'global_settings' }).select('fbPixelId googleAdsId isTrackingEnabled youtubeEmbedCode loginImageUrl');
+        const config = await MarketingConfig.findOne({ key: 'global_settings' }).select('fbPixelId fbAppId fbClientToken googleAdsId isTrackingEnabled isFirebaseEnabled isMetaEnabled trackSignUp trackPurchase trackTrial youtubeEmbedCode loginImageUrl');
         res.json({ success: true, config });
     } catch (err) {
         res.status(500).json({ success: false });

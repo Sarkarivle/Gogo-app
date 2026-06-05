@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 
@@ -5,31 +6,45 @@ enum MessageStatus { sending, sent, delivered, seen, error }
 
 class ChatMessage {
   String? id;
-  final String? localId; // For optimistic UI
+  final String? localId;
   String? text;
   String? imageUrl;
   String? audioUrl;
-  String? localFilePath; // For optimistic UI media
-  String type; // 'text', 'image', 'audio', 'block_event', 'unblock_event'
+  String? localFilePath;
+  String type;
   final bool isViewOnce;
-  bool isOpened;
-  bool isDeletedForEveryone;
+  
+  // Real-time notifiers for high-performance UI updates
+  late final ValueNotifier<bool> openedNotifier;
+  late final ValueNotifier<bool> deletedForEveryoneNotifier;
+  late final ValueNotifier<MessageStatus> statusNotifier;
+  late final ValueNotifier<String?> textNotifier;
+
   final bool isMe;
   final DateTime timestamp;
   bool isEdited;
-  MessageStatus status;
-  bool isNew; // For intro animation
+  bool isNew;
+
+  bool get isOpened => openedNotifier.value;
+  set isOpened(bool val) => openedNotifier.value = val;
+  
+  bool get isDeletedForEveryone => deletedForEveryoneNotifier.value;
+  set isDeletedForEveryone(bool val) => deletedForEveryoneNotifier.value = val;
+
+  MessageStatus get status => statusNotifier.value;
+  set status(MessageStatus val) {
+    if (val.index > statusNotifier.value.index) {
+      statusNotifier.value = val;
+    }
+  }
 
   // Compatibility getters
-  bool get isDelivered => status == MessageStatus.delivered || status == MessageStatus.seen;
+  bool get isDelivered => status.index >= MessageStatus.delivered.index;
   bool get isSeen => status == MessageStatus.seen;
 
-  // Reply features
   final String? replyToId;
   final String? replyText;
   final String? replyType;
-
-  // Call metadata
   final Map<String, dynamic>? metadata;
 
   ChatMessage({
@@ -41,22 +56,26 @@ class ChatMessage {
     this.localFilePath,
     this.type = 'text',
     this.isViewOnce = false,
-    this.isOpened = false,
-    this.isDeletedForEveryone = false,
+    bool isOpened = false,
+    bool isDeletedForEveryone = false,
     required this.isMe,
     required this.timestamp,
     this.isEdited = false,
-    this.status = MessageStatus.sent,
+    MessageStatus status = MessageStatus.sent,
     this.isNew = false,
     this.replyToId,
     this.replyText,
     this.replyType,
     this.metadata,
-  });
+  }) {
+    openedNotifier = ValueNotifier(isOpened);
+    deletedForEveryoneNotifier = ValueNotifier(isDeletedForEveryone);
+    statusNotifier = ValueNotifier(status);
+    textNotifier = ValueNotifier(text);
+  }
 
   factory ChatMessage.fromJson(Map<String, dynamic> json, String myPhone) {
     final sPhone = PhoneUtils.normalize(json['senderPhone']?.toString());
-    final mPhone = PhoneUtils.normalize(myPhone);
     
     return ChatMessage(
       id: (json['_id'] ?? json['id'] ?? json['messageId'])?.toString(),
@@ -68,7 +87,7 @@ class ChatMessage {
       isViewOnce: json['isViewOnce'] ?? false,
       isOpened: json['isOpened'] ?? false,
       isDeletedForEveryone: json['isDeletedForEveryone'] ?? false,
-      isMe: sPhone == mPhone && mPhone != null,
+      isMe: sPhone == myPhone,
       timestamp: DateTime.parse(json['timestamp'] ?? DateTime.now().toIso8601String()).toLocal(),
       isEdited: json['isEdited'] ?? false,
       status: (json['isOpened'] == true) 
@@ -81,21 +100,10 @@ class ChatMessage {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'localId': localId,
-      'message': text,
-      'imageUrl': imageUrl,
-      'audioUrl': audioUrl,
-      'type': type,
-      'isViewOnce': isViewOnce,
-      'isOpened': isOpened,
-      'isDeletedForEveryone': isDeletedForEveryone,
-      'timestamp': timestamp.toIso8601String(),
-      'replyToId': replyToId,
-      'replyText': replyText,
-      'replyType': replyType,
-    };
+  void dispose() {
+    openedNotifier.dispose();
+    deletedForEveryoneNotifier.dispose();
+    statusNotifier.dispose();
+    textNotifier.dispose();
   }
 }

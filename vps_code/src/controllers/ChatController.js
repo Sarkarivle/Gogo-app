@@ -2,6 +2,7 @@ const Message = require('../models/Message');
 const User = require('../models/User');
 const Block = require('../models/Block');
 const RecentPhoto = require('../models/RecentPhoto');
+const Review = require('../models/Review');
 const ConversationMetadata = require('../models/ConversationMetadata');
 const Conversation = require('../models/Conversation');
 const { updateConversationSummary, resetUnreadCount } = require('../utils/chatUtils');
@@ -156,7 +157,7 @@ exports.getChatHistory = async (req, res) => {
         const roomIdPart1 = p1 + '_' + p2;
         const roomIdPart2 = p2 + '_' + p1;
 
-        const [chats, block, partner] = await Promise.all([
+        const [chats, block, partner, existingReview] = await Promise.all([
             Message.find({
                 $or: [
                     { roomId: roomId },
@@ -168,20 +169,23 @@ exports.getChatHistory = async (req, res) => {
                 .skip((parseInt(page) - 1) * parseInt(limit))
                 .limit(parseInt(limit)),
             Block.findOne({ $or: [{ blockerPhone: p1, blockedPhone: p2 }, { blockerPhone: p2, blockedPhone: p1 }] }),
-            User.findOne({ phone: p2 }, 'isDeactivated accountStatus')
+            User.findOne({ phone: p2 }, 'isDeactivated accountStatus'),
+            parseInt(page) === 1 ? Review.findOne({ reviewerPhone: p1, reviewedPhone: p2 }) : Promise.resolve(null)
         ]);
 
         const messages = chats.reverse();
         const isBlocked = !!block;
         const blockerPhone = block ? block.blockerPhone : null;
         const isPartnerDeactivated = partner ? (partner.isDeactivated || partner.accountStatus === 'Deactivated') : false;
+        const hasReviewed = !!existingReview;
 
         if (parseInt(page) === 1) {
             res.json({
                 messages,
                 isBlocked,
                 blockerPhone,
-                isPartnerDeactivated
+                isPartnerDeactivated,
+                hasReviewed
             });
         } else {
             res.json(messages);

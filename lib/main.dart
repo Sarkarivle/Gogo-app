@@ -16,6 +16,7 @@ import 'package:gogo/features/call/providers/call_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
+import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 
 void main() async {
@@ -186,6 +187,8 @@ else if (type == 'profile_sync_required') {
 
   void _handleForceLogout(String reason) async {
     await UserRepository().updateLocalUser({}); // Clear user data in repo
+    ChatRepository.clearAllCache();
+    ChatRealtimeRepository().dispose();
     SocketService().dispose();
 
     final navContext = MyApp.navigatorKey.currentContext;

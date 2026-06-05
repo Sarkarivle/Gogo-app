@@ -89,6 +89,7 @@ const UserSchema = new mongoose.Schema({
     },
     isOnline: { type: Boolean, default: false, index: true },
     lastSeen: { type: Date, default: Date.now, index: true },
+    chatCount: { type: Number, default: 0, index: true },
     hasCompletedOnboarding: { type: Boolean, default: false },
 
     // Security & Tracking

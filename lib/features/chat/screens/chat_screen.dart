@@ -21,6 +21,8 @@ import 'package:gogo/core/services/notification_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/core/services/presence_manager.dart';
+import 'package:gogo/core/services/typing_manager.dart';
+import 'package:gogo/core/services/media_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:gogo/features/chat/screens/chat_settings_screen.dart';
 import 'package:gogo/features/chat/screens/media_preview_screen.dart';
@@ -29,6 +31,7 @@ import 'package:gogo/features/chat/widgets/chat_widgets.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
 import 'package:gogo/features/reviews/widgets/review_modal.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
+import 'package:video_player/video_player.dart';
 
 class ChatPage extends StatefulWidget {
   final String name;
@@ -80,6 +83,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _normalizedReceiverPhone;
   bool _isBlocked = false;
   bool _isPartnerDeactivated = false;
+  bool _hasReviewed = false;
   StreamSubscription? _socketSubscription;
 
   // Audio Recording
@@ -90,6 +94,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final ValueNotifier<int> _recordDurationNotifier = ValueNotifier<int>(0);
   final ValueNotifier<bool> _isSlidingToCancelNotifier = ValueNotifier<bool>(false);
   bool _isRecorderReady = false;
+  Timer? _micHoldTimer;
 
   // Swipe to reply
   ChatMessage? _replyingTo;
@@ -109,7 +114,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     // Automatic Pagination (Infinite Scroll)
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+      // Trigger earlier (when 80% through the last 300px)
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 600) {
         _fetchHistory(loadMore: true);
       }
     });
@@ -140,6 +146,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _isBlocked = newStatus;
       });
       if (!_isBlocked) _fetchHistory(forceRefresh: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 1. Mark seen immediately to turn ticks green for sender
+      if (_myPhone != null && _normalizedReceiverPhone != null) {
+        ChatRepository().markChatSeen(_myPhone!, _normalizedReceiverPhone!);
+      }
+      // 2. Refresh history to get any messages received while screen was off
+      _fetchHistory(forceRefresh: true);
     }
   }
 
@@ -187,57 +205,44 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _setupSocketListeners() {
-    _socketSubscription = ChatRealtimeRepository().chatUpdateStream.listen((event) {
+    final String currentRoomId = _getRoomId();
+    
+    // Switch to Scoped Room Stream for massive CPU savings
+    _socketSubscription = ChatRealtimeRepository().getRoomStream(currentRoomId).listen((event) {
       if (!mounted) return;
       final dynamic data = event['data'];
       if (data == null) return;
 
-      final String currentRoomId = _getRoomId();
       final String? eventType = event['event'];
 
-      // 1. Identify if this event belongs to the current open chat
-      bool isMatch = false;
-      if (data is Map) {
-        final String? eventRoomId = data['roomId'];
-        if (eventRoomId != null && currentRoomId.isNotEmpty) {
-          isMatch = (eventRoomId == currentRoomId);
-        }
-
-        if (!isMatch) {
-          final String? sPhone = PhoneUtils.normalize(data['senderPhone']);
-          final String? rPhone = PhoneUtils.normalize(data['receiverPhone']);
-          if (sPhone != null && rPhone != null) {
-            isMatch = (sPhone == _myPhone && rPhone == _normalizedReceiverPhone) ||
-                      (sPhone == _normalizedReceiverPhone && rPhone == _myPhone);
-          }
-        }
-        
-        if (!isMatch && eventType == 'chat_seen_update') {
-          final String? byPhone = PhoneUtils.normalize(data['by'] ?? data['viewerPhone']);
-          if (byPhone != null && byPhone == _normalizedReceiverPhone) isMatch = true;
-        }
+      // double check room context for seen update
+      bool isMatch = true; 
+      if (data is Map && eventType == 'chat_seen_update') {
+        final String? byPhone = PhoneUtils.normalize(data['by'] ?? data['viewerPhone']);
+        if (byPhone != null && byPhone != _normalizedReceiverPhone) isMatch = false;
       }
 
-      // 2. Global event types (Bypass matching for message-specific IDs)
-      final bool isDeleteEvent = eventType == 'message_deleted_for_everyone' || eventType == 'message_deleted';
-      
-      if (!isMatch && !isDeleteEvent && eventType != 'moderation_state_updated') {
+      if (!isMatch && eventType != 'message_deleted_for_everyone' && eventType != 'message_deleted') {
         return;
       }
 
-      // 3. Handle Events
+      // Handle Events
       switch (eventType) {
         case 'receive_message':
-          if (isMatch) _handleReceivedMessage(data);
+          _handleReceivedMessage(data);
           break;
         case 'message_delivered':
-          if (isMatch) _updateMessageStatus(data['localId'] ?? data['messageId'], MessageStatus.delivered);
+          _updateMessageStatus(data['localId'] ?? data['messageId'], MessageStatus.delivered);
           break;
         case 'message_opened':
-          if (isMatch) _updateMessageStatus(data['messageId'], MessageStatus.seen);
+          _updateMessageStatus(data['messageId'], MessageStatus.seen);
           break;
         case 'chat_seen_update':
-          if (isMatch) _markAllMeMessagesSeen();
+          _markAllMeMessagesSeen();
+          break;
+        case 'global_delivery_update':
+        case 'pending_messages_delivered':
+          _markAllMeMessagesDelivered();
           break;
         case 'message_deleted_for_everyone':
         case 'message_deleted':
@@ -249,7 +254,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           }
           break;
         case 'message_edited':
-          if (isMatch) _handleMessageEdited(data['messageId'], data['newText']);
+          _handleMessageEdited(data['messageId'], data['newText']);
+          break;
+        case 'chat_status_update':
+          if (data['status'] == 'active') {
+            _markAllMeMessagesSeen();
+          }
           break;
       }
     });
@@ -259,8 +269,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final newMessage = ChatMessage.fromJson(data, _myPhone!);
     newMessage.isNew = true; // Mark for animation
     
-    // Update memory cache in repository so it survives navigation
-    ChatRepository().updateCacheWithNewMessage(_myPhone!, widget.receiverPhone, newMessage);
+    // Note: Global cache is already updated by ChatRealtimeRepository
 
     setState(() {
       _messageCount++;
@@ -272,11 +281,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
       if (index == -1) {
         _messages.insert(0, newMessage);
-        _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+        // Only animate scroll if at the bottom
+        if (_scrollController.hasClients && _scrollController.offset < 100) {
+          _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+        }
       } else {
         // Update the existing optimistic message with server-side data
         _messages[index].id = newMessage.id;
-        _messages[index].status = newMessage.status;
+        // Status forward only
+        if (newMessage.status.index > _messages[index].status.index) {
+          _messages[index].status = newMessage.status;
+        }
         if (newMessage.isViewOnce) _messages[index].isOpened = newMessage.isOpened;
         if (newMessage.audioUrl != null) _messages[index].audioUrl = newMessage.audioUrl;
         if (newMessage.imageUrl != null) _messages[index].imageUrl = newMessage.imageUrl;
@@ -284,15 +299,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
 
     _checkAndShowReviewPopup();
-
-    // Mark as seen immediately if we are looking at the chat (Skip for View Once)
-    if (!newMessage.isMe && !newMessage.isViewOnce) {
-      ChatRepository().markOpened(newMessage.id!, _myPhone!, widget.receiverPhone);
-    }
   }
 
   void _checkAndShowReviewPopup() {
-    if (!_hasShownReview && _messageCount >= 10) {
+    if (!_hasShownReview && !_hasReviewed && _messageCount >= 10) {
       _hasShownReview = true;
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
@@ -308,26 +318,42 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  Timer? _statusSyncTimer;
+
   void _updateMessageStatus(String? id, MessageStatus status) {
     if (id == null) return;
-    setState(() {
-      final index = _messages.indexWhere((m) => m.id == id || m.localId == id);
-      if (index != -1) {
-        _messages[index].status = status;
-        // Sync isOpened for View Once messages when marked as seen
-        if (status == MessageStatus.seen && _messages[index].isViewOnce) {
-          _messages[index].isOpened = true;
+    
+    final int index = _messages.indexWhere((m) => m.id == id || m.localId == id);
+    
+    if (index != -1) {
+      final m = _messages[index];
+      // Update the ValueNotifier directly
+      m.status = status;
+      if ((status == MessageStatus.seen || status == MessageStatus.delivered) && m.isViewOnce) {
+        // If it's a view-once and we got a seen/delivered status from server, sync it
+        if (status == MessageStatus.seen && !m.isOpened) {
+          m.isOpened = true;
+          m.imageUrl = null;
+          m.audioUrl = null;
         }
       }
-    });
+    }
   }
 
   void _markAllMeMessagesSeen() {
-    setState(() {
-      for (var m in _messages) {
-        if (m.isMe && !m.isViewOnce) m.status = MessageStatus.seen;
+    for (var m in _messages) {
+      if (m.isMe && m.status != MessageStatus.seen && !m.isViewOnce) {
+        m.status = MessageStatus.seen;
       }
-    });
+    }
+  }
+
+  void _markAllMeMessagesDelivered() {
+    for (var m in _messages) {
+      if (m.isMe && m.status == MessageStatus.sent) {
+        m.status = MessageStatus.delivered;
+      }
+    }
   }
 
   void _handleDeletedForEveryone(String? messageId) {
@@ -336,16 +362,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ChatRepository().updateMessageDeletionInCache(_myPhone!, widget.receiverPhone, messageId);
     }
     
-    setState(() {
-      final index = _messages.indexWhere((m) => m.id == messageId);
-      if (index != -1) {
-        _messages[index].isDeletedForEveryone = true;
-        _messages[index].text = null;
-        _messages[index].imageUrl = null;
-        _messages[index].audioUrl = null;
-        _messages[index].localFilePath = null;
-      }
-    });
+    final index = _messages.indexWhere((m) => m.id == messageId);
+    if (index != -1) {
+      final m = _messages[index];
+      m.isDeletedForEveryone = true;
+      m.text = null;
+      m.imageUrl = null;
+      m.audioUrl = null;
+      m.localFilePath = null;
+    }
   }
 
   void _handleDeleteForMeLocally(String? messageId) {
@@ -356,13 +381,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _handleMessageEdited(String messageId, String newText) {
-    setState(() {
-      final index = _messages.indexWhere((m) => m.id == messageId);
-      if (index != -1) {
-        _messages[index].text = newText;
-        _messages[index].isEdited = true;
-      }
-    });
+    final index = _messages.indexWhere((m) => m.id == messageId);
+    if (index != -1) {
+      final m = _messages[index];
+      m.text = newText;
+      m.isEdited = true;
+      m.textNotifier.value = newText;
+    }
   }
 
   Future<void> _fetchHistory({bool loadMore = false, bool forceRefresh = false}) async {
@@ -417,6 +442,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             }
             _isBlocked = result['isBlocked'] ?? false;
             _isPartnerDeactivated = result['isPartnerDeactivated'] ?? false;
+            _hasReviewed = result['hasReviewed'] ?? false;
             _isLoading = false;
           }
           _hasMore = fetched.length >= 30;
@@ -550,7 +576,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final index = _messages.indexWhere((m) => m.localId == localId);
       if (index != -1) {
         _messages[index].id = realId;
-        _messages[index].status = MessageStatus.sent;
+        // Status should only move forward: never downgrade delivered/seen back to sent
+        if (MessageStatus.sent.index > _messages[index].status.index) {
+          _messages[index].status = MessageStatus.sent;
+        }
       }
     });
   }
@@ -565,7 +594,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         SocketService().emit('typing', {'otherPhone': _normalizedReceiverPhone});
       }
       _typingTimer?.cancel();
-      _typingTimer = Timer(const Duration(seconds: 3), () {
+      _typingTimer = Timer(const Duration(milliseconds: 1500), () {
         _isMeTyping = false;
         SocketService().emit('stop_typing', {'otherPhone': _normalizedReceiverPhone});
       });
@@ -578,9 +607,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _statusSyncTimer?.cancel();
     PremiumService().accessNotifier.removeListener(_handleAccessChange);
     ModerationRepository().blockStatusNotifier.removeListener(_syncBlockFromGlobal);
     _typingTimer?.cancel();
+    _micHoldTimer?.cancel();
     _messageController.removeListener(_handleTypingStatus);
     WidgetsBinding.instance.removeObserver(this);
     SocketService().leaveRoom();
@@ -723,7 +754,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildMessageList() {
-    final String partnerPhone = (_normalizedReceiverPhone ?? widget.receiverPhone).replaceAll(RegExp(r'[^0-9]'), '');
     final bool showWarning = !_hasMore; // Show when reached the start of the chat history
 
     return RefreshIndicator(
@@ -733,19 +763,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         child: ListView.builder(
           controller: _scrollController,
           reverse: true,
-          cacheExtent: 500,
-          addAutomaticKeepAlives: false,
+          cacheExtent: 1000,
+          addAutomaticKeepAlives: true,
           addRepaintBoundaries: true,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
           itemCount: _messages.length + 1 + (_isLoadingMore ? 1 : 0) + (showWarning ? 1 : 0),
           itemBuilder: (context, index) {
             // 1. Typing Indicator (Bottom)
             if (index == 0) {
-              return ValueListenableBuilder<Map<String, bool>>(
-                valueListenable: SocketService().typingUsers,
-                builder: (context, typingMap, _) {
-                  final bool isTyping = !_isBlocked && (typingMap[partnerPhone] ?? false);
-                  return AnimatedTypingIndicator(isTyping: isTyping);
+              return ValueListenableBuilder<bool>(
+                valueListenable: TypingManager().getTypingNotifier(_normalizedReceiverPhone),
+                builder: (context, isTyping, _) {
+                  return AnimatedTypingIndicator(isTyping: !_isBlocked && isTyping);
                 },
               );
             }
@@ -764,6 +793,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     onLongPress: () => _showMessageOptions(m),
                     onViewOnceTap: () => _handleViewOnceMedia(m),
                     onImageTap: (url) => _openFullScreenMedia(url),
+                    onVideoTap: (url) => _openVideoPlayer(url),
                   ),
                 ),
               );
@@ -959,8 +989,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       builder: (context, value, _) {
         if (value.text.trim().isEmpty) {
           return Listener(
-            onPointerDown: (_) => _startRecording(),
-            onPointerUp: (_) => _stopRecording(),
+            onPointerDown: (_) {
+              _micHoldTimer?.cancel();
+              _micHoldTimer = Timer(const Duration(milliseconds: 300), () {
+                _startRecording();
+              });
+            },
+            onPointerUp: (_) {
+              _micHoldTimer?.cancel();
+              if (_isRecording) {
+                _stopRecording();
+              }
+            },
             onPointerMove: (details) {
               if (!_isRecording) return;
               // Use global position or delta to detect slide
@@ -1103,15 +1143,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _uploadAndSendMedia(File file, String type, {bool isViewOnce = false, String? existingUrl}) async {
     if (_isBlocked) return;
 
-    // 1. Show optimistic message
-    final String localId = 'media_${DateTime.now().millisecondsSinceEpoch}';
+    File fileToUpload = file;
     
+    // 1. Show optimistic message immediately
+    final String localId = 'media_${DateTime.now().millisecondsSinceEpoch}';
     final optimisticMsg = ChatMessage(
       localId: localId,
       isMe: true,
       type: type,
-      localFilePath: existingUrl == null ? file.path : null, // Only local if not existing
-      imageUrl: existingUrl,
+      localFilePath: file.path,
       timestamp: DateTime.now(),
       status: MessageStatus.sending,
       isViewOnce: isViewOnce,
@@ -1124,19 +1164,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     ChatRepository().updateCacheWithNewMessage(_myPhone!, widget.receiverPhone, optimisticMsg);
     _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
 
+    // 2. Perform compression in background (if needed)
     try {
+      if (type == 'video' && existingUrl == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Optimizing video for faster sending...'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.blueAccent,
+          ),
+        );
+        final compressed = await MediaService().compressVideo(file);
+        if (compressed != null) {
+          fileToUpload = compressed;
+        }
+      }
+
       String? remoteUrl = existingUrl;
-      remoteUrl ??= await ChatRepository().uploadMedia(file, _myPhone!, type);
+      remoteUrl ??= await ChatRepository().uploadMedia(fileToUpload, _myPhone!, type);
       
       if (remoteUrl != null) {
         // Update optimistic message with remote URL
-        setState(() {
-          final idx = _messages.indexWhere((m) => m.localId == localId);
-          if (idx != -1) {
-            if (type == 'audio') _messages[idx].audioUrl = remoteUrl;
-            if (type == 'image' || type == 'video') _messages[idx].imageUrl = remoteUrl;
-          }
-        });
+        if (mounted) {
+          setState(() {
+            final idx = _messages.indexWhere((m) => m.localId == localId);
+            if (idx != -1) {
+              if (type == 'audio') _messages[idx].audioUrl = remoteUrl;
+              if (type == 'image' || type == 'video') _messages[idx].imageUrl = remoteUrl;
+            }
+          });
+        }
 
         // 3. Send via Socket using the SAME localId
         _sendMessage(
@@ -1150,6 +1207,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _updateMessageStatus(localId, MessageStatus.error);
       }
     } catch (e) {
+      debugPrint("🚨 [UPLOAD_FAILED] $e");
       _updateMessageStatus(localId, MessageStatus.error);
     }
   }
@@ -1166,29 +1224,51 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _handleViewOnceMedia(ChatMessage m) {
     if (m.isOpened) return;
     
-    // Open Viewer
+    // Mark as opened immediately locally so UI updates right away
+    final String? mediaUrl = m.imageUrl ?? m.audioUrl;
+    if (mediaUrl == null) return;
+
+    // Open Viewer first
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => FullScreenMediaViewer(
-        url: ApiService.getSecureUrl(m.imageUrl), 
+        url: ApiService.getSecureUrl(mediaUrl), 
         isViewOnce: true,
         onDispose: () {
-          // Emit Opened status ONLY when back is pressed (manual)
-          ChatRepository().markOpened(m.id!, _myPhone!, widget.receiverPhone);
-          
-          if (mounted) {
+          // Final sync when closing
+          if (mounted && !m.isOpened) {
             setState(() {
               m.isOpened = true;
+              m.imageUrl = null;
+              m.audioUrl = null;
             });
+            ChatRepository().markOpened(m.id!, _myPhone!, widget.receiverPhone);
           }
         },
       ),
-    ));
+    )).then((_) {
+      // Backup: Ensure status is updated when returning
+      if (mounted && !m.isOpened) {
+        setState(() {
+          m.isOpened = true;
+          m.imageUrl = null;
+          m.audioUrl = null;
+        });
+        ChatRepository().markOpened(m.id!, _myPhone!, widget.receiverPhone);
+      }
+    });
   }
 
   void _openFullScreenMedia(String? url) {
     if (url == null) return;
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => FullScreenMediaViewer(url: ApiService.getSecureUrl(url)),
+    ));
+  }
+
+  void _openVideoPlayer(String? url) {
+    if (url == null) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => FullScreenVideoPlayer(url: ApiService.getSecureUrl(url)),
     ));
   }
 
@@ -1565,11 +1645,79 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
   }
 }
 
+class FullScreenVideoPlayer extends StatefulWidget {
+  final String url;
+  const FullScreenVideoPlayer({super.key, required this.url});
+
+  @override
+  State<FullScreenVideoPlayer> createState() => _FullScreenVideoPlayerState();
+}
+
+class _FullScreenVideoPlayerState extends State<FullScreenVideoPlayer> {
+  late VideoPlayerController _controller;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint("🎬 [VIDEO_PLAYER] Initializing: ${widget.url}");
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        debugPrint("🎬 [VIDEO_PLAYER] Initialized Successfully");
+        if (mounted) {
+          setState(() => _isInitialized = true);
+          _controller.play();
+        }
+      }).catchError((e) {
+        debugPrint("🚨 [VIDEO_PLAYER] Initialization Error: $e");
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white)),
+      body: Center(
+        child: _isInitialized
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    VideoPlayer(_controller),
+                    VideoProgressIndicator(_controller, allowScrubbing: true),
+                    Center(
+                      child: IconButton(
+                        icon: Icon(
+                          _controller.value.isPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                          color: Colors.white70,
+                          size: 60,
+                        ),
+                        onPressed: () => setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play()),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : const CircularProgressIndicator(color: Colors.orangeAccent),
+      ),
+    );
+  }
+}
+
 class ChatMessageTile extends StatelessWidget {
   final ChatMessage message;
   final VoidCallback onLongPress;
   final VoidCallback onViewOnceTap;
   final Function(String?) onImageTap;
+  final Function(String?) onVideoTap;
 
   const ChatMessageTile({
     super.key,
@@ -1577,6 +1725,7 @@ class ChatMessageTile extends StatelessWidget {
     required this.onLongPress,
     required this.onViewOnceTap,
     required this.onImageTap,
+    required this.onVideoTap,
   });
 
   @override
@@ -1615,7 +1764,10 @@ class ChatMessageTile extends StatelessWidget {
                   Text(DateFormat('hh:mm a').format(m.timestamp), style: const TextStyle(color: Colors.white24, fontSize: 10)),
                   if (m.isMe) ...[
                     const SizedBox(width: 4),
-                    _buildStatusIcon(m.status),
+                    ValueListenableBuilder<MessageStatus>(
+                      valueListenable: m.statusNotifier,
+                      builder: (context, status, _) => _buildStatusIcon(status),
+                    ),
                   ]
                 ],
               ),
@@ -1649,89 +1801,93 @@ class ChatMessageTile extends StatelessWidget {
   }
 
   Widget _buildViewOnceBubble(BuildContext context, ChatMessage m) {
-    // For View Once, we strictly rely on the isOpened flag to show "Opened"
-    final bool isOpened = m.isOpened;
-    
-    if (isOpened) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.done_all_rounded, size: 18, color: Colors.white24),
-            SizedBox(width: 10),
-            Text("Opened", style: TextStyle(color: Colors.white24, fontSize: 14, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      );
-    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: m.openedNotifier,
+      builder: (context, isOpened, _) {
+        if (isOpened) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.done_all_rounded, size: 18, color: Colors.white24),
+                SizedBox(width: 10),
+                Text("Opened", style: TextStyle(color: Colors.white24, fontSize: 14, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          );
+        }
 
-    if (m.isMe) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.orangeAccent.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(25),
-          border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.looks_one_rounded, size: 18, color: Colors.orangeAccent),
-            SizedBox(width: 10),
-            Text("1 Image", style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      );
-    } else {
-      // Receiver sees blurred image container
-      return InkWell(
-        onTap: onViewOnceTap,
-        child: Container(
-          width: 200,
-          height: 120,
-          decoration: BoxDecoration(
-            color: const Color(0xFF262626),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
+        if (m.isMe) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.orangeAccent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.looks_one_rounded, size: 18, color: Colors.orangeAccent),
+                SizedBox(width: 10),
+                Text("1 Image", style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          );
+        } else {
+          // Receiver sees blurred image container
+          return InkWell(
+            onTap: onViewOnceTap,
+            child: Container(
+              width: 200,
+              height: 120,
+              decoration: BoxDecoration(
+                color: const Color(0xFF262626),
                 borderRadius: BorderRadius.circular(20),
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: ColorFiltered(
-                    colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.5), BlendMode.darken),
-                    child: CachedNetworkImage(
-                      imageUrl: ApiService.getSecureUrl(m.imageUrl),
-                      fit: BoxFit.cover,
-                      memCacheWidth: 200,
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.5), BlendMode.darken),
+                        child: m.type == 'video' 
+                          ? Container(color: Colors.black54)
+                          : (m.imageUrl != null ? CachedNetworkImage(
+                              imageUrl: ApiService.getSecureUrl(m.imageUrl),
+                              fit: BoxFit.cover,
+                              memCacheWidth: 200,
+                            ) : Container(color: Colors.black54)),
+                      ),
                     ),
                   ),
-                ),
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(m.type == 'video' ? Icons.play_circle_outline_rounded : Icons.visibility_off_rounded, color: Colors.orangeAccent, size: 32),
+                        const SizedBox(height: 8),
+                        Text(m.type == 'video' ? "One View Video" : "One View Image", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text("Tap to view", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.visibility_off_rounded, color: Colors.orangeAccent, size: 32),
-                    const SizedBox(height: 8),
-                    const Text("One View Image", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                    Text("Tap to view", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+            ),
+          );
+        }
+      }
+    );
   }
 
   Widget _buildReplyPreview(ChatMessage m) {
@@ -1767,21 +1923,30 @@ class ChatMessageTile extends StatelessWidget {
           bottomRight: Radius.circular(m.isMe ? 4 : 20),
         ),
       ),
-      child: Text(
-        m.text ?? '',
-        style: TextStyle(
-          color: m.isMe ? Colors.black : Colors.white,
-          fontSize: 15,
-        ),
+      child: ValueListenableBuilder<String?>(
+        valueListenable: m.textNotifier,
+        builder: (context, text, _) {
+          return Text(
+            text ?? '',
+            style: TextStyle(
+              color: m.isMe ? Colors.black : Colors.white,
+              fontSize: 15,
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildImageMessage(BuildContext context, ChatMessage m) {
+    final bool isVideo = m.type == 'video';
+    
     return InkWell(
       onTap: () {
         if (m.isViewOnce && !m.isMe && !m.isOpened) {
           onViewOnceTap();
+        } else if (isVideo) {
+          onVideoTap(m.imageUrl);
         } else {
           onImageTap(m.imageUrl);
         }
@@ -1798,29 +1963,57 @@ class ChatMessageTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: m.isViewOnce && !m.isMe && !m.isOpened 
             ? _buildViewOncePlaceholder()
-            : (m.localFilePath != null 
-                ? Image.file(File(m.localFilePath!), fit: BoxFit.cover, cacheWidth: 440)
-                : CachedNetworkImage(
-                    imageUrl: ApiService.getSecureUrl(m.imageUrl),
-                    fit: BoxFit.cover,
-                    memCacheWidth: 440,
-                    placeholder: (_, _) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    errorWidget: (_, _, _) => const Icon(Icons.broken_image, color: Colors.white24),
-                  )),
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (isVideo)
+                    Container(
+                      color: Colors.black54,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (m.localFilePath != null)
+                             Opacity(opacity: 0.3, child: Image.file(File(m.localFilePath!), fit: BoxFit.cover)),
+                          const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.play_circle_fill_rounded, color: Colors.orangeAccent, size: 50),
+                                SizedBox(height: 8),
+                                Text("Video Message", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (m.localFilePath != null)
+                    Image.file(File(m.localFilePath!), fit: BoxFit.cover, cacheWidth: 440)
+                  else
+                    CachedNetworkImage(
+                      imageUrl: ApiService.getSecureUrl(m.imageUrl),
+                      fit: BoxFit.cover,
+                      memCacheWidth: 440,
+                      placeholder: (_, _) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      errorWidget: (_, _, _) => const Icon(Icons.broken_image, color: Colors.white24),
+                    ),
+                ],
+              ),
         ),
       ),
     );
   }
 
   Widget _buildViewOncePlaceholder() {
+    final bool isVideo = message.type == 'video';
     return Container(
       color: Colors.black87,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.visibility_off_rounded, color: Colors.orangeAccent, size: 40),
+          Icon(isVideo ? Icons.play_circle_outline_rounded : Icons.visibility_off_rounded, color: Colors.orangeAccent, size: 40),
           const SizedBox(height: 8),
-          const Text("View Once Photo", style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(isVideo ? "View Once Video" : "View Once Photo", style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
           const Text("Tap to view", style: TextStyle(color: Colors.white24, fontSize: 10)),
         ],
       ),

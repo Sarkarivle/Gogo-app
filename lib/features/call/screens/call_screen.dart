@@ -35,6 +35,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
   bool _isMuted = false;
   bool _isVideoOff = false;
   bool _isSpeakerOn = true;
+  bool _isManualPop = false;
   Timer? _timer;
   final ValueNotifier<int> _callDuration = ValueNotifier<int>(0);
   late final String _displayId;
@@ -58,7 +59,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
     
     _stateSubscription = CallService().stateStream.listen((state) {
       if (state == CallState.ended) {
-        if (mounted) Navigator.pop(context);
+        if (mounted && !_isManualPop) Navigator.pop(context);
       }
       if (state == CallState.connected) {
         _startTimer();
@@ -143,17 +144,32 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          _buildRemoteView(),
-          _buildDarkOverlay(),
-          _buildLocalView(),
-          _buildTopBar(),
-          _buildBottomPanel(),
-        ],
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _isManualPop = true;
+          // Fix for "call nahi cut hoti" bug: 
+          // If user backs out (gesture/button), we must end the active call session.
+          if (CallService().state == CallState.ringing && !widget.isOutgoing) {
+            CallService().rejectCall();
+          } else if (CallService().state != CallState.idle && CallService().state != CallState.ended) {
+            CallService().endCall();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0A0A0A),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            _buildRemoteView(),
+            _buildDarkOverlay(),
+            _buildLocalView(),
+            _buildTopBar(),
+            _buildBottomPanel(),
+          ],
+        ),
       ),
     );
   }
@@ -410,7 +426,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
             child: IconButton(
               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
               onPressed: () {
-                // Keep navigation intact - do not pop unless specifically required by app flow
+                // Triggering pop will now end the call via PopScope
+                Navigator.of(context).maybePop();
               },
             ),
           ),

@@ -7,6 +7,7 @@ import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/app_visibility_coordinator.dart';
 import 'package:gogo/features/auth/screens/login_screen.dart';
+import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/premium/screens/premium_settings_screen.dart';
 import 'contact_us_screen.dart';
 import 'blocked_users_screen.dart';
@@ -15,6 +16,8 @@ import 'package:gogo/features/verification/screens/verification_screen.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
 import 'package:gogo/core/services/app_config_service.dart';
+import 'package:gogo/core/network/socket_service.dart';
+import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -247,8 +250,15 @@ class _SettingsPageState extends State<SettingsPage> {
           color: Colors.redAccent,
           isLast: true,
           onTap: () async {
+            // Properly cleanup before logout to prevent leaks
+            await UserRepository().updateLocalUser({}); 
+            ChatRepository.clearAllCache();
+            ChatRealtimeRepository().dispose();
+            SocketService().dispose();
+            
             final prefs = await SharedPreferences.getInstance();
             await prefs.clear();
+            
             if (mounted) {
               Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const LoginScreen()), (route) => false);
             }
@@ -262,7 +272,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return Column(
       children: [
         Text(
-          'V 2.6.5',
+          'V 2.6.6',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
         const SizedBox(height: 8),
@@ -386,6 +396,11 @@ class _SettingsPageState extends State<SettingsPage> {
         if (!context.mounted) return;
 
         if (success) {
+          await UserRepository().updateLocalUser({}); 
+          ChatRepository.clearAllCache();
+          ChatRealtimeRepository().dispose();
+          SocketService().dispose();
+
           final prefs = await SharedPreferences.getInstance();
           await prefs.clear();
           if (context.mounted) {
