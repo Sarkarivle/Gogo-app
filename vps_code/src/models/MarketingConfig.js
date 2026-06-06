@@ -5,6 +5,8 @@ const MarketingConfigSchema = new mongoose.Schema({
     fbPixelId: { type: String, default: '' },
     fbAppId: { type: String, default: '' },
     fbClientToken: { type: String, default: '' },
+    fbAccessToken: { type: String, default: '' },
+    fbTestCode: { type: String, default: '' }, // New field for Test Events Tool
     googleAdsId: { type: String, default: '' },
     tiktokPixelId: { type: String, default: '' },
 

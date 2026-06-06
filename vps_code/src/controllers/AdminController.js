@@ -63,15 +63,30 @@ exports.getChatHistory = async (req, res) => {
     try {
         const p1 = normalize(req.params.p1), p2 = normalize(req.params.p2);
         const roomId = [p1, p2].sort().join('_');
+
+        // Robust matching for all possible Room ID variations (Legacy + Current)
+        const possibleRoomIds = [
+            roomId,                                      // 123_456
+            p1 + '_' + p2,                               // 123_456 (not sorted)
+            p2 + '_' + p1,                               // 456_123 (not sorted)
+            `+91${p1}_+91${p2}`,                         // +91123_+91456
+            `+91${p2}_+91${p1}`,                         // +91456_+91123
+            `+91${p1}_${p2}`,                            // +91123_456
+            `${p1}_+91${p2}`,                            // 123_+91456
+            `+91${p2}_${p1}`,                            // +91456_123
+            `${p2}_+91${p1}`                             // 456_+91123
+        ];
+
         const chats = await Message.find({
-            $or: [
-                { roomId: roomId },
-                { roomId: { $in: [`${p1}_${p2}`, `${p2}_${p1}`, `+91${p1}_${p2}`, `+91${p2}_${p1}`] } }
-            ],
-            deletedBy: { $ne: p1 }
+            roomId: { $in: possibleRoomIds }
+            // Removed deletedBy filter so Admin can see everything even if user "deleted for me"
         }).sort({ timestamp: -1 }).skip((parseInt(req.query.page || 1) - 1) * parseInt(req.query.limit || 50)).limit(parseInt(req.query.limit || 50));
+
         res.json(chats.reverse());
-    } catch (e) { res.status(500).json([]); }
+    } catch (e) {
+        console.error("Admin getChatHistory Error:", e);
+        res.status(500).json([]);
+    }
 };
 
 exports.getStats = async (req, res) => {

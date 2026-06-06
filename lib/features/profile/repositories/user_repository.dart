@@ -116,12 +116,17 @@ class UserRepository {
     return deviceId;
   }
 
-  Future<void> trackEvent(String eventType, {String? customId}) async {
+  Future<void> trackEvent(String eventType, {String? customId, String? eventId, Map<String, dynamic>? metadata}) async {
     try {
       final String distinctId = customId ?? await _getDeviceId();
       ApiService.post('/api/user/track-event', {
         'eventType': eventType,
         'distinctId': distinctId,
+        'metadata': {
+          ...?metadata,
+          if (eventId != null) 'event_id': eventId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        }
       });
     } catch (e) {
       debugPrint('Track Event error: $e');

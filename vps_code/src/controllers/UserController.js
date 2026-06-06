@@ -517,7 +517,16 @@ exports.getDiscover = async (req, res) => {
 exports.trackEvent = async (req, res) => {
     try {
         const { eventType, distinctId, metadata } = req.body;
-        if (eventType) analyticsService.trackEvent(eventType, distinctId, metadata);
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const userAgent = req.headers['user-agent'];
+
+        if (eventType) {
+            analyticsService.trackEvent(eventType, distinctId, {
+                ...metadata,
+                ip,
+                userAgent
+            });
+        }
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });

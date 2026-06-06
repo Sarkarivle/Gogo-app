@@ -66,6 +66,17 @@ const MarketingModule = {
                         </div>
 
                         <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Meta Access Token (CAPI - Server Side)</label>
+                            <input type="password" id="fbAccessToken" value="${config.fbAccessToken || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="EAAB...">
+                        </div>
+
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 text-emerald-500">Facebook Test Event Code (Only for Debugging)</label>
+                            <input type="text" id="fbTestCode" value="${config.fbTestCode || ''}" class="w-full bg-white/5 border border-emerald-500/30 rounded-2xl p-4 mt-2 text-white focus:border-emerald-500 outline-none" placeholder="e.g. TEST12345">
+                            <p class="text-[9px] text-slate-500 mt-1 ml-1">Find this in Event Manager > Test Events tab</p>
+                        </div>
+
+                        <div>
                             <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Google Ads Conversion ID</label>
                             <input type="text" id="googleAdsId" value="${config.googleAdsId || ''}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:border-orange-500 outline-none" placeholder="e.g. AW-123456789">
                         </div>
@@ -308,6 +319,8 @@ const MarketingModule = {
                 fbPixelId: document.getElementById('fbPixelId').value,
                 fbAppId: document.getElementById('fbAppId').value,
                 fbClientToken: document.getElementById('fbClientToken').value,
+                fbAccessToken: document.getElementById('fbAccessToken').value,
+                fbTestCode: document.getElementById('fbTestCode').value,
                 googleAdsId: document.getElementById('googleAdsId').value,
                 tiktokPixelId: document.getElementById('tiktokPixelId').value,
                 installPostbackUrl: document.getElementById('installPostbackUrl').value,

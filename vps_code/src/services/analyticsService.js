@@ -139,6 +139,62 @@ class AnalyticsService {
                 }
             }
         }
+
+        // 4. Server-side Facebook Conversions API (CAPI)
+        this.sendToFacebookCAPI(type, dId, metadata);
+    }
+
+    async sendToFacebookCAPI(type, distinctId, metadata = {}) {
+        try {
+            const MarketingConfig = require('../models/MarketingConfig');
+            const config = await MarketingConfig.findOne({ key: 'global_settings' });
+
+            if (!config || !config.isMetaEnabled || !config.fbPixelId || !config.fbAccessToken) return;
+
+            const crypto = require('crypto');
+            const hashedPhone = crypto.createHash('sha256').update(distinctId).digest('hex');
+
+            // Map internal types to Facebook Standard Events for optimization
+            let fbEventName = type;
+            if (type === 'app_open') fbEventName = 'ActivateApp';
+            else if (type === 'onboarding_completed') fbEventName = 'CompleteRegistration';
+            else if (type === 'premium_activated') fbEventName = 'Purchase';
+            else if (type === 'payment_started') fbEventName = 'InitiateCheckout';
+            else if (type === 'start_call') fbEventName = 'Contact';
+
+            const url = `https://graph.facebook.com/v18.0/${config.fbPixelId}/events?access_token=${config.fbAccessToken}`;
+
+            const payload = {
+                data: [{
+                    event_name: fbEventName,
+                    event_time: metadata.timestamp || Math.floor(Date.now() / 1000),
+                    event_id: metadata.event_id || "",
+                    action_source: "app",
+                    user_data: {
+                        ph: [hashedPhone],
+                        external_id: [distinctId],
+                        client_ip_address: metadata.ip || "",
+                        client_user_agent: metadata.userAgent || ""
+                    },
+                    custom_data: {
+                        value: metadata.amount || metadata.value || (fbEventName === 'Purchase' ? 199 : 0),
+                        currency: metadata.currency || 'INR',
+                        content_name: metadata.planId || 'Premium Access'
+                    }
+                }]
+            };
+
+            // Add Test Event Code if present (Crucial for the "Test Events" tab)
+            if (config.fbTestCode) {
+                payload.test_event_code = config.fbTestCode;
+            }
+
+            const axios = require('axios');
+            const response = await axios.post(url, payload);
+            console.log(`✅ [CAPI] Event "${fbEventName}" synced for ${distinctId}`);
+        } catch (e) {
+            console.error(`❌ [CAPI] Error:`, e.response?.data || e.message);
+        }
     }
 
     trackMessage() {

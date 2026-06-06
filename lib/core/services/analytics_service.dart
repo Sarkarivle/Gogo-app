@@ -2,25 +2,20 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:facebook_app_events/facebook_app_events.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gogo/core/services/app_config_service.dart';
+import 'package:gogo/features/profile/repositories/user_repository.dart';
 
+/// Clean & Robust Implementation of Facebook App Events SDK
 class AnalyticsService {
   static final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
   static final FacebookAppEvents _facebookAppEvents = FacebookAppEvents();
+  static bool _isMetaActivated = false;
 
   static bool _canTrack(String target) {
     final config = AppConfigService().trackingConfig;
-    if (config == null) return true; // Default to true if not loaded yet
-    
+    if (config == null) return true;
     if (config['isTrackingEnabled'] == false) return false;
-
-    if (target == 'firebase') {
-      return config['isFirebaseEnabled'] != false;
-    }
-    
-    if (target == 'meta') {
-      return config['isMetaEnabled'] == true;
-    }
-
+    if (target == 'firebase') return config['isFirebaseEnabled'] != false;
+    if (target == 'meta') return config['isMetaEnabled'] == true;
     return true;
   }
 
@@ -40,106 +35,80 @@ class AnalyticsService {
     }
   }
 
-  // 1. App Open Event
+  /// 1. Initialize & Activate SDK
   static Future<void> logAppOpen() async {
-    if (_canTrack('firebase')) {
-      await _analytics.logAppOpen();
+    if (_canTrack('firebase')) await _analytics.logAppOpen();
+
+    if (_canTrack('meta')) {
+      await _facebookAppEvents.setAdvertiserTracking(enabled: true);
+      await _facebookAppEvents.activateApp();
+      _isMetaActivated = true;
+      debugPrint('📊 [Analytics] Facebook SDK Activated');
     }
-    // Meta tracks app opens automatically if initialized
-    debugPrint('📊 [Analytics] App Open logged');
   }
 
-  // 2. User Sign-up/Registration
+  /// 2. Track Standard Events
   static Future<void> logSignUp(String method) async {
     if (!_shouldTrackEvent('sign_up')) return;
-
-    if (_canTrack('firebase')) {
-      await _analytics.logSignUp(signUpMethod: method);
-    }
-
-    if (_canTrack('meta')) {
-      await _facebookAppEvents.logCompletedRegistration(registrationMethod: method);
-    }
-    
-    debugPrint('📊 [Analytics] Sign Up logged ($method)');
+    if (_canTrack('firebase')) await _analytics.logSignUp(signUpMethod: method);
+    if (_canTrack('meta')) await _facebookAppEvents.logCompletedRegistration(registrationMethod: method);
+    _syncWithCAPI('onboarding_completed');
   }
 
-  // 3. Random Call Started
-  static Future<void> logStartCall(String type) async {
-    final params = {
-      'call_type': type,
-      'timestamp': DateTime.now().toIso8601String(),
-    };
-
-    if (_canTrack('firebase')) {
-      await _analytics.logEvent(name: 'start_call', parameters: params);
-    }
-
-    if (_canTrack('meta')) {
-      await _facebookAppEvents.logEvent(name: 'start_call', parameters: params);
-    }
-
-    debugPrint('📊 [Analytics] Start Call logged: $type');
-  }
-
-  // 4. Premium Subscription/Purchase
   static Future<void> logPurchase(double amount, String currency, String planId) async {
     if (!_shouldTrackEvent('purchase')) return;
-
     if (_canTrack('firebase')) {
-      await _analytics.logEvent(
-        name: 'purchase_premium',
-        parameters: {'value': amount, 'currency': currency, 'item_id': planId},
-      );
-      await _analytics.logPurchase(
-        value: amount,
-        currency: currency,
-        items: [AnalyticsEventItem(itemId: planId, itemName: 'Premium Plan')],
-      );
+      await _analytics.logPurchase(value: amount, currency: currency, items: [AnalyticsEventItem(itemId: planId, itemName: 'Premium Plan')]);
     }
-
     if (_canTrack('meta')) {
-      await _facebookAppEvents.logPurchase(amount: amount, currency: currency, parameters: {'item_id': planId});
+      await _facebookAppEvents.logPurchase(amount: amount, currency: currency, parameters: {'content_id': planId});
     }
-
-    debugPrint('📊 [Analytics] Purchase logged: $amount $currency');
+    _syncWithCAPI('premium_activated', metadata: {'amount': amount, 'currency': currency, 'planId': planId});
   }
 
-  // 5. User Profile View
-  static Future<void> logViewProfile(String userId) async {
-    final params = {'target_user_id': userId};
-    
-    if (_canTrack('firebase')) {
-      await _analytics.logEvent(name: 'view_profile', parameters: params);
-    }
-    
-    if (_canTrack('meta')) {
-      await _facebookAppEvents.logEvent(name: 'view_profile', parameters: params);
-    }
+  /// 3. Track Video/Audio Calls
+  static Future<void> logStartCall(String type) async {
+    final params = {'call_type': type};
+    if (_canTrack('firebase')) await _analytics.logEvent(name: 'start_call', parameters: params);
+    if (_canTrack('meta')) await _facebookAppEvents.logEvent(name: 'start_call', parameters: params);
+    _syncWithCAPI('start_call', metadata: params);
   }
 
-  // 6. Custom Screen Tracking
+  /// 4. Custom Screen Tracking
   static Future<void> logScreenView(String screenName) async {
-    if (_canTrack('firebase')) {
-      await _analytics.logScreenView(screenName: screenName);
-    }
-    // Meta also supports screen views but requires custom events or automatic tracking
+    if (_canTrack('firebase')) await _analytics.logScreenView(screenName: screenName);
     debugPrint('📊 [Analytics] Screen View: $screenName');
   }
 
-  // 7. Generic Event Wrapper
+  /// 5. Custom Profile View
+  static Future<void> logViewProfile(String userId) async {
+    final params = {'target_user_id': userId};
+    if (_canTrack('firebase')) await _analytics.logEvent(name: 'view_profile', parameters: params);
+    if (_canTrack('meta')) await _facebookAppEvents.logEvent(name: 'view_profile', parameters: params);
+    _syncWithCAPI('view_profile', metadata: params);
+  }
+
+  /// 6. Generic/Custom Events
   static Future<void> logEvent(String name, {Map<String, Object>? parameters}) async {
-    // Specific check for trial events
     if (name.contains('trial') && !_shouldTrackEvent('trial')) return;
+    
+    final String eventId = "${DateTime.now().millisecondsSinceEpoch}_$name";
+    final Map<String, Object> finalParams = {...?parameters, 'event_id': eventId};
 
-    if (_canTrack('firebase')) {
-      await _analytics.logEvent(name: name, parameters: parameters);
-    }
+    if (_canTrack('firebase')) await _analytics.logEvent(name: name, parameters: finalParams);
+    if (_canTrack('meta')) await _facebookAppEvents.logEvent(name: name, parameters: finalParams);
+    
+    _syncWithCAPI(name, eventId: eventId, metadata: parameters);
+    debugPrint('📊 [Analytics] Event: $name');
+  }
 
-    if (_canTrack('meta')) {
-      await _facebookAppEvents.logEvent(name: name, parameters: parameters);
-    }
+  /// CAPI Sync Helper
+  static void _syncWithCAPI(String eventName, {String? eventId, Map<String, dynamic>? metadata}) {
+    if (!_canTrack('meta')) return;
+    UserRepository().trackEvent(eventName, eventId: eventId, metadata: metadata);
+  }
 
-    debugPrint('📊 [Analytics] Event: $name ${parameters ?? ""}');
+  static Future<void> activateMetaIfEnabled() async {
+    if (!_isMetaActivated) await logAppOpen();
   }
 }

@@ -71,23 +71,38 @@ exports.getInbox = async (req, res) => {
         ]);
 
         const metaMap = {};
-        allMetadata.forEach(m => metaMap[m.partnerPhone] = m);
+        allMetadata.forEach(m => metaMap[normalize(m.partnerPhone)] = m);
 
-        // 2. Filter out hidden conversations if they haven't received a new message since clearing
-        const visibleConversations = conversations.filter(c => {
-            if (!c.lastMessage) return false;
-            const meta = metaMap[c.partnerPhone];
+        // 2. Filter and Deduplicate conversations (in case of +91 variations)
+        const conversationMap = {};
+        conversations.forEach(c => {
+            const normPartner = normalize(c.partnerPhone);
+            // Keep the one with the most recent message
+            if (!conversationMap[normPartner] ||
+                new Date(c.lastMessage?.timestamp || 0) > new Date(conversationMap[normPartner].lastMessage?.timestamp || 0)) {
+                conversationMap[normPartner] = c;
+            }
+        });
+
+        const visibleConversations = Object.values(conversationMap).filter(c => {
+            // Support old conversations that might not have a lastMessage object
+            const normPartner = normalize(c.partnerPhone);
+            const meta = metaMap[normPartner];
             if (meta && meta.isHidden) {
-                return new Date(c.lastMessage.timestamp || 0).getTime() > new Date(meta.lastClearedAt || 0).getTime();
+                const lastMsgTime = new Date(c.lastMessage?.timestamp || 0).getTime();
+                const clearTime = new Date(meta.lastClearedAt || 0).getTime();
+                return lastMsgTime > clearTime;
             }
             return true;
         });
 
         const partnerPhones = visibleConversations.map(c => c.partnerPhone);
 
-        // 3. Fetch partners and blocks in parallel
+        // 3. Fetch partners and blocks in parallel with robust phone matching
         const [partners, blocks] = await Promise.all([
-            User.find({ phone: { $in: partnerPhones } }, 'phone name isOnline isVerified city area position lat lng location').lean(),
+            User.find({
+                $or: partnerPhones.map(p => ({ phone: new RegExp(normalize(p) + '$') }))
+            }, 'phone name isOnline isVerified city area position lat lng location').lean(),
             Block.find({
                 $or: [
                     { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
@@ -97,12 +112,13 @@ exports.getInbox = async (req, res) => {
         ]);
 
         const userMap = {};
-        partners.forEach(u => userMap[u.phone] = u);
+        partners.forEach(u => userMap[normalize(u.phone)] = u);
 
         const chats = visibleConversations.map(conv => {
-            const other = conv.partnerPhone;
+            const otherOriginal = conv.partnerPhone;
+            const other = normalize(otherOriginal);
             const u = userMap[other] || {};
-            const block = blocks.find(b => (b.blockerPhone === phone && b.blockedPhone === other) || (b.blockerPhone === other && b.blockedPhone === phone));
+            const block = blocks.find(b => (normalize(b.blockerPhone) === phone && normalize(b.blockedPhone) === other) || (normalize(b.blockerPhone) === other && normalize(b.blockedPhone) === phone));
             const meta = metaMap[other] || {};
 
             const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
@@ -152,18 +168,29 @@ exports.getChatHistory = async (req, res) => {
         const p2 = normalize(req.params.p2);
         const { page = 1, limit = 50 } = req.query;
 
-        // Match 10-digit roomId (Fastest) or variations (Legacy)
+        // Match all possible Room ID variations (Legacy + Current)
         const roomId = [p1, p2].sort().join('_');
-        const roomIdPart1 = p1 + '_' + p2;
-        const roomIdPart2 = p2 + '_' + p1;
+        const possibleRoomIds = [
+            roomId,
+            p1 + '_' + p2,
+            p2 + '_' + p1,
+            `+91${p1}_+91${p2}`,
+            `+91${p2}_+91${p1}`,
+            `+91${p1}_${p2}`,
+            `${p1}_+91${p2}`,
+            `+91${p2}_${p1}`,
+            `${p2}_+91${p1}`
+        ];
 
         const [chats, block, partner, existingReview] = await Promise.all([
             Message.find({
                 $or: [
-                    { roomId: roomId },
-                    { roomId: { $in: [roomIdPart1, roomIdPart2, `+91${roomIdPart1}`, `+91${roomIdPart2}`] } }
+                    { roomId: { $in: possibleRoomIds } },
+                    // Backup for any weird formats
+                    { roomId: new RegExp(`^${p1}_${p2}$`, 'i') },
+                    { roomId: new RegExp(`^${p2}_${p1}$`, 'i') }
                 ],
-                deletedBy: { $ne: p1 }
+                deletedBy: { $nin: [p1, `+91${p1}`, `91${p1}`] } // Robust deletedBy check
             })
                 .sort({ timestamp: -1 })
                 .skip((parseInt(page) - 1) * parseInt(limit))
@@ -257,26 +284,32 @@ exports.markSeen = async (req, res) => {
 
         m = normalize(m);
         const o = normalize(req.body.otherPhone);
+
+        const possibleRoomIds = [
+            [m, o].sort().join('_'),
+            m + '_' + o,
+            o + '_' + m,
+            `+91${m}_+91${o}`,
+            `+91${o}_+91${m}`,
+            `+91${m}_${o}`,
+            `${m}_+91${o}`,
+            `+91${o}_${m}`,
+            `${o}_+91${m}`
+        ];
+
         const phoneVariations = [m, `+91${m}`, `91${m}`];
 
         // SECURITY FIX: Only mark normal messages as 'Opened' (Seen).
-        // 'View Once' messages MUST NOT be marked as opened automatically.
         await Message.updateMany({
-            $or: [
-                { roomId: [m, o].sort().join('_') },
-                { roomId: [`+91${m}`, `+91${o}`].sort().join('_') }
-            ],
+            roomId: { $in: possibleRoomIds },
             receiverPhone: { $in: phoneVariations },
             isOpened: false,
             isViewOnce: false
         }, { isOpened: true, isDelivered: true });
 
-        // For View Once, just ensure they are marked as Delivered but NOT opened.
+        // For View Once, just ensure they are marked as Delivered
         await Message.updateMany({
-            $or: [
-                { roomId: [m, o].sort().join('_') },
-                { roomId: [`+91${m}`, `+91${o}`].sort().join('_') }
-            ],
+            roomId: { $in: possibleRoomIds },
             receiverPhone: { $in: phoneVariations },
             isDelivered: false,
             isViewOnce: true

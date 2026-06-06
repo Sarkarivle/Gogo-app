@@ -144,7 +144,12 @@ io.on('connection', (socket) => {
             await User.findOneAndUpdate({ phone: normalized }, { isOnline: true, lastSeen: new Date() });
             socket.broadcast.emit('user_status_change', { phone: normalized, isOnline: true });
 
-            const result = await Message.updateMany({ receiverPhone: normalized, isDelivered: false }, { isDelivered: true });
+            const phoneVariations = [normalized, `+91${normalized}`, `91${normalized}`];
+            const result = await Message.updateMany({
+                receiverPhone: { $in: phoneVariations },
+                isDelivered: false
+            }, { isDelivered: true });
+
             if (result.modifiedCount > 0) {
                 io.to(`user_${normalized}`).emit('pending_messages_delivered', { phone: normalized });
                 const senders = await Message.find({ receiverPhone: normalized, isDelivered: true }).distinct('senderPhone');
@@ -435,22 +440,48 @@ io.on('connection', (socket) => {
     socket.on('mark_chat_seen', async (data) => {
         try {
             const other = normalize(data.otherPhone);
-            const roomId = getRoomId(myPhone, other);
+            const m = myPhone;
+            const o = other;
+
+            const possibleRoomIds = [
+                [m, o].sort().join('_'),
+                m + '_' + o,
+                o + '_' + m,
+                `+91${m}_+91${o}`,
+                `+91${o}_+91${m}`,
+                `+91${m}_${o}`,
+                `${m}_+91${o}`,
+                `+91${o}_${m}`,
+                `${o}_+91${m}`
+            ];
+
+            const phoneVariations = [myPhone, `+91${myPhone}`, `91${myPhone}`];
 
             // SECURITY FIX: Only mark normal messages as 'Opened' (Seen).
-            // 'View Once' messages MUST NOT be marked as opened automatically; they only open on tap.
             await Message.updateMany(
-                { roomId, receiverPhone: myPhone, isOpened: false, isViewOnce: false },
+                {
+                    roomId: { $in: possibleRoomIds },
+                    receiverPhone: { $in: phoneVariations },
+                    isOpened: false,
+                    isViewOnce: false
+                },
                 { isOpened: true, isDelivered: true }
             );
 
-            // For View Once, just ensure they are marked as Delivered (two ticks) but NOT opened.
+            // For View Once, just ensure they are marked as Delivered
             await Message.updateMany(
-                { roomId, receiverPhone: myPhone, isDelivered: false, isViewOnce: true },
+                {
+                    roomId: { $in: possibleRoomIds },
+                    receiverPhone: { $in: phoneVariations },
+                    isDelivered: false,
+                    isViewOnce: true
+                },
                 { isDelivered: true }
             );
 
             await resetUnreadCount(myPhone, other);
+
+            const roomId = [m, o].sort().join('_');
 
             // Optimization: Prevent duplicate 'chat_seen_update' emissions
             const room = io.sockets.adapter.rooms.get(roomId);

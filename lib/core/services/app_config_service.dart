@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/services/analytics_service.dart';
 
 class AppUpdateConfig {
   final String latestVersion;
@@ -122,6 +123,8 @@ class AppConfigService {
         final data = jsonDecode(responses[1].body);
         if (data['success'] == true) {
           _trackingConfig = data['config'];
+          // Ensure Meta is activated if it was enabled in this config fetch
+          AnalyticsService.activateMetaIfEnabled();
         }
       }
       _lastConfigFetchTime = DateTime.now();
