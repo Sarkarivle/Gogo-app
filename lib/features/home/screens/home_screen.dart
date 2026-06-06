@@ -33,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   final GlobalKey<InboxScreenState> _inboxKey = GlobalKey<InboxScreenState>();
   late TabController _tabController;
   List<dynamic> _profiles = [];
-  bool _isLoadingProfiles = false;
+  bool _isLoadingProfiles = true;
   bool _isLoadingMore = false;
   int _currentPage = 1;
   bool _hasMore = true;
@@ -107,25 +107,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     }
 
-    final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
-    
-    // Clear relevant cache when filters change to ensure fresh data
-    // Especially important for the "Nearby" tab which is highly filter-dependent
-    if (tabName == 'Nearby') {
-      ProfileRepository.clearCache();
-    }
+    // Clear ALL cache when filters change to ensure fresh data across all tabs
+    ProfileRepository.clearCache();
 
-    final cached = ProfileRepository.getCachedProfiles(tabName);
-    
     setState(() {
-      if (cached != null && !forceLoading) {
-        _profiles = List.from(cached);
-      } else {
-        _profiles = [];
-      }
+      _profiles = [];
       _currentPage = 1;
       _hasMore = true;
-      _isLoadingProfiles = _profiles.isEmpty;
+      _isLoadingProfiles = true;
     });
     
     // Ensure we don't hit the "is already loading" block by using a slight delay or resetting flag
@@ -134,57 +123,58 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   Future<void> _initHomeScreen() async {
-    // 1. Notification init
-    await NotificationService.initialize();
-
-    // 2. Fetch latest config
-    await PremiumService().init();
-
-    currentUser = await _userRepository.getCurrentUser();
-    if (currentUser != null) {
-      SocketService().updateCurrentUser(currentUser!['phone']);
-    }
+    // 1. Background Tasks (Non-blocking)
+    NotificationService.initialize();
+    PremiumService().init();
     
     _listenToSocketEvents();
     _fetchUnreadCount();
     
-    // Background unread sync every 30s (backup for socket)
+    // Background unread sync every 30s
     _unreadTimer = Timer.periodic(const Duration(seconds: 30), (t) => _fetchUnreadCount());
 
-    // Location & Profiles - this will also trigger the initial profile fetch
+    // 2. Profiles immediately + User sync in background
     _updateLocationAndProfiles();
+    
+    _userRepository.getCurrentUser().then((user) {
+      if (user != null && mounted) {
+        setState(() => currentUser = user);
+        SocketService().updateCurrentUser(user['phone']);
+      }
+    });
   }
 
   // _loadInitialData is now integrated into _updateLocationAndProfiles to prevent double fetch
 
   Future<void> _updateLocationAndProfiles() async {
-    if (currentUser != null && mounted) {
-      try {
-        await LocationRepository().updateLocation(currentUser!['phone']);
-        // After location update, refresh current user
-        final updatedUser = await _userRepository.getCurrentUser();
-        if (mounted && updatedUser != null) {
-          currentUser = updatedUser; // Reference update, _onUserUpdated listener will handle setState if needed
-        }
-      } catch (e) {
-        debugPrint("Location update error: $e");
-      }
-    }
-    
-    _lastKnownPosition ??= await LocationService().getCurrentPosition();
-    
-    // Initial data load from cache or fetch
+    // 1. Show cache immediately if available for instant feel
     if (mounted) {
       final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
       final cached = ProfileRepository.getCachedProfiles(tabName);
+      
       if (cached != null && cached.isNotEmpty) {
         setState(() {
           _profiles = List.from(cached);
           _isLoadingProfiles = false;
         });
-      } else {
-        _fetchProfiles();
       }
+    }
+
+    // 2. Always trigger fresh fetch immediately
+    _fetchProfiles(isReset: true);
+    
+    // 3. Location update in background (Non-blocking)
+    LocationService().getCurrentPosition().then((pos) {
+      _lastKnownPosition = pos;
+    });
+
+    if (currentUser != null && mounted) {
+      LocationRepository().updateLocation(currentUser!['phone']).then((_) async {
+        final updatedUser = await _userRepository.getCurrentUser();
+        if (mounted && updatedUser != null) {
+          currentUser = updatedUser;
+        }
+      });
     }
   }
 

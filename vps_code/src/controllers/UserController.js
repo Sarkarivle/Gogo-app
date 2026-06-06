@@ -451,7 +451,19 @@ exports.getDiscover = async (req, res) => {
         if (havePlace && havePlace !== 'Any') baseQuery.havePlace = havePlace;
         if (position && position !== 'Any') {
             const searchTerms = position.split(',').map(p => p.trim()).filter(p => p);
-            if (searchTerms.length > 0) baseQuery.$or = searchTerms.map(term => ({ position: { $regex: term, $options: 'i' } }));
+            if (searchTerms.length > 0) {
+                const posQuery = { $or: searchTerms.map(term => ({ position: { $regex: term, $options: 'i' } })) };
+                if (baseQuery.$or) {
+                    // Combine with existing $or using $and to avoid overwriting
+                    const existingOr = baseQuery.$or;
+                    delete baseQuery.$or;
+                    baseQuery.$and = [{ $or: existingOr }, posQuery];
+                } else if (baseQuery.$and) {
+                    baseQuery.$and.push(posQuery);
+                } else {
+                    baseQuery.$or = posQuery.$or;
+                }
+            }
         }
         if (age && age !== 'Any') {
             const ageMap = { '18-25': { $gte: 18, $lte: 25 }, '26-35': { $gte: 26, $lte: 35 }, '36-45': { $gte: 36, $lte: 45 }, '46+': { $gte: 46 } };

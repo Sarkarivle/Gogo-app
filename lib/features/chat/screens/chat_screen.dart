@@ -247,7 +247,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         case 'message_deleted_for_everyone':
         case 'message_deleted':
           final String? mId = data is Map ? (data['messageId'] ?? data['id']) : data.toString();
-          if (data is Map && (data['isEveryone'] == true || eventType == 'message_deleted_for_everyone')) {
+          if (data is Map && (data['isDeletedForEveryone'] == true || data['isEveryone'] == true || eventType == 'message_deleted_for_everyone')) {
             _handleDeletedForEveryone(mId);
           } else if (eventType == 'message_deleted') {
             _handleDeleteForMeLocally(mId);
@@ -362,15 +362,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ChatRepository().updateMessageDeletionInCache(_myPhone!, widget.receiverPhone, messageId);
     }
     
-    final index = _messages.indexWhere((m) => m.id == messageId);
-    if (index != -1) {
-      final m = _messages[index];
-      m.isDeletedForEveryone = true;
-      m.text = null;
-      m.imageUrl = null;
-      m.audioUrl = null;
-      m.localFilePath = null;
-    }
+    setState(() {
+      final index = _messages.indexWhere((m) => m.id == messageId);
+      if (index != -1) {
+        final m = _messages[index];
+        m.isDeletedForEveryone = true;
+        m.text = null;
+        m.imageUrl = null;
+        m.audioUrl = null;
+        m.localFilePath = null;
+      }
+    });
   }
 
   void _handleDeleteForMeLocally(String? messageId) {
@@ -383,10 +385,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _handleMessageEdited(String messageId, String newText) {
     final index = _messages.indexWhere((m) => m.id == messageId);
     if (index != -1) {
-      final m = _messages[index];
-      m.text = newText;
-      m.isEdited = true;
-      m.textNotifier.value = newText;
+      setState(() {
+        final m = _messages[index];
+        m.text = newText;
+        m.isEdited = true;
+        m.textNotifier.value = newText;
+      });
     }
   }
 

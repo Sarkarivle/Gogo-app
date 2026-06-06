@@ -620,6 +620,7 @@ class InboxScreenState extends State<InboxScreen> {
         if (isMuted != null) _chats[index]['isMuted'] = isMuted;
         if (isFavourite != null) _chats[index]['isFavourite'] = isFavourite;
         if (isHidden == true) _chats.removeAt(index);
+        _updateFilterCache();
       }
     });
 

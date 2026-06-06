@@ -64,15 +64,24 @@ class ChatRealtimeRepository {
     if (data is! Map) return;
 
     if (type == 'message_deleted_for_everyone' || 
-       (type == 'message_deleted' && data['isEveryone'] == true)) {
+       (type == 'message_deleted' && (data['isDeletedForEveryone'] == true || data['isEveryone'] == true))) {
       final String? messageId = data['messageId'] ?? data['id'];
-      final String? sender = PhoneUtils.normalize(data['senderPhone'] ?? data['myPhone']);
-      final String? receiver = PhoneUtils.normalize(data['receiverPhone'] ?? data['otherPhone']);
+      final String? roomId = data['roomId'];
       
-      if (messageId != null && sender != null && receiver != null) {
-        ChatRepository().updateMessageDeletionInCache(sender, receiver, messageId);
+      if (messageId != null && roomId != null) {
+        final parts = roomId.split('_');
+        if (parts.length == 2) {
+          ChatRepository().updateMessageDeletionInCache(parts[0], parts[1], messageId);
+        }
+      } else {
+        final String? sender = PhoneUtils.normalize(data['senderPhone'] ?? data['myPhone']);
+        final String? receiver = PhoneUtils.normalize(data['receiverPhone'] ?? data['otherPhone']);
+        if (messageId != null && sender != null && receiver != null) {
+          ChatRepository().updateMessageDeletionInCache(sender, receiver, messageId);
+        }
       }
-    } else if (type == 'message_opened') {
+    }
+ else if (type == 'message_opened') {
       final String? messageId = data['messageId'] ?? data['id'];
       final String? myPhone = SocketService().currentUserPhone;
       
