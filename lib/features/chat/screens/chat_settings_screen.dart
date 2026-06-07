@@ -397,10 +397,10 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                   ),
                 ),
               
-              if (!_isBlockedByMe) ...[
+              if (!_isBlockedByMe && !_amIBlocked) ...[
                 _buildSettingTile(Icons.block_flipped, 'Block', color: Colors.redAccent, onTap: () => _showBlockUI(withReport: false)),
                 _buildSettingTile(Icons.report_gmailerrorred_rounded, 'Report & Block', color: Colors.redAccent, isLast: true, onTap: () => _showBlockUI(withReport: true)),
-              ] else ...[
+              ] else if (_isBlockedByMe) ...[
                 _buildSettingTile(Icons.lock_open_rounded, 'Unblock', color: Colors.greenAccent, isLast: true, onTap: _handleUnblock),
               ],
             ],

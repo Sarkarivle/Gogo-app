@@ -185,13 +185,33 @@ async function loadMonetization() {
                         </div>
                     </div>
 
-                    <!-- Live Activity Feed -->
-                    <div class="glass p-10 rounded-[3rem] flex flex-col">
-                        <div class="border-b border-white/5 pb-6 mb-6">
-                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Realtime Financial Intelligence</h3>
+                    <!-- Google Play Integration (Replaced Financial Intelligence) -->
+                    <div class="glass p-10 rounded-[3rem] space-y-8 border border-blue-500/10">
+                        <div class="border-b border-white/5 pb-6">
+                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Google Play Billing</h3>
+                            <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">In-app purchase settings</p>
                         </div>
-                        <div id="financeActivity" class="flex-1 space-y-4 overflow-y-auto h-[40rem] pr-2 font-mono text-[10px]">
-                            <div class="text-slate-500 opacity-50 uppercase italic text-center py-20">Monitoring live stream...</div>
+                        <div class="space-y-6">
+                            <div class="flex items-center justify-between glass p-4 rounded-2xl">
+                                <div>
+                                    <p class="text-[10px] font-black text-white uppercase">Enable Play Billing</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="gp_enabled" ${gpSettings.isEnabled ? 'checked' : ''} class="sr-only peer">
+                                    <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Subscription Product ID</label>
+                                <input type="text" id="gp_product_id" value="${gpSettings.productId || ''}" placeholder="premium_subscription" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Service Account Key (JSON)</label>
+                                <textarea id="gp_service_key" rows="8" placeholder='{ "type": "service_account", ... }' class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-[10px] text-slate-400 font-mono mt-2">${gpSettings.serviceAccountKey || ''}</textarea>
+                            </div>
+                            <button onclick="saveGooglePlaySettings()" class="w-full py-4 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition">
+                                Update Google Play Config
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -306,6 +326,21 @@ async function savePaymentSettings(activeGateway) {
         loadMonetization();
     } catch (err) {
         showSystemToast("Sync Failed", "Credential save failed", 'bg-red-500');
+    }
+}
+
+async function saveGooglePlaySettings() {
+    try {
+        const config = {
+            isEnabled: document.getElementById('gp_enabled').checked,
+            productId: document.getElementById('gp_product_id').value,
+            serviceAccountKey: document.getElementById('gp_service_key').value
+        };
+        await API.updateConfig('google_play_settings', config);
+        showSystemToast("Google Play Updated", "Configuration saved", 'bg-blue-500');
+        loadMonetization();
+    } catch (err) {
+        showSystemToast("Save Failed", "Update failed", 'bg-red-500');
     }
 }
 

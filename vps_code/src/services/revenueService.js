@@ -56,31 +56,32 @@ class RevenueService {
 
     async getFinancialMetrics() {
         try {
-            const [gross, today, monthly, activePremium, totalUsers, failedToday] = await Promise.all([
+            const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+            const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0,0,0,0);
+
+            const [gross, today, monthly, activePremium, totalUsers, failedToday, recentTransactions] = await Promise.all([
                 this.getGrossRevenue().catch(e => 0),
                 this.getTodayEarnings().catch(e => ({ total: 0, count: 0 })),
                 this.getMonthlyRevenue().catch(e => 0),
                 User.countDocuments({ isPremium: true }).catch(e => 0),
-                User.countDocuments().catch(e => 0),
+                User.estimatedDocumentCount().catch(e => 0),
                 PaymentTransaction.countDocuments({
                     status: 'FAILED',
-                    createdAt: { $gte: new Date(new Date().setHours(0,0,0,0)) }
-                }).catch(e => 0)
+                    createdAt: { $gte: startOfDay }
+                }).catch(e => 0),
+                PaymentTransaction.find({})
+                    .sort({ createdAt: -1 })
+                    .limit(5)
+                    .select('userPhone amount status gateway createdAt')
+                    .lean()
+                    .catch(e => [])
             ]);
 
             const arpu = totalUsers > 0 ? (gross / totalUsers).toFixed(2) : 0;
+            const conversionRate = totalUsers > 0 ? ((activePremium / totalUsers) * 100).toFixed(1) : 0;
 
-            // Gateway performance
+            // Gateway performance - Simplified
             let gatewayStats = [];
-            try {
-                gatewayStats = await PaymentTransaction.aggregate([
-                    { $match: { status: 'SUCCESS' } },
-                    { $group: { _id: '$gateway', count: { $sum: 1 }, total: { $sum: '$amount' } } },
-                    { $sort: { total: -1 } }
-                ]);
-            } catch (ae) {
-                console.error("Aggregation error:", ae);
-            }
 
             return {
                 grossRevenue: gross,
@@ -90,6 +91,9 @@ class RevenueService {
                 activePremiumUsers: activePremium,
                 failedToday,
                 arpu,
+                conversionRate,
+                recentTransactions,
+                planBreakdown: [], // Reverted to empty for stability
                 topGateway: (gatewayStats && gatewayStats.length > 0) ? gatewayStats[0]._id : 'N/A',
                 subscriptionHealth: {
                     active: activePremium,

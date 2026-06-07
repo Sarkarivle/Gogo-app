@@ -33,13 +33,23 @@ async function loadAdmins() {
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     ${admins.map(a => `
-                        <div class="glass p-6 rounded-[2rem] flex items-center space-x-4 border border-white/5 hover:border-orange-500/30 transition-all">
-                            <div class="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center text-xl font-black text-orange-500">
-                                ${a.username[0].toUpperCase()}
+                        <div class="glass p-6 rounded-[2rem] flex items-center justify-between border border-white/5 hover:border-orange-500/30 transition-all group">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center text-xl font-black text-orange-500">
+                                    ${a.username[0].toUpperCase()}
+                                </div>
+                                <div>
+                                    <h3 class="text-white font-bold">${a.username}</h3>
+                                    <p class="text-[10px] font-black uppercase ${a.role === 'Super Admin' ? 'text-purple-400' : 'text-slate-500'} tracking-widest">${a.role}</p>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-white font-bold">${a.username}</h3>
-                                <p class="text-[10px] font-black uppercase ${a.role === 'Super Admin' ? 'text-purple-400' : 'text-slate-500'} tracking-widest">${a.role}</p>
+                            <div class="flex flex-col space-y-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onclick='showEditAdminModal(${JSON.stringify(a).replace(/'/g, "&apos;")})' class="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center hover:bg-blue-500 hover:text-white transition">
+                                    <i class="fas fa-edit text-[10px]"></i>
+                                </button>
+                                <button onclick="deleteAdminAccount('${a._id}')" class="w-8 h-8 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition">
+                                    <i class="fas fa-trash text-[10px]"></i>
+                                </button>
                             </div>
                         </div>
                     `).join('')}
@@ -107,5 +117,81 @@ async function submitNewAdmin() {
         }
     } catch(e) {
         alert("Error creating admin");
+    }
+}
+
+function showEditAdminModal(admin) {
+    UI.modal.show(
+        `<div class="flex items-center space-x-4">
+            <div class="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center text-blue-500"><i class="fas fa-user-edit"></i></div>
+            <div>
+                <h2 class="text-xl font-black text-white">Edit Staff Member</h2>
+                <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Update credentials for ${admin.username}</p>
+            </div>
+        </div>`,
+        `<div class="space-y-6">
+            <div class="grid grid-cols-2 gap-6">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Username</label>
+                    <input type="text" id="edit_admin_user" value="${admin.username}" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:outline-none focus:border-orange-500 transition">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">New Password</label>
+                    <input type="password" id="edit_admin_pass" placeholder="••••••••" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:outline-none focus:border-orange-500 transition">
+                    <p class="text-[8px] text-slate-600 mt-1 uppercase font-bold">Leave blank to keep current password</p>
+                </div>
+            </div>
+            <div>
+                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Access Role</label>
+                <select id="edit_admin_role" class="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 text-white focus:outline-none focus:border-orange-500 transition">
+                    <option value="Moderator" ${admin.role === 'Moderator' ? 'selected' : ''}>Moderator</option>
+                    <option value="Support" ${admin.role === 'Support Staff' || admin.role === 'Support' ? 'selected' : ''}>Support Staff</option>
+                    <option value="Super Admin" ${admin.role === 'Super Admin' ? 'selected' : ''}>Super Admin</option>
+                </select>
+            </div>
+            <div class="pt-6">
+                <button onclick="submitEditAdmin('${admin._id}')" class="w-full bg-orange-500 text-black font-black py-4 rounded-2xl hover:scale-[1.02] transition-all uppercase text-xs tracking-widest">Apply Identity Changes</button>
+            </div>
+        </div>`
+    );
+}
+
+async function submitEditAdmin(id) {
+    const username = document.getElementById('edit_admin_user').value;
+    const password = document.getElementById('edit_admin_pass').value;
+    const role = document.getElementById('edit_admin_role').value;
+
+    if(!username) return alert("Username is required");
+
+    const data = { username, role };
+    if(password) data.password = password;
+
+    try {
+        const res = await API.updateAdmin(id, data);
+        if(res.success) {
+            UI.modal.hide();
+            loadAdmins();
+            showSystemToast("Updated", "Staff credentials synchronized", "bg-blue-500");
+        } else {
+            alert(res.message || "Failed to update admin");
+        }
+    } catch(e) {
+        alert("Error updating admin");
+    }
+}
+
+async function deleteAdminAccount(id) {
+    if(!confirm("Are you sure you want to PERMANENTLY remove this administrator's access?")) return;
+
+    try {
+        const res = await API.deleteAdmin(id);
+        if(res.success) {
+            loadAdmins();
+            showSystemToast("Removed", "Admin access revoked", "bg-red-500");
+        } else {
+            alert(res.message || "Action failed");
+        }
+    } catch(e) {
+        alert("Server error during deletion");
     }
 }

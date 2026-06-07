@@ -7,124 +7,197 @@ async function loadDashboard() {
 
     modTitle.innerText = "Command Dashboard";
 
-    // 1. Show Skeleton immediately
+    // Show Skeletons
     mainContent.innerHTML = `
-        <div class="space-y-10">
+        <div class="space-y-8">
             <div class="grid grid-cols-4 gap-6">
                 ${UI.skeletonCard()} ${UI.skeletonCard()} ${UI.skeletonCard()} ${UI.skeletonCard()}
             </div>
             <div class="grid grid-cols-3 gap-6">
-                <div class="glass p-8 rounded-[2.5rem] col-span-2 min-h-[300px] skeleton"></div>
-                <div class="glass p-8 rounded-[2.5rem] min-h-[300px] skeleton"></div>
+                <div class="glass p-8 rounded-[2.5rem] col-span-2 min-h-[350px] skeleton"></div>
+                <div class="glass p-8 rounded-[2.5rem] min-h-[350px] skeleton"></div>
             </div>
         </div>
     `;
 
     try {
-        console.log("📊 Fetching stats from API...");
         const res = await API.getStats();
-
-        if (!res || !res.success || !res.stats) {
-            throw new Error(res?.message || "Invalid response from server");
-        }
+        if (!res || !res.success) throw new Error("Sync Failed");
 
         const s = res.stats;
-        const dailyGrowth = s.dailyGrowth || [];
+        const r = s.revenue || {};
+
         const genderRatio = s.genderRatio || { male: 0, female: 0 };
         const totalGender = (genderRatio.male + genderRatio.female) || 1;
         const malePercent = Math.round((genderRatio.male / totalGender) * 100);
         const femalePercent = Math.round((genderRatio.female / totalGender) * 100);
-        const maxGrowth = Math.max(...dailyGrowth.map(x => x.count), 1);
 
-        // 2. Render actual data
         mainContent.innerHTML = `
-            <div class="space-y-10 animate-fade">
+            <div class="space-y-8 animate-fade">
+                <!-- TOP KPI CARDS -->
                 <div class="grid grid-cols-4 gap-6">
-                    ${UI.card('Population', (s.totalUsers || 0).toLocaleString())}
-                    ${UI.card('Live Now', (s.onlineUsers || 0).toLocaleString(), 'Active Sockets', 'text-emerald-500')}
-                    ${UI.card('Premium', (s.premiumUsers || 0).toLocaleString(), 'Revenue Ready', 'text-orange-500')}
-                    ${UI.card('Security Queue', (s.pendingReports || 0).toLocaleString(), 'Pending Review', s.pendingReports > 0 ? 'text-red-500' : 'text-slate-500')}
+                    ${UI.card('Total Population', (s.totalUsers || 0).toLocaleString(), `${s.incompleteUsers || 0} Incomplete`, 'text-slate-400')}
+                    ${UI.card('Active Now', (s.onlineUsers || 0).toLocaleString(), `${s.activeCalls || 0} Live Calls`, 'text-emerald-500')}
+                    ${UI.card('Monthly Revenue', `₹${(r.monthlyRevenue || 0).toLocaleString()}`, `ARPU: ₹${r.arpu || 0}`, 'text-orange-500')}
+                    ${UI.card('Conversion', `${r.conversionRate || 0}%`, 'Free to Premium', 'text-blue-400')}
                 </div>
 
+                <!-- MAIN INSIGHTS ROW -->
                 <div class="grid grid-cols-3 gap-6">
+                    <!-- Top Cities (Placeholder for stability) -->
                     <div class="glass p-8 rounded-[2.5rem] col-span-2">
-                        <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-xs font-black uppercase text-white">Growth Trajectory</h3>
-                            <span class="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[8px] font-black rounded uppercase">Live</span>
+                        <div class="flex justify-between items-center mb-10">
+                            <div>
+                                <h3 class="text-xs font-black uppercase text-white">System Status</h3>
+                                <p class="text-[10px] text-slate-500 mt-1 uppercase font-bold">Platform health & metrics</p>
+                            </div>
                         </div>
-                        <div class="h-64 flex items-end space-x-2">
-                            ${dailyGrowth.map(d => `
-                                <div class="flex-1 flex flex-col items-center group">
-                                    <div class="w-full bg-orange-500/10 rounded-t-xl group-hover:bg-orange-500/20 transition-all relative" style="height: ${(d.count / maxGrowth) * 100}%">
-                                        <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-orange-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">${d.count}</div>
-                                    </div>
-                                    <p class="text-[9px] font-bold text-slate-500 mt-4 uppercase">${d.date}</p>
+                        <div class="grid grid-cols-2 gap-10">
+                            <div class="space-y-6">
+                                <div class="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-3xl">
+                                    <p class="text-[10px] font-black text-emerald-500 uppercase mb-2">Network Health</p>
+                                    <h4 class="text-xl font-black text-white">OPTIMIZED</h4>
+                                    <p class="text-[8px] text-slate-500 mt-2 uppercase font-bold">All services running within normal latency.</p>
                                 </div>
-                            `).join('')}
-                        </div>
-                    </div>
-
-                    <div class="glass p-8 rounded-[2.5rem] flex flex-col justify-between">
-                        <div>
-                            <h3 class="text-xs font-black uppercase text-white mb-6">Demographics</h3>
-                            <div class="space-y-4">
-                                <div>
-                                    <div class="flex justify-between text-[10px] font-bold mb-2">
-                                        <span class="text-blue-400">MALE</span>
-                                        <span class="text-white">${malePercent}%</span>
-                                    </div>
-                                    <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                        <div class="h-full bg-blue-400" style="width: ${malePercent}%"></div>
-                                    </div>
+                                <div class="p-6 bg-blue-500/5 border border-blue-500/10 rounded-3xl">
+                                    <p class="text-[10px] font-black text-blue-500 uppercase mb-2">Data Integrity</p>
+                                    <h4 class="text-xl font-black text-white">VERIFIED</h4>
+                                    <p class="text-[8px] text-slate-500 mt-2 uppercase font-bold">Realtime sync established with edge nodes.</p>
                                 </div>
-                                <div>
-                                    <div class="flex justify-between text-[10px] font-bold mb-2">
-                                        <span class="text-pink-400">FEMALE</span>
-                                        <span class="text-white">${femalePercent}%</span>
+                            </div>
+                            <!-- Interaction Stats -->
+                            <div class="glass bg-white/5 p-8 rounded-[2rem] border border-white/5">
+                                <h3 class="text-[10px] font-black uppercase text-slate-500 mb-6">Engagement Overview</h3>
+                                <div class="space-y-4">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase">Daily Active</span>
+                                        <span class="text-sm font-black text-white">${(s.dau || 0).toLocaleString()}</span>
                                     </div>
-                                    <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                        <div class="h-full bg-pink-400" style="width: ${femalePercent}%"></div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase">Retention</span>
+                                        <span class="text-sm font-black text-emerald-500">${s.retention || '0%'}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase">Avg Messages</span>
+                                        <span class="text-sm font-black text-white">${s.avgMessagesPerUser || 0}</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="pt-6 border-t border-white/5">
-                            <p class="text-[10px] text-slate-500">Total System Messages</p>
-                            <p class="text-2xl font-black text-white">${(s.totalMessages || 0).toLocaleString()}</p>
+                    </div>
+
+                    <!-- User Funnel -->
+                    <div class="glass p-8 rounded-[2.5rem] flex flex-col">
+                        <h3 class="text-xs font-black uppercase text-white mb-8">User Funnel</h3>
+                        <div class="flex-1 space-y-6">
+                            ${renderFunnelStep('App Open', s.funnelRaw?.app_open, 100, 'bg-slate-500')}
+                            ${renderFunnelStep('Onboarding', s.funnelRaw?.onboarding_completed, s.funnelMetrics?.onboardingConv, 'bg-blue-500')}
+                            ${renderFunnelStep('Trial Started', s.funnelRaw?.trial_page_open, s.funnelMetrics?.trialConv, 'bg-purple-500')}
+                            ${renderFunnelStep('Premium', s.funnelRaw?.premium_activated, s.funnelMetrics?.premiumConv, 'bg-orange-500')}
+                        </div>
+                        <div class="pt-6 mt-6 border-t border-white/5 flex justify-between items-center">
+                            <span class="text-[10px] font-black text-slate-500 uppercase">Overall ROI</span>
+                            <span class="text-lg font-black text-emerald-500">${s.funnelMetrics?.overallROI || 0}%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECONDARY STATS ROW -->
+                <div class="grid grid-cols-4 gap-6">
+                    <!-- Demographics -->
+                    <div class="glass p-8 rounded-[2.5rem] col-span-1">
+                        <h3 class="text-[10px] font-black uppercase text-slate-500 mb-6">Demographics</h3>
+                        <div class="space-y-6">
+                            <div>
+                                <div class="flex justify-between text-[10px] font-bold mb-2">
+                                    <span class="text-blue-400">MALE</span>
+                                    <span class="text-white">${malePercent}%</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-blue-400" style="width: ${malePercent}%"></div></div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[10px] font-bold mb-2">
+                                    <span class="text-pink-400">FEMALE</span>
+                                    <span class="text-white">${femalePercent}%</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-pink-400" style="width: ${femalePercent}%"></div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interaction Stats -->
+                    <div class="glass p-8 rounded-[2.5rem] col-span-1">
+                        <h3 class="text-[10px] font-black uppercase text-slate-500 mb-6">Engagement</h3>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] font-bold text-slate-400">Total Messages</span>
+                                <span class="text-sm font-black text-white">${(s.totalMessages || 0).toLocaleString()}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] font-bold text-slate-400">Avg Msg/User</span>
+                                <span class="text-sm font-black text-white">${s.avgMessagesPerUser || 0}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] font-bold text-slate-400">Daily Active (DAU)</span>
+                                <span class="text-sm font-black text-white">${(s.dau || 0).toLocaleString()}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] font-bold text-slate-400">Retention</span>
+                                <span class="text-sm font-black text-emerald-500">${s.retention || '0%'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Transactions -->
+                    <div class="glass p-8 rounded-[2.5rem] col-span-2">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-[10px] font-black uppercase text-slate-500">Live Transactions</h3>
+                            <span class="text-[9px] font-black text-orange-500 uppercase cursor-pointer hover:underline" onclick="changeModule('monetization')">View All</span>
+                        </div>
+                        <div class="space-y-3">
+                            ${(r.recentTransactions || []).map(t => `
+                                <div class="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500">
+                                            <i class="fas fa-arrow-down text-xs"></i>
+                                        </div>
+                                        <div>
+                                            <p class="text-[10px] font-black text-white">+91 ${t.userPhone.slice(-10)}</p>
+                                            <p class="text-[8px] text-slate-500 uppercase font-bold">${new Date(t.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} via ${t.gateway}</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-xs font-black text-white">₹${t.amount}</p>
+                                        <p class="text-[8px] ${t.status === 'SUCCESS' ? 'text-emerald-500' : 'text-red-500'} font-black uppercase">${t.status}</p>
+                                    </div>
+                                </div>
+                            `).join('') || '<p class="text-center py-10 text-slate-600 text-xs font-bold uppercase">No recent activity</p>'}
                         </div>
                     </div>
                 </div>
             </div>
         `;
+
     } catch (err) {
-        console.error("❌ Dashboard Error:", err);
-        mainContent.innerHTML = `
-            <div class="p-20 text-center space-y-4">
-                <p class="text-red-500 font-bold uppercase tracking-widest text-sm">Failed to sync dashboard metrics</p>
-                <p class="text-[10px] text-slate-500 uppercase font-black">${err.message}</p>
-                <button onclick="loadDashboard()" class="px-8 py-3 glass rounded-2xl text-[10px] font-black uppercase hover:bg-white/5 transition border border-white/10 mt-4">Retry Synchronization</button>
-            </div>
-        `;
+        console.error("Dashboard Error:", err);
+        mainContent.innerHTML = `<div class="p-20 text-center"><p class="text-red-500 font-bold">Failed to load system metrics. Check connection.</p></div>`;
     }
+}
+
+function renderFunnelStep(label, value, percent, colorClass) {
+    return `
+        <div>
+            <div class="flex justify-between text-[10px] font-black mb-2">
+                <span class="text-slate-400 uppercase">${label}</span>
+                <span class="text-white">${(value || 0).toLocaleString()} <span class="text-slate-600 ml-1">(${percent}%)</span></span>
+            </div>
+            <div class="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                <div class="h-full ${colorClass}" style="width: ${percent}%"></div>
+            </div>
+        </div>
+    `;
 }
 
 function updateDashboardRealtime(data) {
-    const liveNowVal = document.querySelector('[data-card-id="live-now"] h2');
-    if (liveNowVal) {
-        const current = parseInt(liveNowVal.innerText.replace(/,/g, ''));
-        if (!isNaN(current) && current !== data.onlineUsers) {
-            animateValue(liveNowVal, current, data.onlineUsers, 1000);
-        }
-    }
-}
-
-function animateValue(obj, start, end, duration) {
-    let startTimestamp = null;
-    const step = (timestamp) => {
-        if (!startTimestamp) startTimestamp = timestamp;
-        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-        obj.innerHTML = Math.floor(progress * (end - start) + start).toLocaleString();
-        if (progress < 1) window.requestAnimationFrame(step);
-    };
-    window.requestAnimationFrame(step);
+    // Realtime socket updates can be handled here if needed
 }

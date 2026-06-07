@@ -34,6 +34,8 @@ router.use(isAdmin);
 router.get('/stats', s(AdminController.getStats));
 router.get('/analytics/detailed', s(AdminController.getAnalytics));
 router.get('/admins', s(AdminController.getAdmins));
+router.put('/admin/:id', s(AdminController.updateAdmin));
+router.delete('/admin/:id', s(AdminController.deleteAdmin));
 router.get('/users', s(AdminController.getAllUsers));
 router.get('/user/:phone/full', s(AdminController.getUserFullProfile));
 router.get('/user/:phone/timeline', s(AdminController.getUserTimeline));
@@ -44,6 +46,7 @@ router.delete('/user/:phone/clear-chat', s(AdminController.clearUserChat));
 router.delete('/user/:phone/delete-account', s(AdminController.deleteUser));
 router.get('/reports', s(AdminController.getReports));
 router.post('/reports/handle', s(AdminController.handleReport));
+router.post('/report/status', s(AdminController.handleReport)); // Alias for compatibility
 router.get('/verification/requests', s(AdminController.getVerificationRequests));
 router.post('/verification/approve/:phone', s(AdminController.approveVerification));
 router.post('/verification/reject/:phone', s(AdminController.rejectVerification));

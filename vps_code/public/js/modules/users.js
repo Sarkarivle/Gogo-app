@@ -92,64 +92,87 @@ async function loadUsers(filters = {}) {
             </div>
         `;
 
-        const rows = users.map(u => `
-            <tr class="hover:bg-white/[0.01]">
-                <td class="p-6">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center text-black font-black">
-                            ${u.name ? u.name[0] : '?'}
+        const rows = users.map(u => {
+            const genderColor = u.gender === 'Male' ? 'text-blue-400' : (u.gender === 'Female' ? 'text-pink-400' : 'text-slate-400');
+            const genderIcon = u.gender === 'Male' ? 'fa-mars' : (u.gender === 'Female' ? 'fa-venus' : 'fa-genderless');
+
+            return `
+                <tr class="hover:bg-white/[0.01]">
+                    <td class="p-6">
+                        <div class="flex items-center space-x-3">
+                            <div class="relative">
+                                <div class="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-slate-500 font-black border-2 ${u.isPremium ? 'border-orange-500' : 'border-white/10'}">
+                                    ${u.name ? u.name[0] : '?'}
+                                </div>
+                                ${u.isVerified ? `
+                                    <div class="absolute -top-1 -right-1 bg-blue-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-[#0b0d13]">
+                                        <i class="fas fa-check text-[7px]"></i>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div>
+                                <div class="flex items-center space-x-1">
+                                    <p class="text-sm font-bold text-white">${u.name || 'Incognito'}</p>
+                                    <i class="fas ${genderIcon} ${genderColor} text-[10px]"></i>
+                                    ${u.isPremium ? '<i class="fas fa-crown text-orange-500 text-[10px] ml-1"></i>' : ''}
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <p class="text-[10px] text-slate-500">${u.phone}</p>
+                                    ${u.multiAccountCount > 1 ? `<span class="px-1.5 py-0.5 bg-red-500/10 text-red-500 text-[8px] font-black rounded uppercase">Multi-UID: ${u.multiAccountCount}</span>` : ''}
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <p class="text-sm font-bold text-white">
-                                ${u.name || 'Incognito'}
-                                ${u.isDeactivated ? '<span class="text-[9px] text-orange-500 ml-1 uppercase font-black tracking-tighter">[Deactivated]</span>' : ''}
-                            </p>
-                            <p class="text-[10px] text-slate-500">${u.phone}</p>
+                    </td>
+                    <td class="p-6">
+                        <p class="text-xs font-bold text-white">${u.city || 'Global'}</p>
+                        <p class="text-[9px] text-slate-500 font-bold uppercase">Joined ${timeAgo(u.createdAt)}</p>
+                    </td>
+                    <td class="p-6">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-1.5 h-1.5 rounded-full ${u.trustScore >= 80 ? 'bg-emerald-500' : (u.trustScore >= 40 ? 'bg-yellow-500' : 'bg-red-500')}"></div>
+                            <span class="text-[10px] font-black uppercase ${u.trustScore >= 80 ? 'text-emerald-500' : (u.trustScore >= 40 ? 'text-yellow-500' : 'text-red-500')}">${u.trustScore}%</span>
                         </div>
-                    </div>
-                </td>
-                <td class="p-6 text-xs font-bold text-slate-400">${u.city || 'Global'}</td>
-                <td class="p-6">
-                    <div class="flex items-center space-x-2">
-                        <div class="w-1.5 h-1.5 rounded-full ${u.trustScore >= 80 ? 'bg-emerald-500' : (u.trustScore >= 40 ? 'bg-yellow-500' : 'bg-red-500')}"></div>
-                        <span class="text-[10px] font-black uppercase ${u.trustScore >= 80 ? 'text-emerald-500' : (u.trustScore >= 40 ? 'text-yellow-500' : 'text-red-500')}">${u.trustScore}%</span>
-                    </div>
-                </td>
-                <td class="p-6">
-                    <div class="flex items-center space-x-2">
-                        <div class="w-2 h-2 rounded-full ${u.isOnline ? 'bg-emerald-500' : 'bg-slate-700'}"></div>
-                        <span class="text-[10px] font-black uppercase ${u.isOnline ? 'text-emerald-500' : 'text-slate-500'}">${u.isOnline ? 'Online' : 'Offline'}</span>
-                    </div>
-                </td>
-                <td class="p-6">
-                    ${(() => {
-                        const status = u.accountStatus || 'Active';
-                        let colors = 'bg-emerald-500/10 text-emerald-500';
-                        if (status === 'Deactivated') colors = 'bg-orange-500/10 text-orange-500';
-                        else if (status !== 'Active') colors = 'bg-red-500/10 text-red-500';
-                        return UI.badge(status, colors);
-                    })()}
-                    ${u.isPremium ? UI.badge('Premium', 'bg-orange-500/10 text-orange-500 ml-1') : ''}
-                    ${u.isShadowBanned ? UI.badge('Shadow', 'bg-purple-500/10 text-purple-500 ml-1') : ''}
-                </td>
-                <td class="p-6">
-                    <div class="flex items-center space-x-2">
-                        <button onclick="quickToggleVerify('${u.phone}', ${u.isVerified})" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.isVerified ? 'bg-blue-500/20 text-blue-500' : 'bg-white/5 text-slate-500 hover:bg-white/10'}" title="Quick Verify">
-                            <i class="fas fa-check-circle text-[10px]"></i>
-                        </button>
-                        <button onclick="quickToggleShadow('${u.phone}', ${u.isShadowBanned})" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.isShadowBanned ? 'bg-purple-500/20 text-purple-500' : 'bg-white/5 text-slate-500 hover:bg-white/10'}" title="Quick Shadow Ban">
-                            <i class="fas fa-user-secret text-[10px]"></i>
-                        </button>
-                        <button onclick="quickBanUser('${u.phone}', '${u.accountStatus}')" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.accountStatus === 'Suspended' ? 'bg-red-500 text-white' : 'bg-white/5 text-slate-500 hover:bg-red-500/20 hover:text-red-500'}" title="Quick Ban">
-                            <i class="fas fa-user-slash text-[10px]"></i>
-                        </button>
-                    </div>
-                </td>
-                <td class="p-6 text-right">
-                    <button onclick="openUserControl('${u.phone}')" class="px-6 py-2 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase transition hover:scale-105">Manage</button>
-                </td>
-            </tr>
-        `);
+                    </td>
+                    <td class="p-6">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 rounded-full ${u.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}"></div>
+                            <div>
+                                <p class="text-[10px] font-black uppercase ${u.isOnline ? 'text-emerald-500' : 'text-slate-500'}">${u.isOnline ? 'Online' : 'Offline'}</p>
+                                ${!u.isOnline && u.lastSeen ? `<p class="text-[8px] text-slate-600 font-bold uppercase">${timeAgo(u.lastSeen)}</p>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-6">
+                        <div class="flex flex-col space-y-1">
+                            ${(() => {
+                                const status = u.accountStatus || 'Active';
+                                let colors = 'bg-emerald-500/10 text-emerald-500';
+                                if (status === 'Deactivated') colors = 'bg-orange-500/10 text-orange-500';
+                                else if (status !== 'Active') colors = 'bg-red-500/10 text-red-500';
+                                return UI.badge(status, colors);
+                            })()}
+                            ${u.isShadowBanned ? UI.badge('Shadow', 'bg-purple-500/10 text-purple-500') : ''}
+                        </div>
+                    </td>
+                    <td class="p-6">
+                        <div class="flex items-center space-x-2">
+                            <button onclick="quickToggleVerify('${u.phone}', ${u.isVerified})" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.isVerified ? 'bg-blue-500/20 text-blue-500' : 'bg-white/5 text-slate-500 hover:bg-white/10'}" title="Quick Verify">
+                                <i class="fas fa-check-circle text-[10px]"></i>
+                            </button>
+                            <button onclick="quickToggleShadow('${u.phone}', ${u.isShadowBanned})" class="w-8 h-8 rounded-lg flex items-center justify-center transition ${u.isShadowBanned ? 'bg-purple-500/20 text-purple-500' : 'bg-white/5 text-slate-500 hover:bg-white/10'}" title="Quick Shadow Ban">
+                                <i class="fas fa-user-secret text-[10px]"></i>
+                            </button>
+                            <button onclick="openUserControl('${u.phone}', 'inbox')" class="w-8 h-8 rounded-lg flex items-center justify-center transition bg-white/5 text-slate-500 hover:bg-blue-500/10 hover:text-blue-500" title="View Chats">
+                                <i class="fas fa-comments text-[10px]"></i>
+                            </button>
+                        </div>
+                    </td>
+                    <td class="p-6 text-right">
+                        <button onclick="openUserControl('${u.phone}')" class="px-6 py-2 bg-orange-500 text-black rounded-xl text-[10px] font-black uppercase transition hover:scale-105">Manage</button>
+                    </td>
+                </tr>
+            `;
+        });
 
         const getSortIcon = (field) => {
             if (sortBy !== field) return '<i class="fas fa-sort ml-2 opacity-20"></i>';
@@ -158,9 +181,9 @@ async function loadUsers(filters = {}) {
 
         const headers = [
             `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('name')">User Identity ${getSortIcon('name')}</div>`,
-            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('city')">Location ${getSortIcon('city')}</div>`,
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('createdAt')">Joined ${getSortIcon('createdAt')}</div>`,
             `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('trustScore')">Integrity ${getSortIcon('trustScore')}</div>`,
-            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('isOnline')">Status ${getSortIcon('isOnline')}</div>`,
+            `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('lastSeen')">Status ${getSortIcon('lastSeen')}</div>`,
             `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('accountStatus')">Account Status ${getSortIcon('accountStatus')}</div>`,
             'Quick Actions',
             'Action'
@@ -171,11 +194,28 @@ async function loadUsers(filters = {}) {
             rows
         );
     } catch (err) {
+        console.error("loadUsers Error:", err);
         document.getElementById('userTableContainer').innerHTML = `<p class="p-20 text-center text-red-500 uppercase font-black">Error syncing user registry</p>`;
     }
 }
 
-async function openUserControl(phone) {
+function timeAgo(date) {
+    if (!date) return 'Never';
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + "y ago";
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + "mo ago";
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + "d ago";
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + "h ago";
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + "m ago";
+    return "Just now";
+}
+
+async function openUserControl(phone, initialTab = 'timeline') {
     UI.modal.show(
         `<div class="flex items-center space-x-4"><div class="custom-loader w-8 h-8"></div><p class="text-xs uppercase font-black">Fetching full user profile...</p></div>`,
         UI.loader()
@@ -200,11 +240,21 @@ async function openUserControl(phone) {
             `
             <div class="flex items-center justify-between w-full">
                 <div class="flex items-center space-x-4">
-                    <div class="w-12 h-12 rounded-2xl bg-orange-500 flex items-center justify-center text-black font-black text-xl">
-                        ${u.name ? u.name[0] : '?'}
+                    <div class="relative">
+                        <div class="w-14 h-14 rounded-2xl bg-orange-500 flex items-center justify-center text-black font-black text-2xl">
+                            ${u.name ? u.name[0] : '?'}
+                        </div>
+                        ${u.isPremium ? `
+                            <div class="absolute -top-1 -right-1 bg-orange-500 text-black w-5 h-5 rounded-lg flex items-center justify-center border-2 border-[#0b0d13]">
+                                <i class="fas fa-crown text-[10px]"></i>
+                            </div>
+                        ` : ''}
                     </div>
                     <div>
-                        <h2 class="text-xl font-black text-white uppercase">${u.name || 'Anonymous'}</h2>
+                        <div class="flex items-center space-x-2">
+                            <h2 class="text-xl font-black text-white uppercase">${u.name || 'Anonymous'}</h2>
+                            ${u.isVerified ? '<i class="fas fa-check-circle text-blue-500 text-sm"></i>' : ''}
+                        </div>
                         <p class="text-xs text-orange-500 font-bold">${u.phone}</p>
                     </div>
                 </div>
@@ -272,12 +322,12 @@ async function openUserControl(phone) {
                 </div>
                 <div class="col-span-8 space-y-6 flex flex-col">
                     <div class="flex space-x-3 shrink-0 overflow-x-auto pb-2 scrollbar-hide">
-                        <button onclick="loadUserTimeline('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-stream mr-2 text-orange-500"></i> Timeline</button>
-                        <button onclick="loadUserInbox('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-inbox mr-2 text-blue-500"></i> Inbox</button>
-                        <button onclick="loadUserFinance('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-credit-card mr-2 text-emerald-500"></i> Finance</button>
-                        <button onclick="loadUserMedia('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-images mr-2 text-purple-500"></i> Media</button>
-                        <button onclick="loadUserSecurity('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-shield-alt mr-2 text-red-500"></i> Security</button>
-                        <button onclick="openNotificationModal('${u.phone}')" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-bell mr-2 text-yellow-500"></i> Notify</button>
+                        <button onclick="loadUserTimeline('${u.phone}')" id="tab-timeline" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-stream mr-2 text-orange-500"></i> Timeline</button>
+                        <button onclick="loadUserInbox('${u.phone}')" id="tab-inbox" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-inbox mr-2 text-blue-500"></i> Inbox</button>
+                        <button onclick="loadUserFinance('${u.phone}')" id="tab-finance" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-credit-card mr-2 text-emerald-500"></i> Finance</button>
+                        <button onclick="loadUserMedia('${u.phone}')" id="tab-media" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-images mr-2 text-purple-500"></i> Media</button>
+                        <button onclick="loadUserSecurity('${u.phone}')" id="tab-security" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-shield-alt mr-2 text-red-500"></i> Security</button>
+                        <button onclick="openNotificationModal('${u.phone}')" id="tab-notify" class="flex-1 min-w-[100px] glass p-4 rounded-2xl text-[9px] font-black uppercase hover:bg-white/5"><i class="fas fa-bell mr-2 text-yellow-500"></i> Notify</button>
                     </div>
                     <div id="userControlDynamic" class="flex-1 glass rounded-[2.5rem] p-10 min-h-[400px] overflow-y-auto relative">
                         <div class="flex flex-col items-center justify-center h-full opacity-10">
@@ -289,6 +339,11 @@ async function openUserControl(phone) {
             </div>
             `
         );
+
+        // Load initial tab
+        if (initialTab === 'inbox') loadUserInbox(phone);
+        else loadUserTimeline(phone);
+
     } catch (err) {
         UI.modal.show('Error', `<p class="text-red-500 font-bold">Failed to load user profile</p>`);
     }
@@ -545,37 +600,56 @@ async function loadUserMedia(phone) {
                     <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Media Assets (${media.length})</h4>
                     <div class="flex space-x-2">
                         <span class="flex items-center text-[8px] font-bold text-slate-500 uppercase"><div class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></div> Profile</span>
+                        <span class="flex items-center text-[8px] font-bold text-slate-500 uppercase ml-3"><div class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></div> Recent</span>
                         <span class="flex items-center text-[8px] font-bold text-slate-500 uppercase ml-3"><div class="w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5"></div> Chat</span>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-3 gap-4">
-                    ${media.map(m => `
-                        <div class="relative aspect-square rounded-2xl overflow-hidden group border-2 ${m.type === 'Profile' ? 'border-blue-500/20' : 'border-orange-500/20'}">
-                            <img src="${m.url}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400?text=Image+Not+Found'">
+                    ${media.map(m => {
+                        let borderColor = 'border-orange-500/20';
+                        let badgeColor = 'bg-orange-500 text-black';
+                        if (m.type === 'Profile') { borderColor = 'border-blue-500/20'; badgeColor = 'bg-blue-500 text-white'; }
+                        else if (m.type === 'Recent') { borderColor = 'border-emerald-500/20'; badgeColor = 'bg-emerald-500 text-black'; }
+                        else if (m.type === 'Video') { badgeColor = 'bg-purple-500 text-white'; }
 
-                            <!-- Overlay Info -->
-                            <div class="absolute top-2 left-2">
-                                <span class="px-2 py-0.5 rounded text-[7px] font-black uppercase ${m.type === 'Profile' ? 'bg-blue-500 text-white' : 'bg-orange-500 text-black'}">
-                                    ${m.type}
-                                </span>
-                            </div>
+                        const isAudio = m.type === 'Audio';
+                        const authenticatedUrl = API.getAuthUrl(m.url);
 
-                            <!-- Hover Actions -->
-                            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-3">
-                                <button onclick="window.open('${m.url}')" class="w-10 h-10 glass rounded-full flex items-center justify-center text-xs hover:bg-white/10 transition">
-                                    <i class="fas fa-expand"></i>
-                                </button>
-                                <button onclick="deleteUserSpecificMedia('${phone}', '${m.url}', '${m.type}')" class="w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:scale-110 transition">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
+                        return `
+                            <div class="relative aspect-square rounded-2xl overflow-hidden group border-2 ${borderColor}">
+                                ${isAudio ? `
+                                    <div class="w-full h-full bg-white/5 flex flex-col items-center justify-center space-y-2">
+                                        <i class="fas fa-microphone text-2xl text-slate-500"></i>
+                                        <p class="text-[8px] font-bold uppercase text-slate-400">Audio Note</p>
+                                    </div>
+                                ` : `
+                                    <img src="${authenticatedUrl}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400?text=Image+Not+Found'">
+                                `}
 
-                            <div class="absolute bottom-0 inset-x-0 p-2 bg-black/40 backdrop-blur-sm transform translate-y-full group-hover:translate-y-0 transition">
-                                <p class="text-[8px] text-white font-bold uppercase truncate">${new Date(m.timestamp).toLocaleDateString()} • ${new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                <!-- Overlay Info -->
+                                <div class="absolute top-2 left-2">
+                                    <span class="px-2 py-0.5 rounded text-[7px] font-black uppercase ${badgeColor}">
+                                        ${m.type}
+                                    </span>
+                                </div>
+
+                                <!-- Hover Actions -->
+                                <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-3">
+                                    <button onclick="window.open('${authenticatedUrl}')" class="w-10 h-10 glass rounded-full flex items-center justify-center text-xs hover:bg-white/10 transition">
+                                        <i class="fas ${isAudio ? 'fa-play' : 'fa-expand'}"></i>
+                                    </button>
+                                    <button onclick="deleteUserSpecificMedia('${phone}', '${m.url}', '${m.type}')" class="w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:scale-110 transition">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+
+                                <div class="absolute bottom-0 inset-x-0 p-2 bg-black/40 backdrop-blur-sm transform translate-y-full group-hover:translate-y-0 transition">
+                                    <p class="text-[8px] text-white font-bold uppercase truncate">${new Date(m.timestamp).toLocaleDateString()} • ${new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                </div>
                             </div>
-                        </div>
-                    `).join('') || `
+                        `;
+                    }).join('') || `
                         <div class="col-span-3 py-20 flex flex-col items-center justify-center opacity-20">
                             <i class="fas fa-images text-5xl mb-4"></i>
                             <p class="uppercase font-black text-[10px] tracking-widest">No Media Uploaded Yet</p>
@@ -672,8 +746,6 @@ async function loadFullChat(p1, p2) {
             </div>
         `;
         UI.modal.setDynamicContent(content);
-        const area = document.getElementById('userControlDynamic');
-        area.scrollTop = area.scrollHeight;
     } catch (err) {
         UI.modal.setDynamicContent('<p class="text-red-500">Failed to load logs</p>');
     }

@@ -33,9 +33,9 @@ async function loadVerifications() {
                             <div class="space-y-2">
                                 <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Verification Selfie</p>
                                 <div class="rounded-[2rem] overflow-hidden border-2 border-blue-500/30 bg-black/40 aspect-[3/4] relative group/img">
-                                    <img src="${req.selfieUrl}" class="w-full h-full object-cover" alt="Selfie">
+                                    <img src="${API.getAuthUrl(req.selfieUrl)}" class="w-full h-full object-cover" alt="Selfie">
                                     <div class="absolute inset-0 bg-black/60 opacity-0 group-hover/img:opacity-100 transition flex items-center justify-center">
-                                        <button onclick="window.open('${req.selfieUrl}')" class="w-12 h-12 glass rounded-full flex items-center justify-center text-white hover:bg-white/20">
+                                        <button onclick="window.open('${API.getAuthUrl(req.selfieUrl)}')" class="w-12 h-12 glass rounded-full flex items-center justify-center text-white hover:bg-white/20">
                                             <i class="fas fa-expand"></i>
                                         </button>
                                     </div>
@@ -46,9 +46,9 @@ async function loadVerifications() {
                             <div class="space-y-2">
                                 <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Current Profile Pic</p>
                                 <div class="rounded-[2rem] overflow-hidden border-2 border-white/10 bg-black/40 aspect-[3/4] relative group/img">
-                                    <img src="${req.profileImage || 'https://placehold.co/400x600?text=No+Profile+Pic'}" class="w-full h-full object-cover" alt="Profile">
+                                    <img src="${req.profileImage ? API.getAuthUrl(req.profileImage) : 'https://placehold.co/400x600?text=No+Profile+Pic'}" class="w-full h-full object-cover" alt="Profile">
                                     <div class="absolute inset-0 bg-black/60 opacity-0 group-hover/img:opacity-100 transition flex items-center justify-center">
-                                        <button onclick="window.open('${req.profileImage}')" class="w-12 h-12 glass rounded-full flex items-center justify-center text-white hover:bg-white/20">
+                                        <button onclick="window.open('${req.profileImage ? API.getAuthUrl(req.profileImage) : '#'}')" class="w-12 h-12 glass rounded-full flex items-center justify-center text-white hover:bg-white/20">
                                             <i class="fas fa-expand"></i>
                                         </button>
                                     </div>

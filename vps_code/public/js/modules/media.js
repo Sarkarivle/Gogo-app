@@ -29,17 +29,24 @@ async function loadMedia(filter = 'all', reportedOnly = false) {
                         <div class="flex gap-4">
                             <!-- Quick Filters -->
                             <div class="flex bg-white/5 p-1 rounded-2xl border border-white/5">
-                                ${['all', 'Profile', 'Chat'].map(f => `
+                                ${['all', 'Profile', 'Recent', 'Chat'].map(f => `
                                     <button onclick="loadMedia('${f}', ${reportedOnlyFilter})" class="px-4 py-2 rounded-xl text-[8px] font-black uppercase transition ${currentMediaFilter === f ? 'bg-orange-500 text-black' : 'text-slate-500 hover:text-white'}">
                                         ${f}
                                     </button>
                                 `).join('')}
                             </div>
 
-                            <!-- Reported Only Toggle -->
-                            <button onclick="loadMedia('${currentMediaFilter}', ${!reportedOnlyFilter})" class="px-6 py-2 rounded-2xl text-[8px] font-black uppercase transition border-2 ${reportedOnlyFilter ? 'border-red-500 bg-red-500/10 text-red-500' : 'border-white/10 text-slate-500'}">
-                                <i class="fas fa-shield-halved mr-2"></i> Reported Only
-                            </button>
+                            <!-- Governance Actions -->
+                            <div class="flex gap-2">
+                                <button onclick="revealAllMedia()" class="px-6 py-2 rounded-2xl text-[8px] font-black uppercase transition border-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-black">
+                                    <i class="fas fa-eye mr-2"></i> Reveal All
+                                </button>
+
+                                <!-- Reported Only Toggle -->
+                                <button onclick="loadMedia('${currentMediaFilter}', ${!reportedOnlyFilter})" class="px-6 py-2 rounded-2xl text-[8px] font-black uppercase transition border-2 ${reportedOnlyFilter ? 'border-red-500 bg-red-500/10 text-red-500' : 'border-white/10 text-slate-500'}">
+                                    <i class="fas fa-shield-halved mr-2"></i> Reported Only
+                                </button>
+                            </div>
 
                             <button onclick="loadMedia(currentMediaFilter, reportedOnlyFilter)" class="w-10 h-10 glass rounded-xl text-white text-[10px] flex items-center justify-center transition hover:bg-white/10">
                                 <i class="fas fa-sync-alt"></i>
@@ -49,35 +56,38 @@ async function loadMedia(filter = 'all', reportedOnly = false) {
 
                     <!-- Media Grid -->
                     <div class="grid grid-cols-5 gap-6">
-                        ${data.media.map((m, i) => `
-                            <div class="group relative aspect-square bg-black/60 rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-orange-500/30 transition-all shadow-2xl">
-                                <!-- Blur Container -->
-                                <div class="absolute inset-0 z-10 flex items-center justify-center backdrop-blur-3xl bg-black/40 group-hover:bg-black/20 transition-all media-blur-layer" id="blur-${i}">
-                                    <button onclick="revealMedia(${i})" class="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-[8px] font-black text-white uppercase tracking-tighter transition-all transform group-hover:scale-110">
-                                        <i class="fas fa-eye mr-2"></i> Reveal Content
-                                    </button>
-                                </div>
-
-                                <img src="${m.url}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400/111/white?text=Media+Missing'">
-
-                                <!-- Governance Overlay -->
-                                <div class="absolute inset-0 z-20 bg-gradient-to-t from-black via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 p-6 flex flex-col justify-end">
-                                    <div class="space-y-1 mb-4">
-                                        <p class="text-[9px] font-black text-white truncate">${m.ownerName || m.owner}</p>
-                                        <p class="text-[7px] font-bold text-orange-500 uppercase">${m.type} • ${new Date(m.timestamp).toLocaleDateString()}</p>
+                        ${data.media.map((m, i) => {
+                            const authenticatedUrl = API.getAuthUrl(m.url);
+                            return `
+                                <div class="group relative aspect-square bg-black/60 rounded-[2.5rem] overflow-hidden border border-white/5 hover:border-orange-500/30 transition-all shadow-2xl">
+                                    <!-- Blur Container -->
+                                    <div class="absolute inset-0 z-10 flex items-center justify-center backdrop-blur-3xl bg-black/40 group-hover:bg-black/20 transition-all media-blur-layer" id="blur-${i}">
+                                        <button onclick="revealMedia(${i})" class="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-[8px] font-black text-white uppercase tracking-tighter transition-all transform group-hover:scale-110">
+                                            <i class="fas fa-eye mr-2"></i> Reveal Content
+                                        </button>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <button onclick="deleteMedia('${m.url}', '${m.type}', '${m.owner}')" class="flex-1 py-3 bg-red-500/80 hover:bg-red-500 text-white text-[9px] font-black rounded-xl uppercase transition">Purge</button>
-                                        <button onclick="window.open('${m.url}', '_blank')" class="w-10 py-3 bg-white/10 text-white text-[10px] font-black rounded-xl hover:bg-white/20 transition flex items-center justify-center"><i class="fas fa-external-link-alt"></i></button>
+
+                                    <img src="${authenticatedUrl}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x400/111/white?text=Media+Missing'">
+
+                                    <!-- Governance Overlay -->
+                                    <div class="absolute inset-0 z-20 bg-gradient-to-t from-black via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 p-6 flex flex-col justify-end">
+                                        <div class="space-y-1 mb-4">
+                                            <p class="text-[9px] font-black text-white truncate">${m.ownerName || m.owner}</p>
+                                            <p class="text-[7px] font-bold text-orange-500 uppercase">${m.type} • ${new Date(m.timestamp).toLocaleDateString()}</p>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button onclick="deleteMedia('${m.url}', '${m.type}', '${m.owner}')" class="flex-1 py-3 bg-red-500/80 hover:bg-red-500 text-white text-[9px] font-black rounded-xl uppercase transition">Purge</button>
+                                            <button onclick="window.open('${authenticatedUrl}', '_blank')" class="w-10 py-3 bg-white/10 text-white text-[10px] font-black rounded-xl hover:bg-white/20 transition flex items-center justify-center"><i class="fas fa-external-link-alt"></i></button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Privacy Badge -->
+                                    <div class="absolute top-4 left-4 z-30 px-3 py-1 bg-black/60 backdrop-blur-md rounded-lg text-[7px] font-black uppercase border border-white/5 ${m.type === 'Profile' ? 'text-blue-400' : 'text-emerald-400'}">
+                                        ${m.type}
                                     </div>
                                 </div>
-
-                                <!-- Privacy Badge -->
-                                <div class="absolute top-4 left-4 z-30 px-3 py-1 bg-black/60 backdrop-blur-md rounded-lg text-[7px] font-black uppercase border border-white/5 ${m.type === 'Profile' ? 'text-blue-400' : 'text-emerald-400'}">
-                                    ${m.type}
-                                </div>
-                            </div>
-                        `).join('')}
+                            `;
+                        }).join('')}
                     </div>
 
                     ${data.media.length === 0 ? `
@@ -115,6 +125,11 @@ function revealMedia(index) {
     if (layer) {
         layer.classList.add('hidden');
     }
+}
+
+function revealAllMedia() {
+    const layers = document.querySelectorAll('.media-blur-layer');
+    layers.forEach(layer => layer.classList.add('hidden'));
 }
 
 async function deleteMedia(url, type, owner) {

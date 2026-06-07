@@ -139,9 +139,10 @@ const NewsModule = {
                 <div class="grid grid-cols-1 gap-6">
                     ${this.news.map(article => {
                         const date = article.published_at || article.createdAt || new Date();
+                        const authenticatedImageUrl = API.getAuthUrl(article.image_url);
                         return `
                             <div class="glass p-6 rounded-3xl flex items-center space-x-6 border border-white/5 hover:border-white/10 transition">
-                                <img src="${article.image_url || 'https://via.placeholder.com/150'}" class="w-24 h-24 rounded-2xl object-cover bg-white/5" onerror="this.src='https://via.placeholder.com/150'">
+                                <img src="${authenticatedImageUrl || 'https://via.placeholder.com/150'}" class="w-24 h-24 rounded-2xl object-cover bg-white/5" onerror="this.src='https://via.placeholder.com/150'">
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center space-x-2 mb-1">
                                         <span class="px-2 py-1 bg-blue-500/10 text-blue-500 text-[8px] font-black rounded uppercase">${article.category || 'General'}</span>

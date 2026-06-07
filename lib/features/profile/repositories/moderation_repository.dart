@@ -10,8 +10,8 @@ class ModerationRepository {
   factory ModerationRepository() => _instance;
   ModerationRepository._internal();
 
-  // phone -> isBlocked
-  final ValueNotifier<Map<String, bool>> blockStatusNotifier = ValueNotifier({});
+  // phone -> {isBlocked: bool, blockerPhone: String?}
+  final ValueNotifier<Map<String, Map<String, dynamic>>> blockStatusNotifier = ValueNotifier({});
 
   void init() {
     SocketService().eventStream.listen((event) {
@@ -36,10 +36,13 @@ class ModerationRepository {
         }
 
         if (otherPhone != null) {
-          final updated = Map<String, bool>.from(blockStatusNotifier.value);
-          updated[otherPhone] = isBlocked;
+          final updated = Map<String, Map<String, dynamic>>.from(blockStatusNotifier.value);
+          updated[otherPhone] = {
+            'isBlocked': isBlocked,
+            'blockerPhone': blocker
+          };
           blockStatusNotifier.value = updated;
-          debugPrint("🚫 [MODERATION] Real-time block update for $otherPhone: $isBlocked");
+          debugPrint("🚫 [MODERATION] Real-time block update for $otherPhone: $isBlocked by $blocker");
         }
       }
     });
@@ -47,7 +50,12 @@ class ModerationRepository {
 
   bool isBlocked(String phone) {
     final normalized = PhoneUtils.normalize(phone);
-    return blockStatusNotifier.value[normalized] ?? false;
+    return blockStatusNotifier.value[normalized]?['isBlocked'] ?? false;
+  }
+
+  String? getBlockerPhone(String phone) {
+    final normalized = PhoneUtils.normalize(phone);
+    return blockStatusNotifier.value[normalized]?['blockerPhone'];
   }
 
   Future<bool> reportUser({
@@ -79,8 +87,11 @@ class ModerationRepository {
   }) {
     final String? normalizedOther = PhoneUtils.normalize(blockedPhone);
     if (normalizedOther != null) {
-      final updated = Map<String, bool>.from(blockStatusNotifier.value);
-      updated[normalizedOther] = true;
+      final updated = Map<String, Map<String, dynamic>>.from(blockStatusNotifier.value);
+      updated[normalizedOther] = {
+        'isBlocked': true,
+        'blockerPhone': blockerPhone
+      };
       blockStatusNotifier.value = updated;
     }
 
@@ -97,8 +108,11 @@ class ModerationRepository {
   }) {
     final String? normalizedOther = PhoneUtils.normalize(blockedPhone);
     if (normalizedOther != null) {
-      final updated = Map<String, bool>.from(blockStatusNotifier.value);
-      updated[normalizedOther] = false;
+      final updated = Map<String, Map<String, dynamic>>.from(blockStatusNotifier.value);
+      updated[normalizedOther] = {
+        'isBlocked': false,
+        'blockerPhone': null
+      };
       blockStatusNotifier.value = updated;
     }
 

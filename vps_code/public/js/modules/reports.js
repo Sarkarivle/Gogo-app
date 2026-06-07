@@ -110,7 +110,7 @@ function renderReportsUI(filteredReports = null) {
                         <button onclick="viewReportDetails('${rep._id || rep.id}')" class="w-8 h-8 glass rounded-lg flex items-center justify-center text-[10px] hover:text-blue-400 transition" title="View Details"><i class="fas fa-eye"></i></button>
                         <button onclick="openUserControl('${rep.reportedPhone}')" class="px-4 py-2 glass rounded-xl text-[9px] font-black uppercase hover:bg-orange-500 hover:text-white transition shadow-lg hover:shadow-orange-500/20">Analyze</button>
                         ${isPending ? `
-                            <button onclick="quickResolveReport('${rep._id || rep.id}', 'Resolved')" class="w-8 h-8 bg-emerald-500/10 text-emerald-500 rounded-lg flex items-center justify-center text-[10px] hover:bg-emerald-500 hover:text-white transition" title="Mark Resolved"><i class="fas fa-check"></i></button>
+                            <button onclick="quickResolveReport('${rep._id}', 'Resolved')" class="w-8 h-8 bg-emerald-500/10 text-emerald-500 rounded-lg flex items-center justify-center text-[10px] hover:bg-emerald-500 hover:text-white transition" title="Mark Resolved"><i class="fas fa-check"></i></button>
                         ` : ''}
                     </div>
                 </td>
@@ -188,7 +188,7 @@ function applyReportFilters() {
                         <button onclick="viewReportDetails('${rep._id || rep.id}')" class="w-8 h-8 glass rounded-lg flex items-center justify-center text-[10px] hover:text-blue-400 transition" title="View Details"><i class="fas fa-eye"></i></button>
                         <button onclick="openUserControl('${rep.reportedPhone}')" class="px-4 py-2 glass rounded-xl text-[9px] font-black uppercase hover:bg-orange-500 hover:text-white transition shadow-lg hover:shadow-orange-500/20">Analyze</button>
                         ${isPending ? `
-                            <button onclick="quickResolveReport('${rep._id || rep.id}', 'Resolved')" class="w-8 h-8 bg-emerald-500/10 text-emerald-500 rounded-lg flex items-center justify-center text-[10px] hover:bg-emerald-500 hover:text-white transition" title="Mark Resolved"><i class="fas fa-check"></i></button>
+                            <button onclick="quickResolveReport('${rep._id}', 'Resolved')" class="w-8 h-8 bg-emerald-500/10 text-emerald-500 rounded-lg flex items-center justify-center text-[10px] hover:bg-emerald-500 hover:text-white transition" title="Mark Resolved"><i class="fas fa-check"></i></button>
                         ` : ''}
                     </div>
                 </td>
@@ -280,8 +280,8 @@ async function viewReportDetails(id) {
                 </div>
 
                 <div class="flex space-x-4">
-                    <button onclick="quickResolveReport('${id}', 'Resolved'); UI.modal.hide();" class="flex-1 py-4 bg-emerald-500 text-black font-black text-[10px] uppercase rounded-2xl hover:scale-105 transition">Mark as Resolved</button>
-                    <button onclick="quickResolveReport('${id}', 'Dismissed'); UI.modal.hide();" class="flex-1 py-4 glass text-white font-black text-[10px] uppercase rounded-2xl hover:bg-white/10 transition">Dismiss Report</button>
+                    <button onclick="quickResolveReport('${report._id}', 'Resolved'); UI.modal.hide();" class="flex-1 py-4 bg-emerald-500 text-black font-black text-[10px] uppercase rounded-2xl hover:scale-105 transition">Mark as Resolved</button>
+                    <button onclick="quickResolveReport('${report._id}', 'Dismissed'); UI.modal.hide();" class="flex-1 py-4 glass text-white font-black text-[10px] uppercase rounded-2xl hover:bg-white/10 transition">Dismiss Report</button>
                 </div>
             </div>
         </div>

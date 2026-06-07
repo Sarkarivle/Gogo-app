@@ -124,7 +124,7 @@ class UserRepository {
         'distinctId': distinctId,
         'metadata': {
           ...?metadata,
-          if (eventId != null) 'event_id': eventId,
+          ...?eventId == null ? null : {'event_id': eventId},
           'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
         }
       });

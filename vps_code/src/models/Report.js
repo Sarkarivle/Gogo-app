@@ -10,7 +10,7 @@ const ReportSchema = new mongoose.Schema({
         default: 'Profile Report'
     },
     description: String,
-    status: { type: String, enum: ['Pending', 'Reviewed', 'Action Taken'], default: 'Pending', index: true },
+    status: { type: String, enum: ['Pending', 'Reviewed', 'Action Taken', 'Resolved', 'Dismissed'], default: 'Pending', index: true },
     adminNote: String,
     timestamp: { type: Date, default: Date.now }
 }, { timestamps: true });

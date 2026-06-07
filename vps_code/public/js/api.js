@@ -62,6 +62,15 @@ const API = {
     async getAdmins() {
         return await this.request('/api/admin/admins');
     },
+    async updateAdmin(id, data) {
+        return await this.request(`/api/admin/admin/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    },
+    async deleteAdmin(id) {
+        return await this.request(`/api/admin/admin/${id}`, { method: 'DELETE' });
+    },
     async getUsers(filters = {}) {
         const query = new URLSearchParams(filters).toString();
         return await this.request(`/api/admin/users${query ? '?' + query : ''}`);
@@ -100,9 +109,9 @@ const API = {
         return await this.request('/api/admin/reports');
     },
     async updateReportStatus(id, status) {
-        return await this.request(`/api/admin/report/${id}/status`, {
+        return await this.request('/api/admin/reports/handle', {
             method: 'POST',
-            body: JSON.stringify({ status })
+            body: JSON.stringify({ reportId: id, id: id, status })
         });
     },
     async getVerificationRequests() {
@@ -246,5 +255,11 @@ const API = {
         });
         if (!res.ok) throw new Error(`Upload failed (${res.status})`);
         return await res.json();
+    },
+    getAuthUrl(url) {
+        if (!url) return '';
+        if (!url.startsWith('/api/media')) return url;
+        const token = this.getToken();
+        return url.includes('?') ? `${url}&auth=${token}` : `${url}?auth=${token}`;
     }
 };

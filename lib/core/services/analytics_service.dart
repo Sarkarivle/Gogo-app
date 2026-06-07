@@ -52,7 +52,7 @@ class AnalyticsService {
     if (!_shouldTrackEvent('sign_up')) return;
     if (_canTrack('firebase')) await _analytics.logSignUp(signUpMethod: method);
     if (_canTrack('meta')) await _facebookAppEvents.logCompletedRegistration(registrationMethod: method);
-    _syncWithCAPI('onboarding_completed');
+    _syncWithBackend('onboarding_completed');
   }
 
   static Future<void> logPurchase(double amount, String currency, String planId) async {
@@ -63,7 +63,7 @@ class AnalyticsService {
     if (_canTrack('meta')) {
       await _facebookAppEvents.logPurchase(amount: amount, currency: currency, parameters: {'content_id': planId});
     }
-    _syncWithCAPI('premium_activated', metadata: {'amount': amount, 'currency': currency, 'planId': planId});
+    _syncWithBackend('premium_activated', metadata: {'amount': amount, 'currency': currency, 'planId': planId});
   }
 
   /// 3. Track Video/Audio Calls
@@ -71,7 +71,7 @@ class AnalyticsService {
     final params = {'call_type': type};
     if (_canTrack('firebase')) await _analytics.logEvent(name: 'start_call', parameters: params);
     if (_canTrack('meta')) await _facebookAppEvents.logEvent(name: 'start_call', parameters: params);
-    _syncWithCAPI('start_call', metadata: params);
+    _syncWithBackend('start_call', metadata: params);
   }
 
   /// 4. Custom Screen Tracking
@@ -85,7 +85,7 @@ class AnalyticsService {
     final params = {'target_user_id': userId};
     if (_canTrack('firebase')) await _analytics.logEvent(name: 'view_profile', parameters: params);
     if (_canTrack('meta')) await _facebookAppEvents.logEvent(name: 'view_profile', parameters: params);
-    _syncWithCAPI('view_profile', metadata: params);
+    _syncWithBackend('view_profile', metadata: params);
   }
 
   /// 6. Generic/Custom Events
@@ -98,13 +98,14 @@ class AnalyticsService {
     if (_canTrack('firebase')) await _analytics.logEvent(name: name, parameters: finalParams);
     if (_canTrack('meta')) await _facebookAppEvents.logEvent(name: name, parameters: finalParams);
     
-    _syncWithCAPI(name, eventId: eventId, metadata: parameters);
+    _syncWithBackend(name, eventId: eventId, metadata: parameters);
     debugPrint('📊 [Analytics] Event: $name');
   }
 
-  /// CAPI Sync Helper
-  static void _syncWithCAPI(String eventName, {String? eventId, Map<String, dynamic>? metadata}) {
-    if (!_canTrack('meta')) return;
+  /// Sync Helper for Backend & CAPI
+  static void _syncWithBackend(String eventName, {String? eventId, Map<String, dynamic>? metadata}) {
+    // We always sync with backend regardless of Meta status, 
+    // as backend handles its own CAPI logic and needs data for the dashboard.
     UserRepository().trackEvent(eventName, eventId: eventId, metadata: metadata);
   }
 

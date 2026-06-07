@@ -51,6 +51,15 @@ async function changeModule(mod) {
     localStorage.setItem('activeModule', mod);
 
     try {
+        if (mod === 'media') {
+            const mpin = prompt("ENTER MEDIA VAULT ACCESS PIN:");
+            if (mpin !== '2026') {
+                alert("ACCESS DENIED: INVALID PIN");
+                changeModule('dashboard');
+                return;
+            }
+        }
+
         switch(mod) {
             case 'dashboard': await loadDashboard(); break;
             case 'users': await loadUsers(); break;
@@ -106,11 +115,31 @@ function setupSocketListeners() {
     if (!socket) return;
     socket.on('admin_metrics_update', (data) => {
         if (localStorage.getItem('activeModule') === 'dashboard') updateDashboardRealtime?.(data);
+        if (localStorage.getItem('activeModule') === 'monitoring') updateMonitoringRealtime?.(data);
+    });
+
+    socket.on('admin_live_event', (event) => {
+        if (localStorage.getItem('activeModule') === 'monitoring') handleLiveMonitorEvent?.(event);
     });
 }
 
 function logout() { API.clearToken(); }
 function closeModal() { UI.modal.hide(); }
+
+async function refreshCurrentModule() {
+    const mod = localStorage.getItem('activeModule') || 'dashboard';
+    const btn = document.querySelector('button[onclick="refreshCurrentModule()"]');
+    if (btn) {
+        btn.classList.add('animate-spin');
+        btn.disabled = true;
+    }
+    await changeModule(mod);
+    if (btn) {
+        btn.classList.remove('animate-spin');
+        btn.disabled = false;
+    }
+    showSystemToast("Data Refreshed", "Live sync complete", 'bg-emerald-500');
+}
 
 window.addEventListener('load', init);
 document.addEventListener('click', (e) => { if (e.target.id === 'actionModal') closeModal(); });

@@ -69,7 +69,11 @@ io.use((socket, next) => {
     } catch (err) { return next(new Error("Auth error")); }
 });
 
-connectDB();
+connectDB().then(() => {
+    console.log("🚀 Database connected.");
+}).catch(err => {
+    console.error("❌ Database connection error:", err);
+});
 analyticsService.init(io);
 revenueService.init(io);
 
@@ -127,11 +131,15 @@ io.on('connection', (socket) => {
     if (socket.decoded?.role) {
         socket.join('admin');
         console.log(`👨‍💼 Admin connected: ${socket.decoded.username}`);
+        io.to('admin').emit('admin_live_event', { type: 'ADMIN_JOIN', label: 'Admin Logged In', user: socket.decoded.username });
     }
 
     if (myPhone) {
         socket.join(`user_${myPhone}`);
-        if (!phoneToSockets.has(myPhone)) phoneToSockets.set(myPhone, new Set());
+        if (!phoneToSockets.has(myPhone)) {
+            phoneToSockets.set(myPhone, new Set());
+            io.to('admin').emit('admin_live_event', { type: 'USER_JOIN', label: 'User Online', phone: myPhone });
+        }
         phoneToSockets.get(myPhone).add(socket.id);
     }
 
@@ -171,9 +179,26 @@ io.on('connection', (socket) => {
     });
 
     // --- CALLING SYSTEM ---
-    socket.on('initiate_call', (data) => {
+    socket.on('initiate_call', async (data) => {
         const other = normalizePhone(data.targetPhone || data.receiverPhone);
-        if (other) io.to(`user_${other}`).emit('incoming_call', { callerPhone: myPhone, callerName: data.callerName, isVideo: data.isVideo });
+        if (other) {
+            // SECURITY: Check if either user has blocked the other
+            const block = await Block.findOne({
+                $or: [
+                    { blockerPhone: myPhone, blockedPhone: other },
+                    { blockerPhone: other, blockedPhone: myPhone }
+                ]
+            });
+
+            if (block) {
+                console.warn(`🚫 Blocked call attempt: ${myPhone} -> ${other}`);
+                return; // Silently ignore or emit an error if needed
+            }
+
+            const roomId = getRoomId(myPhone, other);
+            analyticsService.trackCallStart(roomId);
+            io.to(`user_${other}`).emit('incoming_call', { callerPhone: myPhone, callerName: data.callerName, isVideo: data.isVideo });
+        }
     });
 
     socket.on('call_ringing', (data) => {
@@ -193,7 +218,10 @@ io.on('connection', (socket) => {
 
     socket.on('end_call', (data) => {
         const other = normalizePhone(data.targetPhone || data.otherPhone);
-        if (other) io.to(`user_${other}`).emit('call_ended', { by: myPhone });
+        if (other) {
+            analyticsService.trackCallEnd(getRoomId(myPhone, other));
+            io.to(`user_${other}`).emit('call_ended', { by: myPhone });
+        }
     });
 
     socket.on('sdp_offer', (data) => {
@@ -358,6 +386,23 @@ io.on('connection', (socket) => {
             if (!receiver) return callback && callback({ success: false, message: "Receiver required" });
 
             const roomId = getRoomId(myPhone, receiver);
+
+            // SECURITY: Check if either user has blocked the other
+            const block = await Block.findOne({
+                $or: [
+                    { blockerPhone: myPhone, blockedPhone: receiver },
+                    { blockerPhone: receiver, blockedPhone: myPhone }
+                ]
+            });
+
+            if (block) {
+                console.warn(`🚫 Blocked message attempt: ${myPhone} -> ${receiver}`);
+                return callback && callback({
+                    success: false,
+                    message: "You cannot send messages to this user."
+                });
+            }
+
             const isReceiverOnline = phoneToSockets.has(receiver) && phoneToSockets.get(receiver).size > 0;
 
             const tempId = new mongoose.Types.ObjectId();
@@ -547,6 +592,7 @@ io.on('connection', (socket) => {
                 sockets.delete(socket.id);
                 if (sockets.size === 0) {
                     phoneToSockets.delete(myPhone);
+                    io.to('admin').emit('admin_live_event', { type: 'USER_LEAVE', label: 'User Offline', phone: myPhone });
                     User.findOneAndUpdate({ phone: myPhone }, { isOnline: false }).then(() => {
                         io.emit('user_status_change', { phone: myPhone, isOnline: false });
                     }).catch(e => console.error("Disconnect status update error:", e));

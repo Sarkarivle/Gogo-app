@@ -82,6 +82,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _myName;
   String? _normalizedReceiverPhone;
   bool _isBlocked = false;
+  bool _isBlockedByMe = false;
   bool _isPartnerDeactivated = false;
   bool _hasReviewed = false;
   StreamSubscription? _socketSubscription;
@@ -140,10 +141,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _syncBlockFromGlobal() {
     if (_normalizedReceiverPhone == null) return;
     final bool newStatus = ModerationRepository().isBlocked(_normalizedReceiverPhone!);
-    if (_isBlocked != newStatus && mounted) {
-      debugPrint("📢 [CHAT] Syncing Block from Global: $newStatus");
+    final String? blocker = ModerationRepository().getBlockerPhone(_normalizedReceiverPhone!);
+    
+    if ((_isBlocked != newStatus || (_isBlocked && blocker != null)) && mounted) {
+      debugPrint("📢 [CHAT] Syncing Block from Global: $newStatus by $blocker");
       setState(() {
         _isBlocked = newStatus;
+        if (_isBlocked) {
+          _isBlockedByMe = PhoneUtils.normalize(blocker) == PhoneUtils.normalize(_myPhone);
+        } else {
+          _isBlockedByMe = false;
+        }
       });
       if (!_isBlocked) _fetchHistory(forceRefresh: true);
     }
@@ -445,6 +453,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               _messages.addAll(fetched);
             }
             _isBlocked = result['isBlocked'] ?? false;
+            _isBlockedByMe = _isBlocked && PhoneUtils.normalize(result['blockerPhone']?.toString()) == PhoneUtils.normalize(_myPhone);
             _isPartnerDeactivated = result['isPartnerDeactivated'] ?? false;
             _hasReviewed = result['hasReviewed'] ?? false;
             _isLoading = false;
@@ -727,14 +736,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.videocam_rounded, color: Colors.orangeAccent),
-          onPressed: () => _handleCall(true),
-        ),
-        IconButton(
-          icon: const Icon(Icons.call_rounded, color: Colors.orangeAccent),
-          onPressed: () => _handleCall(false),
-        ),
+        if (!_isBlocked) ...[
+          IconButton(
+            icon: const Icon(Icons.videocam_rounded, color: Colors.orangeAccent),
+            onPressed: () => _handleCall(true),
+          ),
+          IconButton(
+            icon: const Icon(Icons.call_rounded, color: Colors.orangeAccent),
+            onPressed: () => _handleCall(false),
+          ),
+        ],
         IconButton(
           icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone))),
@@ -902,6 +913,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildInputArea() {
+    if (_isBlocked) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+        ),
+        child: SafeArea(
+          child: Text(
+            _isBlockedByMe 
+                ? 'You have blocked this user. Unblock to message.' 
+                : 'You cannot message this user.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white38, fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: const BoxDecoration(
