@@ -268,6 +268,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           // We use that directly instead of calculating it locally to ensure consistency.
           for (var p in processedProfiles) {
             p['calculated_dist'] = (p['distance'] ?? '').replaceAll(' away', '');
+            p['full_dist'] = (p['fullDistance'] ?? '').replaceAll(' away', '');
             
             // SYNC PRESENCE: Ensure the PresenceManager is aware of the latest status from API
             if (p['phone'] != null) {
@@ -580,6 +581,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                         builder: (context, isOnline, _) {
                           return ProfileCard(
                             distance: p['calculated_dist'] ?? 'Unknown',
+                            fullDistance: p['full_dist'],
                             city: p['city'] ?? '',
                             area: p['area'] ?? '',
                             name: p['name'] ?? 'Unknown',

@@ -204,7 +204,21 @@ class PaymentService {
 
         const config = await Config.findOne({ key: 'payment_settings' });
         const settings = config?.value || {};
-        const isStandardMode = (await Config.findOne({ key: 'review_mode_config' }))?.value?.isReviewMode === true;
+        const reviewConfig = await Config.findOne({ key: 'review_mode_config' });
+
+        let isStandardMode = false;
+        if (reviewConfig && reviewConfig.value) {
+            const rc = reviewConfig.value;
+            if (rc.isReviewMode === true) {
+                isStandardMode = true;
+            } else if (rc.isGradualEnabled === true) {
+                const userCreated = new Date(user.createdAt).getTime();
+                const monetizationStart = rc.monetizationStartDate ? new Date(rc.monetizationStartDate).getTime() : Date.now();
+                if (userCreated < monetizationStart) {
+                    isStandardMode = true;
+                }
+            }
+        }
 
         if (isStandardMode) return { isPremium: false, status: 'review_mode', isStandardMode: true };
 

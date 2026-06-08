@@ -6,6 +6,7 @@ import 'package:gogo/core/guards/access_guard.dart';
 
 class ProfileCard extends StatelessWidget {
   final String distance;
+  final String? fullDistance; // New: Raw distance without 20km privacy rule
   final String city;
   final String area;
   final String name;
@@ -21,6 +22,7 @@ class ProfileCard extends StatelessWidget {
   const ProfileCard({
     super.key,
     required this.distance,
+    this.fullDistance,
     required this.city,
     required this.area,
     required this.name,
@@ -71,7 +73,7 @@ class ProfileCard extends StatelessWidget {
               context,
               name: name,
               phone: phone,
-              distance: distance,
+              distance: (fullDistance != null && fullDistance!.isNotEmpty) ? fullDistance! : distance,
               city: city,
               area: area,
               age: age,

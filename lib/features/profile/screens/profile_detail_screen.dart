@@ -128,6 +128,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
           _position = userData['position'] ?? _position;
           _havePlace = userData['havePlace'] ?? _havePlace;
           _isVerified = userData['isVerified'] ?? _isVerified;
+          
+          // Update distance if provided by the profile API
+          if (userData['distance'] != null && userData['distance'].toString().isNotEmpty) {
+            _distance = userData['distance'];
+          }
         });
       }
     } catch (e) {

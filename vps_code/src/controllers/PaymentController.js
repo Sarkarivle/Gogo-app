@@ -1,8 +1,27 @@
 const PaymentService = require('../services/payment/PaymentService');
 const Config = require('../models/Config');
+const User = require('../models/User'); // Import at top
 const { normalize } = require('../utils/phoneUtils');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
 
-const getPublicSettings = async (req, res) => {
+/**
+ * Shared Logic to determine if user should be in Standard Mode
+ * (Duplicate from UserController for reliability)
+ */
+function determineStandardMode(user, config) {
+    if (!config) return false;
+    if (config.isReviewMode === true) return true;
+    if (config.isGradualEnabled === true && user) {
+        if (!config.monetizationStartDate) return false;
+        const userCreated = new Date(user.createdAt).getTime();
+        const monetizationStart = new Date(config.monetizationStartDate).getTime();
+        return userCreated < monetizationStart;
+    }
+    return false;
+}
+
+exports.getPublicSettings = async (req, res) => {
     try {
         const [payConfig, gpConfig, reviewConfig] = await Promise.all([
             Config.findOne({ key: 'payment_settings' }),
@@ -13,23 +32,41 @@ const getPublicSettings = async (req, res) => {
         const settings = payConfig?.value || {};
         const gpSettings = gpConfig?.value || {};
 
-        // Robust check for isReviewMode within the value object
-        let isStandardMode = false;
-        let isOneMessageTrialEnabled = false;
-        let isScreenshotDisabled = true;
-        if (reviewConfig && reviewConfig.value) {
-            isStandardMode = reviewConfig.value.isReviewMode === true;
-            isOneMessageTrialEnabled = reviewConfig.value.isOneMessageTrialEnabled === true;
-            isScreenshotDisabled = reviewConfig.value.isScreenshotDisabled !== false;
+        // HYBRID FIX: Manually check for token to identify user
+        let user = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.split(' ')[1];
+                const decoded = jwt.verify(token, JWT_SECRET);
+                if (decoded && decoded.phone) {
+                    user = await User.findOne({ phone: normalize(decoded.phone) });
+                }
+            } catch (err) {
+                // Ignore invalid tokens
+            }
         }
 
-        console.log(`🛡️  Compliance Status: StandardMode=${isStandardMode}, 1MsgTrial=${isOneMessageTrialEnabled}, ScreenshotDisabled=${isScreenshotDisabled}`);
+        const config = reviewConfig?.value || {};
+        const isStandardMode = determineStandardMode(user, config);
+
+        // Trial logic: Trial is only allowed if global trial is enabled
+        // AND user is either a Reviewer (Global ON) OR a New User (Standard OFF)
+        // OLD USERS (Standard ON) should NOT be restricted by 1-msg trial if Gradual is ON
+        let isOneMessageTrialEnabled = config.isOneMessageTrialEnabled === true;
+
+        if (isStandardMode && config.isReviewMode === false && config.isGradualEnabled === true) {
+            // This is an OLD USER in Hybrid mode -> Force trial OFF (Unlimited Access)
+            isOneMessageTrialEnabled = false;
+        }
+
+        console.log(`🛡️ Compliance: User=${user?.phone || 'Guest'}, Mode=${isStandardMode ? 'STANDARD' : 'LIVE'}, Trial=${isOneMessageTrialEnabled}`);
 
         res.json({
             success: true,
             isStandardMode: isStandardMode,
             isOneMessageTrialEnabled: isOneMessageTrialEnabled,
-            isScreenshotDisabled: isScreenshotDisabled,
+            isScreenshotDisabled: config.isScreenshotDisabled !== false,
             activeGateway: settings.activeGateway || 'razorpay',
             config: {
                 isUpiEnabled: settings.isUpiEnabled !== false,
@@ -39,14 +76,14 @@ const getPublicSettings = async (req, res) => {
             }
         });
     } catch (e) {
+        console.error("getPublicSettings Error:", e);
         res.json({ success: true, isStandardMode: false, activeGateway: 'razorpay', config: { isUpiEnabled: true, isGooglePlayEnabled: false } });
     }
 };
 
-const createOrder = async (req, res) => {
+exports.createOrder = async (req, res) => {
     try {
         let { phone, preferredGateway } = req.body;
-        // Identity check: Always prefer token phone for users
         if (req.user && !req.user.role) phone = req.user.phone;
 
         if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
@@ -60,7 +97,7 @@ const createOrder = async (req, res) => {
     }
 };
 
-const verifyPayment = async (req, res) => {
+exports.verifyPayment = async (req, res) => {
     try {
         let { phone } = req.body;
         if (req.user && !req.user.role) phone = req.user.phone;
@@ -76,7 +113,7 @@ const verifyPayment = async (req, res) => {
     }
 };
 
-const syncUserStatus = async (req, res) => {
+exports.syncUserStatus = async (req, res) => {
     try {
         let phone = req.user?.phone;
         if (!phone) return res.status(401).json({ success: false, message: "Unauthorized" });
@@ -88,120 +125,59 @@ const syncUserStatus = async (req, res) => {
     }
 };
 
-const cancelSubscription = async (req, res) => {
+exports.cancelSubscription = async (req, res) => {
     try {
         const phone = req.user?.phone;
         if (!phone) return res.status(401).json({ success: false, message: "Unauthorized" });
 
         const result = await PaymentService.cancelSubscription(phone);
 
-        // BROADCAST REFRESH (Targeted)
         const io = req.app.get('socketio');
         if (io) io.to(`user_${normalize(phone)}`).emit('premium_status_refresh', { phone: phone, message: "Subscription Cancelled ⚠️", type: "warning" });
 
-        res.json(result);
+        res.json({ success: true, user: result });
     } catch (error) {
-        console.error("Cancellation Error:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-const notifyStatusChange = async (req, res) => {
-    try {
-        const io = req.app.get('socketio');
-        if (io) {
-            io.emit('premium_status_refresh', { timestamp: new Date() });
-            console.log("📢 Broadcast: Premium Status Refresh triggered for all users.");
-        }
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false });
-    }
-};
-
-const handleRazorpayWebhook = async (req, res) => {
+exports.handleRazorpayWebhook = async (req, res) => {
     try {
         const signature = req.headers['x-razorpay-signature'];
         await PaymentService.processWebhook('razorpay', req.body, signature);
-
-        // REAL-TIME NOTIFICATION TO APP
-        const io = req.app.get('socketio');
-        if (io) {
-            const payload = req.body;
-            const phone = (payload.payload?.payment?.entity?.notes?.phone) ||
-                          (payload.payload?.subscription?.entity?.notes?.phone);
-
-            if (phone) {
-                let message = "Account status updated";
-                let type = "info";
-
-                switch(payload.event) {
-                    case 'subscription.authenticated':
-                        message = "Trial Activated! Premium Features Unlocked 🚀";
-                        type = "success";
-                        break;
-                    case 'subscription.charged':
-                        message = "Payment Successful! Membership Renewed ✅";
-                        type = "success";
-                        break;
-                    case 'payment.failed':
-                    case 'subscription.halted':
-                        message = "Payment Failed! Please check your balance ❌";
-                        type = "error";
-                        break;
-                    case 'subscription.cancelled':
-                        message = "Subscription Cancelled. Access remains until expiry ⚠️";
-                        type = "warning";
-                        break;
-                }
-
-                io.to(`user_${normalize(phone)}`).emit('premium_status_refresh', {
-                    phone: phone,
-                    message: message,
-                    type: type
-                });
-                console.log(`📢 Webhook Broadcast: ${message} sent to ${phone}`);
-            }
-        }
-
         res.json({ status: 'ok' });
-    } catch (err) {
-        console.error("Razorpay Webhook Error:", err);
-        res.status(400).send('Webhook Error');
+    } catch (e) {
+        console.error("Razorpay Webhook Error:", e);
+        res.status(200).json({ status: 'error' });
     }
 };
 
-const handlePhonePeWebhook = async (req, res) => {
+exports.handlePhonePeWebhook = async (req, res) => {
     try {
         const signature = req.headers['x-verify'];
         await PaymentService.processWebhook('phonepe', req.body, signature);
         res.json({ status: 'ok' });
-    } catch (err) {
-        console.error("PhonePe Webhook Error:", err);
-        res.status(400).send('Webhook Error');
+    } catch (e) {
+        res.status(200).json({ status: 'error' });
     }
 };
 
-const handleCashfreeWebhook = async (req, res) => {
+exports.handleCashfreeWebhook = async (req, res) => {
     try {
-        const signature = req.headers['x-webhook-signature'];
-        const timestamp = req.headers['x-webhook-timestamp'];
-        await PaymentService.processWebhook('cashfree', { timestamp, rawBody: JSON.stringify(req.body) }, signature);
+        const signature = req.headers['x-cf-signature'];
+        await PaymentService.processWebhook('cashfree', req.body, signature);
         res.json({ status: 'ok' });
-    } catch (err) {
-        console.error("Cashfree Webhook Error:", err);
-        res.status(400).send('Webhook Error');
+    } catch (e) {
+        res.status(200).json({ status: 'error' });
     }
 };
 
-module.exports = {
-    getPublicSettings,
-    createOrder,
-    verifyPayment,
-    syncUserStatus,
-    cancelSubscription,
-    notifyStatusChange,
-    handleRazorpayWebhook,
-    handlePhonePeWebhook,
-    handleCashfreeWebhook
+exports.broadcastStatusChange = async (req, res) => {
+    try {
+        const io = req.app.get('socketio');
+        if (io) io.emit('premium_status_refresh', { message: "System Pricing Updated 🚀", type: "info" });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
 };

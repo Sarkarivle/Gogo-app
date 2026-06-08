@@ -53,17 +53,29 @@ class PremiumService {
 
   /// Logical check for ANY type of access (Paid OR Free Trial)
   bool get hasAccess {
-    bool access = isPremium || isFreemiumUser;
+    // 1. Premium users ALWAYS have full access
+    if (isPremium) {
+      if (accessNotifier.value != true) accessNotifier.value = true;
+      if (statusNotifier.value != "PREMIUM") statusNotifier.value = "PREMIUM";
+      return true;
+    }
 
-    // 1-Message Trial Override for Google Compliance Switch
+    bool access = isFreemiumUser;
+
+    // 2. Standard Mode Logic (Legacy Users or Global Review)
     if (AppConfigService().isStandardMode) {
       if (AppConfigService().isOneMessageTrialEnabled) {
-        // If 1-message trial is active, access depends on whether they've used their 1 message
+        // Reviewers get 1 message
         access = !_isOneMessageTrialUsed;
       } else {
-        // Google Toggle is ON, and trial is disabled -> Unlimited Access (Standard Review Mode)
+        // Legacy/Old users get unlimited
         access = true;
       }
+    } 
+    // 3. New Users (Live Mode) Trial Logic
+    else if (AppConfigService().isOneMessageTrialEnabled && !_isOneMessageTrialUsed) {
+      // New users get 1 message trial before paywall
+      access = true;
     }
 
     // Update notifiers only if values changed to save rebuilds

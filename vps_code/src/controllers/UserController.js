@@ -69,6 +69,30 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     return formatDistanceString(getDistanceKm(lat1, lon1, lat2, lon2));
 }
 
+/**
+ * Shared Logic to determine if user should be in Standard Mode
+ */
+function determineStandardMode(user, config) {
+    if (!config) return false;
+
+    // 1. Global Review Mode is the Master Override
+    if (config.isReviewMode === true) return true;
+
+    // 2. Gradual Monetization Logic (Only if Global Review is OFF)
+    if (config.isGradualEnabled === true && user) {
+        if (!config.monetizationStartDate) return false;
+
+        const userCreated = new Date(user.createdAt).getTime();
+        const monetizationStart = new Date(config.monetizationStartDate).getTime();
+
+        // If user was created BEFORE monetization started, they get Free Access (Standard Mode)
+        return userCreated < monetizationStart;
+    }
+
+    // 3. If everything is OFF, nobody gets Standard Mode (Everyone is Live)
+    return false;
+}
+
 exports.submitVerification = async (req, res) => {
     try {
         let phone = req.body.phone;
@@ -113,7 +137,7 @@ async function syncUserStatus(user, isStandardMode) {
         changed = true;
     }
 
-    // 1. Manage 'Standard Access' users (Google Compliance Mode)
+    // 1. Manage 'Standard Access' users (Legacy Compliance Mode)
     if (user.premiumPlan === 'Standard Access') {
         if (!isStandardMode) {
             // Toggle is OFF -> Remove Standard Access completely
@@ -121,7 +145,7 @@ async function syncUserStatus(user, isStandardMode) {
             user.premiumPlan = 'None';
             changed = true;
         } else if (user.isPremium) {
-            // Toggle is ON -> Set isPremium=false (App logic will show as Freemium)
+            // Toggle is ON -> Set isPremium=false (App logic will show as Freemium/Free)
             user.isPremium = false;
             changed = true;
         }
@@ -142,7 +166,8 @@ async function syncUserStatus(user, isStandardMode) {
                 isPremium: user.isPremium,
                 premiumPlan: user.premiumPlan,
                 premiumExpiry: user.premiumExpiry,
-                'subscription.status': user.subscription?.status
+                'subscription.status': user.subscription?.status,
+                oneMessageTrialUsed: user.oneMessageTrialUsed
             }
         });
     }
@@ -152,14 +177,35 @@ async function syncUserStatus(user, isStandardMode) {
 exports.getProfile = async (req, res) => {
     try {
         const phone = req.params.phone;
-        const [user, reviewConfig] = await Promise.all([
-            User.findOne(phoneQuery(phone)).select('-lat -lng -location').lean(),
+        const myPhone = req.user?.phone;
+
+        const [user, me, reviewConfig] = await Promise.all([
+            User.findOne(phoneQuery(phone)).lean(),
+            User.findOne(phoneQuery(myPhone), 'lat lng location').lean(),
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+        // Calculate Distance for Profile Page
+        let distStr = "";
+        const uLat = user.lat || user.location?.coordinates?.[1];
+        const uLng = user.lng || user.location?.coordinates?.[0];
+        const myLat = me?.lat || me?.location?.coordinates?.[1];
+        const myLng = me?.lng || me?.location?.coordinates?.[0];
+
+        if (uLat && uLng && myLat && myLng) {
+            const d = getDistanceKm(myLat, myLng, uLat, uLng);
+            distStr = formatDistanceString(d);
+        }
+        user.distance = distStr;
+
+        // Privacy: Strip sensitive fields
+        delete user.lat;
+        delete user.lng;
+        delete user.location;
+
+        const isStandardMode = determineStandardMode(user, reviewConfig?.value);
         await syncUserStatus(user, isStandardMode);
 
         const cleanArea = (user.area && user.area.toLowerCase() !== 'unknown') ? user.area : '';
@@ -179,9 +225,7 @@ exports.markTrialUsed = async (req, res) => {
         const phone = req.user?.phone;
         if (!phone) return res.status(401).json({ success: false });
 
-        const User = require('../models/User');
         await User.findOneAndUpdate(phoneQuery(phone), { oneMessageTrialUsed: true });
-
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -202,7 +246,7 @@ exports.login = async (req, res) => {
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
-        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+        const isStandardMode = determineStandardMode(user, reviewConfig?.value);
 
         if (user) {
             if (user.accountStatus === 'Suspended' || user.accountStatus === 'Banned' || user.isBanned) {
@@ -289,9 +333,10 @@ exports.register = async (req, res) => {
             Config.findOne({ key: 'review_mode_config' })
         ]);
 
-        const isStandardMode = reviewConfig?.value?.isReviewMode === true;
+        const configValue = reviewConfig?.value;
 
         if (existing) {
+            const isStandardMode = determineStandardMode(existing, configValue);
             await syncUserStatus(existing, isStandardMode);
             const token = jwt.sign({ phone: existing.phone, id: existing._id }, JWT_SECRET, { expiresIn: '90d' });
             return res.json({ success: true, user: existing, token, isStandardMode });
@@ -312,7 +357,8 @@ exports.register = async (req, res) => {
             lastSeen: new Date(),
             isPremium: false,
             premiumPlan: 'None',
-            premiumExpiry: null
+            premiumExpiry: null,
+            createdAt: new Date()
         };
 
         if (userData.dobYear) {
@@ -326,8 +372,10 @@ exports.register = async (req, res) => {
         analyticsService.trackEvent('registration', normalizedPhone);
         marketingService.triggerS2SPostback('registration', req.body.clickId);
 
+        const isStandardMode = determineStandardMode(savedUser, configValue);
+
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
-        res.json({ success: true, user: savedUser, token, isStandardMode: isStandardMode });
+        res.json({ success: true, user: savedUser, token, isStandardMode });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -426,6 +474,9 @@ exports.getDiscover = async (req, res) => {
         const limitNum = Math.max(1, parseInt(limit));
         const skip = (pageNum - 1) * limitNum;
 
+        // Exclude caller and incomplete profiles
+        const phoneVariations = [normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`];
+
         // --- REDIS CACHING (30s TTL) for Discovery ---
         const redis = req.app.get('redis');
 
@@ -441,12 +492,14 @@ exports.getDiscover = async (req, res) => {
         if (redis && page <= 5) { // Increased cache pages
             const cachedData = await redis.get(cacheKey);
             if (cachedData) {
-                return res.json(JSON.parse(cachedData));
+                const result = JSON.parse(cachedData);
+                // BUG FIX: Filter out the current user from shared cache
+                if (result.users && Array.isArray(result.users)) {
+                    result.users = result.users.filter(u => !phoneVariations.includes(normalize(u.phone)));
+                }
+                return res.json(result);
             }
         }
-
-        // Exclude caller and incomplete profiles
-        const phoneVariations = [normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`];
 
         // A profile is complete if hasCompletedOnboarding is true OR they have basic info filled (for old users)
         const baseQuery = {
@@ -587,15 +640,18 @@ exports.getDiscover = async (req, res) => {
             const uLng = u.lng || u.location?.coordinates?.[0];
 
             let distStr = "";
+            let fullDistStr = "";
             if (userLat && userLng && uLat && uLng) {
                 // Calculate distance again to apply display rules
                 const d = getDistanceKm(userLat, userLng, uLat, uLng);
+                fullDistStr = formatDistanceString(d);
+
                 // Rule: On Home Page (Discovery), hide distance if > 20km for privacy
                 // This applies to ALL tabs (Nearby, Online, etc.) on the home page.
                 if (d > 20) {
                     distStr = "";
                 } else {
-                    distStr = formatDistanceString(d);
+                    distStr = fullDistStr;
                 }
             }
 
@@ -609,7 +665,14 @@ exports.getDiscover = async (req, res) => {
             }
 
             const { lat, lng, location, ...rest } = u;
-            return { ...rest, isOnline, city: cleanArea || cleanCity || 'Nearby', area: '', distance: distStr };
+            return {
+                ...rest,
+                isOnline,
+                city: cleanArea || cleanCity || 'Nearby',
+                area: '',
+                distance: distStr,
+                fullDistance: fullDistStr
+            };
         });
 
         const resultPayload = { success: true, page: pageNum, users: processedUsers };
@@ -693,4 +756,3 @@ exports.reactivateAccount = async (req, res) => {
         res.status(500).json({ success: false });
     }
 };
-
