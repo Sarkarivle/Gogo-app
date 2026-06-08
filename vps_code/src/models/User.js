@@ -114,5 +114,8 @@ UserSchema.index({ name: 'text', phone: 'text', city: 'text' });
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ isBanned: 1, isDeactivated: 1 });
 UserSchema.index({ isPremium: -1, lastSeen: -1 });
+UserSchema.index({ accountStatus: 1, lastSeen: -1 }); // Fast Discovery
+UserSchema.index({ isOnline: 1, lastSeen: -1 }); // Fast Online Tab
+UserSchema.index({ chatCount: -1, lastSeen: -1 }); // Fast Popular Tab
 
 module.exports = mongoose.model('User', UserSchema);

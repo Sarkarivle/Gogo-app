@@ -165,19 +165,31 @@ exports.deleteAdmin = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const { search, status, accountStatus, dateRange, sortBy, sortOrder, onboardingStatus } = req.query;
+        const { search, status, accountStatus, dateRange, sortBy, sortOrder, onboardingStatus, tab } = req.query;
         console.log(`👥 [${new Date().toISOString()}] Admin API: getAllUsers requested. Filters:`, req.query);
 
         let q = {};
 
-        if (onboardingStatus === 'incomplete') {
+        // TAB LOGIC: Register vs Unregister
+        if (tab === 'unregistered') {
             q.hasCompletedOnboarding = false;
             q.dobYear = { $exists: false };
-        } else if (onboardingStatus === 'complete') {
+        } else if (tab === 'registered') {
             q.$or = [
                 { hasCompletedOnboarding: true },
                 { dobYear: { $exists: true, $ne: null } }
             ];
+        } else {
+            // Default onboardingStatus filtering if no tab is selected
+            if (onboardingStatus === 'incomplete') {
+                q.hasCompletedOnboarding = false;
+                q.dobYear = { $exists: false };
+            } else if (onboardingStatus === 'complete') {
+                q.$or = [
+                    { hasCompletedOnboarding: true },
+                    { dobYear: { $exists: true, $ne: null } }
+                ];
+            }
         }
 
         if (search) {
@@ -225,7 +237,7 @@ exports.getAllUsers = async (req, res) => {
         }
 
         const usersRaw = await User.find(q)
-            .select('name phone city isOnline lastSeen isPremium isVerified isShadowBanned accountStatus isDeactivated gender createdAt')
+            .select('name phone city isOnline lastSeen isPremium isVerified isShadowBanned accountStatus isDeactivated gender createdAt hasCompletedOnboarding dobYear')
             .sort(sort)
             .limit(100)
             .lean()
@@ -240,7 +252,23 @@ exports.getAllUsers = async (req, res) => {
             if (u.accountStatus === 'Suspended' || u.accountStatus === 'Banned') score = 0;
 
             const finalScore = Math.max(0, Math.min(100, score));
-            return { ...u, trustScore: finalScore, multiAccountCount: 1 };
+
+            // Dynamic Unregistered Status & Online Status Logic
+            let displayStatus = u.accountStatus;
+            let displayOnline = u.isOnline;
+
+            if (!u.hasCompletedOnboarding && !u.dobYear) {
+                displayStatus = 'Unregistered';
+                displayOnline = false; // Dashboard par unregistered users ko offline hi dikhao
+            }
+
+            return {
+                ...u,
+                accountStatus: displayStatus,
+                isOnline: displayOnline,
+                trustScore: finalScore,
+                multiAccountCount: 1
+            };
         });
 
         // Apply Trust Score Filtering if requested
@@ -255,10 +283,19 @@ exports.getAllUsers = async (req, res) => {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
-        const [totalUsers, onlineUsers, todayJoined] = await Promise.all([
+        const [totalUsers, onlineUsers, todayJoined, unregisteredTotal, unregisteredToday] = await Promise.all([
             User.countDocuments(),
-            User.countDocuments({ isOnline: true }),
-            User.countDocuments({ createdAt: { $gte: todayStart } })
+            User.countDocuments({
+                isOnline: true,
+                $or: [{ hasCompletedOnboarding: true }, { dobYear: { $exists: true, $ne: null } }]
+            }),
+            User.countDocuments({ createdAt: { $gte: todayStart } }),
+            User.countDocuments({ hasCompletedOnboarding: false, dobYear: { $exists: false } }),
+            User.countDocuments({
+                createdAt: { $gte: todayStart },
+                hasCompletedOnboarding: false,
+                dobYear: { $exists: false }
+            })
         ]);
 
         console.log(`✅ Found ${filteredUsers.length} users with filters and sort`);
@@ -267,7 +304,9 @@ exports.getAllUsers = async (req, res) => {
             stats: {
                 totalUsers,
                 onlineUsers,
-                todayJoined
+                todayJoined,
+                unregisteredTotal,
+                unregisteredToday
             }
         });
     } catch (e) {
@@ -285,20 +324,27 @@ exports.getUserFullProfile = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
         const pQ = phoneQuery(phone);
+        const variations = [phone, `+91${phone}`, `91${phone}`];
         const [user, reports, blocksRaw, sub, payments] = await Promise.all([
             User.findOne(pQ),
-            Report.find({ reportedPhone: new RegExp(phone + '$') }).sort({ timestamp: -1 }),
-            Block.find({ blockedPhone: new RegExp(phone + '$') }).sort({ timestamp: -1 }),
-            Subscription.findOne({ userPhone: new RegExp(phone + '$') }),
-            revenueService.getPaymentHistory({ userPhone: new RegExp(phone + '$') }, 1, 50)
+            Report.find({ reportedPhone: { $in: variations } }).sort({ timestamp: -1 }),
+            Block.find({ blockedPhone: { $in: variations } }).sort({ timestamp: -1 }),
+            Subscription.findOne({ userPhone: { $in: variations } }),
+            revenueService.getPaymentHistory({ userPhone: { $in: variations } }, 1, 50)
         ]);
 
         if (!user) return res.status(404).json({ success: false });
 
         // Enrich block data with names
         const blockerPhones = blocksRaw.map(b => b.blockerPhone);
+        const searchPhones = blockerPhones.reduce((acc, p) => {
+            const n = normalize(p);
+            acc.push(n, `+91${n}`, `91${n}`);
+            return acc;
+        }, []);
+
         const blockers = await User.find({
-            phone: { $in: blockerPhones.map(p => new RegExp(p + '$')) }
+            phone: { $in: searchPhones }
         }).select('phone name');
 
         const blocks = blocksRaw.map(b => {
@@ -378,8 +424,8 @@ exports.sendDirectNotification = async (req, res) => {
 exports.clearUserChat = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const pQ = new RegExp(phone + '$');
-        await Message.deleteMany({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] });
+        const variations = [phone, `+91${phone}`, `91${phone}`];
+        await Message.deleteMany({ $or: [{ senderPhone: { $in: variations } }, { receiverPhone: { $in: variations } }] });
 
         await logAction(req, "Clear Chat History", phone, "Wiped all message logs for user");
 
@@ -390,13 +436,13 @@ exports.clearUserChat = async (req, res) => {
 exports.deleteUser = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const pQ = new RegExp(phone + '$');
+        const variations = [phone, `+91${phone}`, `91${phone}`];
         await Promise.all([
             User.findOneAndDelete(phoneQuery(phone)),
-            Message.deleteMany({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] }),
-            Report.deleteMany({ $or: [{ reporterPhone: pQ }, { reportedPhone: pQ }] }),
-            Block.deleteMany({ $or: [{ blockerPhone: pQ }, { blockedPhone: pQ }] }),
-            Subscription.findOneAndDelete({ userPhone: pQ })
+            Message.deleteMany({ $or: [{ senderPhone: { $in: variations } }, { receiverPhone: { $in: variations } }] }),
+            Report.deleteMany({ $or: [{ reporterPhone: { $in: variations } }, { reportedPhone: { $in: variations } }] }),
+            Block.deleteMany({ $or: [{ blockerPhone: { $in: variations } }, { blockedPhone: { $in: variations } }] }),
+            Subscription.findOneAndDelete({ userPhone: { $in: variations } })
         ]);
 
         await logAction(req, "Delete Account", phone, "Permanently wiped user data");
@@ -465,7 +511,7 @@ exports.rejectVerification = async (req, res) => {
         const { reason } = req.body;
 
         await VerificationRequest.findOneAndUpdate(
-            { userPhone: new RegExp(phone + '$') },
+            { userPhone: { $in: [phone, `+91${phone}`, `91${phone}`] } },
             { status: 'Rejected', reviewedAt: new Date(), adminId: req.admin?.id }
         );
 
@@ -487,7 +533,7 @@ exports.approveVerification = async (req, res) => {
         const phone = normalize(req.params.phone);
         await Promise.all([
             User.findOneAndUpdate(phoneQuery(phone), { isVerified: true }),
-            VerificationRequest.findOneAndUpdate({ userPhone: new RegExp(phone + '$') }, { status: 'Approved' })
+            VerificationRequest.findOneAndUpdate({ userPhone: { $in: [phone, `+91${phone}`, `91${phone}`] } }, { status: 'Approved' })
         ]);
 
         await logAction(req, "Approve Identity", phone, "Manual ID verification approved");
@@ -544,8 +590,8 @@ exports.broadcastNotification = async (req, res) => {
 exports.getUserInboxes = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const pQ = new RegExp(phone + '$');
-        const messages = await Message.find({ $or: [{ senderPhone: pQ }, { receiverPhone: pQ }] }).sort({ timestamp: -1 });
+        const variations = [phone, `+91${phone}`, `91${phone}`];
+        const messages = await Message.find({ $or: [{ senderPhone: { $in: variations } }, { receiverPhone: { $in: variations } }] }).sort({ timestamp: -1 });
         let pMap = {};
         for (const m of messages) {
             let sP = normalize(m.senderPhone);
@@ -555,8 +601,14 @@ exports.getUserInboxes = async (req, res) => {
         }
 
         const phones = Object.keys(pMap);
+        const searchPhones = phones.reduce((acc, p) => {
+            const n = normalize(p);
+            acc.push(n, `+91${n}`, `91${n}`);
+            return acc;
+        }, []);
+
         const users = await User.find({
-            $or: phones.map(p => ({ phone: new RegExp(p + '$') }))
+            phone: { $in: searchPhones }
         }).select('phone name isOnline');
 
         for (const user of users) {
@@ -654,10 +706,11 @@ exports.getAllMedia = async (req, res) => {
 
         // If filter is a phone number (digits)
         if (filter && /^\d+$/.test(filter)) {
-            const pQ = new RegExp(filter + '$');
-            userQuery = { phone: pQ, profileImages: { $exists: true, $not: { $size: 0 } } };
-            msgQuery = { senderPhone: pQ, type: { $in: ['image', 'video', 'audio'] } };
-            recentPhotoQuery = { phone: pQ };
+            const n = normalize(filter);
+            const variations = [n, `+91${n}`, `91${n}`];
+            userQuery = { phone: { $in: variations }, profileImages: { $exists: true, $not: { $size: 0 } } };
+            msgQuery = { senderPhone: { $in: variations }, type: { $in: ['image', 'video', 'audio'] } };
+            recentPhotoQuery = { phone: { $in: variations } };
         }
         // Handle specific categories from frontend
         else if (filter === 'Profile') {
@@ -768,15 +821,15 @@ exports.deleteMedia = async (req, res) => {
 exports.getUserTimeline = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const pQ = new RegExp(phone + '$');
+        const variations = [phone, `+91${phone}`, `91${phone}`];
 
         const [user, firstMsg, analytics, reports, blocks, payments] = await Promise.all([
             User.findOne(phoneQuery(phone)),
-            Message.findOne({ senderPhone: pQ }).sort({ timestamp: 1 }).lean(),
-            AnalyticsEvent.find({ distinctId: pQ }).sort({ timestamp: 1 }).lean(),
-            Report.find({ reportedPhone: pQ }).sort({ timestamp: -1 }).lean(),
-            Block.find({ blockedPhone: pQ }).sort({ timestamp: -1 }).lean(),
-            revenueService.getPaymentHistory({ userPhone: pQ }, 1, 50)
+            Message.findOne({ senderPhone: { $in: variations } }).sort({ timestamp: 1 }).lean(),
+            AnalyticsEvent.find({ distinctId: { $in: variations } }).sort({ timestamp: 1 }).lean(),
+            Report.find({ reportedPhone: { $in: variations } }).sort({ timestamp: -1 }).lean(),
+            Block.find({ blockedPhone: { $in: variations } }).sort({ timestamp: -1 }).lean(),
+            revenueService.getPaymentHistory({ userPhone: { $in: variations } }, 1, 50)
         ]);
 
         if (!user) return res.status(404).json({ success: false });

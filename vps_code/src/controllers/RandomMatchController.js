@@ -16,6 +16,8 @@ exports.findPartner = async (io, socket, data) => {
         return;
     }
 
+    const redis = io.redis || (socket.request.app && socket.request.app.get('redis'));
+
     // 1. CHECK ONBOARDING STATUS
     const User = require('../models/User');
     const user = await User.findOne({ phone: userId }, 'hasCompletedOnboarding').lean();
@@ -30,12 +32,61 @@ exports.findPartner = async (io, socket, data) => {
     socket.emit('random_search_started');
 
     try {
-        // 2. CLEANUP DB (Atomic cleanup before searching)
+        // --- RATE LIMITING: Prevents Spam Clicking ---
+        if (redis) {
+            const rateKey = `rate:match:${userId}`;
+            const count = await redis.incr(rateKey);
+            if (count === 1) await redis.expire(rateKey, 10); // 10s window
+            if (count > 5) { // Max 5 clicks per 10s
+                return socket.emit('random_reset', { message: "Too many attempts. Please wait 10 seconds." });
+            }
+        }
+
+        // --- REDIS-POWERED MATCHING QUEUE ---
+        if (redis) {
+            // Remove user from queue if already there (Reset)
+            await redis.lRem('match_queue', 0, userId);
+
+            // Fetch the next person waiting
+            const partnerId = await redis.lPop('match_queue');
+
+            if (partnerId && partnerId !== userId) {
+                // MATCH FOUND IN REDIS!
+                const partnerSocketId = (await redis.get(`socket:${partnerId}`));
+                const partnerSocket = io.sockets.sockets.get(partnerSocketId);
+
+                if (partnerSocket && partnerSocket.connected) {
+                    const roomId = `rnd_${crypto.randomBytes(3).toString('hex')}_${userId.slice(-4)}`;
+
+                    socket.partnerSocketId = partnerSocket.id;
+                    socket.currentRoomId = roomId;
+                    partnerSocket.partnerSocketId = socket.id;
+                    partnerSocket.currentRoomId = roomId;
+
+                    partnerSocket.join(roomId);
+                    socket.join(roomId);
+
+                    const payload = { roomId, ts: Date.now() };
+                    io.to(partnerSocket.id).emit('random_match_found', { ...payload, partnerId: userId, role: 'receiver' });
+                    socket.emit('random_match_found', { ...payload, partnerId: partnerId, role: 'caller' });
+
+                    console.log(`[RedisMatch] Match: ${userId} <-> ${partnerId}`);
+                    return;
+                }
+            }
+
+            // NO MATCH -> JOIN QUEUE
+            await redis.rPush('match_queue', userId);
+            await redis.setEx(`socket:${userId}`, 300, socket.id);
+            console.log(`[RedisMatch] User ${userId} joined queue`);
+            return;
+        }
+
+        // FALLBACK TO MONGODB (If Redis fails)
         await RandomRoom.deleteMany({ hostId: userId }).exec();
 
         const lastPartnerId = data?.lastPartnerId ? normalize(data.lastPartnerId) : null;
 
-        // 3. FETCH EXCLUSIONS (Blocked users)
         const blocks = await Block.find({
             $or: [{ blockerPhone: userId }, { blockedPhone: userId }]
         }, 'blockerPhone blockedPhone').lean();
@@ -47,12 +98,9 @@ exports.findPartner = async (io, socket, data) => {
         });
         if (lastPartnerId) excludedPhones.push(lastPartnerId);
 
-        // 4. FIND & CONSUME (The Temporary Logic)
         let roomToJoin = null;
         let hostSocket = null;
 
-        // Try up to 3 times to find a room with a valid connected host
-        // This prevents the "stuck" feeling when multiple stale entries exist in DB
         for (let i = 0; i < 3; i++) {
             roomToJoin = await RandomRoom.findOneAndDelete({
                 status: 'waiting',
@@ -63,20 +111,15 @@ exports.findPartner = async (io, socket, data) => {
 
             hostSocket = io.sockets.sockets.get(roomToJoin.socketIds.host);
             if (hostSocket && hostSocket.connected) {
-                break; // Found a valid partner
+                break;
             } else {
-                // Stale room (host disconnected), it's already deleted by findOneAndDelete
-                console.log(`[EphemeralMatch] Cleaning up stale room: ${roomToJoin.roomId}`);
                 roomToJoin = null;
                 hostSocket = null;
             }
         }
 
         if (roomToJoin && hostSocket) {
-            // MATCH IN RAM ONLY
-            const sessionId = crypto.randomBytes(4).toString('hex');
             const roomId = roomToJoin.roomId;
-
             socket.partnerSocketId = hostSocket.id;
             socket.currentRoomId = roomId;
             hostSocket.partnerSocketId = socket.id;
@@ -85,21 +128,12 @@ exports.findPartner = async (io, socket, data) => {
             hostSocket.join(roomId);
             socket.join(roomId);
 
-            const payload = { roomId, sessionId, ts: Date.now() };
-
-            // Notify both
-            io.to(hostSocket.id).emit('random_match_found', {
-                ...payload, partnerId: userId, partnerSocketId: socket.id, role: 'receiver'
-            });
-
-            socket.emit('random_match_found', {
-                ...payload, partnerId: roomToJoin.hostId, partnerSocketId: hostSocket.id, role: 'caller'
-            });
-            console.log(`[EphemeralMatch] Match Found: ${userId} <-> ${roomToJoin.hostId}`);
+            const payload = { roomId, ts: Date.now() };
+            io.to(hostSocket.id).emit('random_match_found', { ...payload, partnerId: userId, role: 'receiver' });
+            socket.emit('random_match_found', { ...payload, partnerId: roomToJoin.hostId, role: 'caller' });
             return;
         }
 
-        // 5. BECOME HOST (Post a temporary notice)
         const roomId = `rnd_${crypto.randomBytes(3).toString('hex')}_${userId.slice(-4)}`;
         const newRoom = new RandomRoom({
             roomId, hostId: userId, socketIds: { host: socket.id }, status: 'waiting'
@@ -108,7 +142,6 @@ exports.findPartner = async (io, socket, data) => {
         await newRoom.save();
         socket.currentRoomId = roomId;
         socket.emit('random_room_created', { roomId });
-        console.log(`[EphemeralMatch] Room Created: ${roomId} for ${userId}`);
 
     } catch (err) {
         console.error("[EphemeralMatch] Error in findPartner:", err);
@@ -151,6 +184,12 @@ exports.leaveRoom = async (io, socket, notifyPartner = true) => {
         const userId = socket.userPhone;
         const rid = socket.currentRoomId;
         const pid = socket.partnerSocketId;
+
+        const redis = io.redis || (socket.request.app && socket.request.app.get('redis'));
+        if (redis && userId) {
+            await redis.lRem('match_queue', 0, userId);
+            await redis.del(`socket:${userId}`);
+        }
 
         // 1. INSTANT RAM WIPE & PARTNER NOTIFICATION
         if (pid) {

@@ -18,7 +18,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     return ValueListenableBuilder<Map<String, dynamic>?>(
       valueListenable: UserRepository().userNotifier,
       builder: (context, currentUser, _) {
-        if (currentUser == null) return const Scaffold(backgroundColor: Color(0xFF0F0F0F), body: Center(child: CircularProgressIndicator()));
+        if (currentUser == null) return const Scaffold(backgroundColor: Color(0xFF121212), body: Center(child: CircularProgressIndicator()));
 
         final String name = currentUser['name'] ?? 'User';
         final String statusLabel = PremiumService().accountStatusLabel;
@@ -26,10 +26,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         final bool isSubmitted = currentUser['verificationSubmitted'] == true;
 
         return Scaffold(
-          backgroundColor: const Color(0xFF0F0F0F),
-          extendBodyBehindAppBar: true,
+          backgroundColor: const Color(0xFF121212),
           appBar: AppBar(
-            backgroundColor: Colors.transparent,
+            backgroundColor: const Color(0xFF1C1421), // Baingani Black
             elevation: 0,
             title: const Text('My Profile', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
             actions: [
@@ -57,7 +56,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               
               SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(24, MediaQuery.of(context).padding.top + 60, 24, 120),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -73,7 +72,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           ),
                           child: const CircleAvatar(
                             radius: 32,
-                            backgroundColor: Color(0xFF1A1A1A),
+                            backgroundColor: Color(0xFF222222),
                             child: Icon(Icons.person_rounded, color: Colors.white10, size: 40),
                           ),
                         ),
@@ -140,7 +139,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       icon: const Icon(Icons.edit_rounded, size: 18),
                       label: const Text("Edit My Details", style: TextStyle(fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A1A1A),
+                        backgroundColor: const Color(0xFF222222),
                         foregroundColor: Colors.white,
                         minimumSize: const Size(double.infinity, 52),
                         shape: RoundedRectangleBorder(
@@ -159,7 +158,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
+                        color: const Color(0xFF222222),
                         borderRadius: BorderRadius.circular(24),
                       ),
                       child: Column(

@@ -46,11 +46,15 @@ class WebRTCManager {
         'echoCancellation': true,
         'noiseSuppression': true,
         'autoGainControl': true,
+        'googEchoCancellation': true,
+        'googAutoGainControl': true,
+        'googNoiseSuppression': true,
+        'googHighpassFilter': true,
       },
       'video': isVideo ? {
         'facingMode': 'user',
-        'width': {'ideal': 1280},
-        'height': {'ideal': 720},
+        'width': {'ideal': 640}, // High enough for mobile, but better for performance
+        'height': {'ideal': 480},
         'frameRate': {'ideal': 30, 'max': 30},
       } : false,
     };
@@ -130,9 +134,10 @@ class WebRTCManager {
       if (track != null && track.kind == 'video') {
         final parameters = sender.parameters;
         if (parameters.encodings != null && parameters.encodings!.isNotEmpty) {
-          parameters.encodings![0].maxBitrate = 1500 * 1000; // 1.5 Mbps for 720p
+          // Dynamic bitrate cap: 1Mbps for 480p is very stable
+          parameters.encodings![0].maxBitrate = 1000 * 1000; 
           await sender.setParameters(parameters);
-          debugPrint("✅ Video bitrate capped at 1.5Mbps for stability");
+          debugPrint("✅ Video bitrate capped at 1Mbps for stability");
         }
       }
     }

@@ -26,13 +26,14 @@ async function loadMonetization() {
         const [configData, gpConfigData, reviewData, statsData] = await Promise.all([
             API.getConfig('payment_settings').catch(e => ({ success: false, config: {} })),
             API.getConfig('google_play_settings').catch(e => ({ success: false, config: {} })),
-            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isReviewMode: false } })),
+            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isReviewMode: false, isGradualEnabled: false } })),
             API.getMonetizationStats().catch(e => ({ success: false, stats: {} }))
         ]);
 
         let settings = configData.config || {};
         let gpSettings = gpConfigData.config || {};
         let isReviewMode = reviewData.config?.isReviewMode || false;
+        let isGradualEnabled = reviewData.config?.isGradualEnabled || false;
 
         if (!settings.activeGateway) settings.activeGateway = 'razorpay';
 
@@ -50,41 +51,84 @@ async function loadMonetization() {
 
         mainContent.innerHTML = `
             <div class="space-y-10 animate-fade pb-20">
-                <!-- Google Compliance Switch -->
-                <div class="glass p-6 rounded-[2rem] border border-red-500/20 flex flex-col space-y-4">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-4">
-                            <div class="p-3 bg-red-500/10 rounded-2xl">
-                                <i class="fas fa-shield-check text-red-500 text-lg"></i>
+                <!-- Advanced Monetization Logic -->
+                <div class="glass p-8 rounded-[2rem] border border-white/5 bg-gradient-to-br from-white/5 to-transparent">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+                        <!-- Google Compliance Switch -->
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="p-2 bg-red-500/10 rounded-xl">
+                                    <i class="fas fa-shield-check text-red-500"></i>
+                                </div>
+                                <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Google Compliance</h3>
                             </div>
-                            <div>
-                                <h3 class="text-xs font-black text-white uppercase tracking-wider">Google Compliance Switch</h3>
-                                <p id="reviewModeStatus" class="text-[9px] font-bold mt-0.5 ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
-                                    ${isReviewMode ? 'Review Mode Active (Payments Hidden)' : 'Live Mode Active (Payments Visible)'}
-                                </p>
+                            <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                                <div>
+                                    <p id="reviewModeStatus" class="text-[9px] font-bold ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
+                                        ${isReviewMode ? 'REVIEW MODE ON' : 'LIVE MODE ACTIVE'}
+                                    </p>
+                                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">Global Override (All Users Free)</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer scale-110">
+                                    <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
+                                    <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
+                                </label>
                             </div>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer scale-110 mr-4">
-                            <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
-                            <div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500"></div>
-                        </label>
+
+                        <!-- Gradual Monetization (Split Logic) -->
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="p-2 bg-blue-500/10 rounded-xl">
+                                    <i class="fas fa-users-medical text-blue-500"></i>
+                                </div>
+                                <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Gradual Monetization</h3>
+                            </div>
+                            <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                                <div>
+                                    <p class="text-[9px] font-bold ${isGradualEnabled ? 'text-blue-500' : 'text-slate-500'}">
+                                        ${isGradualEnabled ? 'HYBRID MODE ON' : 'HYBRID MODE OFF'}
+                                    </p>
+                                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">Old Users Free | New Users Pay</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer scale-110">
+                                    <input type="checkbox" id="gradual_mode_toggle" ${isGradualEnabled ? 'checked' : ''} onchange="toggleGradualMode(this)" class="sr-only peer">
+                                    <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 1 Message Trial -->
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-3">
+                                <div class="p-2 bg-orange-500/10 rounded-xl">
+                                    <i class="fas fa-comment-alt-dots text-orange-500"></i>
+                                </div>
+                                <h3 class="text-[10px] font-black text-white uppercase tracking-widest">1-Message Trial</h3>
+                            </div>
+                            <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                                <div>
+                                    <p class="text-[9px] font-bold ${reviewData.config?.isOneMessageTrialEnabled ? 'text-orange-500' : 'text-slate-500'}">
+                                        ${reviewData.config?.isOneMessageTrialEnabled ? 'TRIAL ENABLED' : 'TRIAL DISABLED'}
+                                    </p>
+                                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">For Users in Standard/Free Mode</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer scale-110">
+                                    <input type="checkbox" id="one_message_trial_toggle" ${reviewData.config?.isOneMessageTrialEnabled ? 'checked' : ''} onchange="toggleOneMessageTrial(this)" class="sr-only peer">
+                                    <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
+                                </label>
+                            </div>
+                        </div>
+
                     </div>
 
-                    <!-- 1 Message Free Trial Switch -->
-                    <div class="pt-4 border-t border-white/5 flex items-center justify-between">
-                        <div class="flex items-center space-x-4">
-                            <div class="p-3 bg-orange-500/10 rounded-2xl">
-                                <i class="fas fa-comment-alt-dots text-orange-500 text-lg"></i>
-                            </div>
-                            <div>
-                                <h3 class="text-xs font-black text-white uppercase tracking-wider">1 Message Free Trial</h3>
-                                <p class="text-[9px] font-bold mt-0.5 text-slate-500 italic">User becomes Free after 1 message exchange (Only if Google Switch is ON)</p>
-                            </div>
+                    <div class="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
+                        <div class="flex items-center space-x-2 text-[8px] text-slate-500 font-bold uppercase italic">
+                            <i class="fas fa-info-circle text-blue-500"></i>
+                            <span>Status: ${isReviewMode ? 'Review Mode Overrides everything (Everyone Free)' : (isGradualEnabled ? 'Hybrid Active (New users created after setup will be prompted to pay)' : 'Global Live (Everyone will be prompted to pay)')}</span>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer scale-110 mr-4">
-                            <input type="checkbox" id="one_message_trial_toggle" ${reviewData.config?.isOneMessageTrialEnabled ? 'checked' : ''} onchange="toggleOneMessageTrial(this)" class="sr-only peer">
-                            <div class="w-14 h-7 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-orange-500"></div>
-                        </label>
+                        ${isGradualEnabled && reviewData.config?.monetizationStartDate ? `<span class="text-[8px] text-slate-600 font-black uppercase tracking-widest">Monetization Start: ${new Date(reviewData.config.monetizationStartDate).toLocaleDateString()}</span>` : ''}
                     </div>
                 </div>
 
@@ -341,6 +385,27 @@ async function saveGooglePlaySettings() {
         loadMonetization();
     } catch (err) {
         showSystemToast("Save Failed", "Update failed", 'bg-red-500');
+    }
+}
+
+async function toggleGradualMode(el) {
+    try {
+        const reviewData = await API.getConfig('review_mode_config').catch(e => ({ success: false, config: {} }));
+        const config = reviewData.config || {};
+        config.isGradualEnabled = el.checked;
+
+        // If enabling for the first time, set the start date to now
+        if (el.checked && !config.monetizationStartDate) {
+            config.monetizationStartDate = new Date();
+        }
+
+        await API.updateConfig('review_mode_config', config);
+
+        showSystemToast("Gradual Monetization", `Hybrid Mode: ${el.checked ? 'ENABLED' : 'DISABLED'}`, 'bg-blue-500');
+        loadMonetization();
+    } catch (e) {
+        el.checked = !el.checked;
+        showSystemToast("Sync Error", "Server not responding", 'bg-red-500');
     }
 }
 

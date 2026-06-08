@@ -44,85 +44,68 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 exports.getInbox = async (req, res) => {
     try {
         let phone = normalize(req.params.phone);
-        // IDOR Prevention: Always prefer token phone for users
         if (req.user && !req.user.role) phone = normalize(req.user.phone);
 
         const page = Math.max(1, parseInt(req.query.page || 1));
-        const limit = Math.max(1, parseInt(req.query.limit || 50));
+        const limit = Math.max(1, parseInt(req.query.limit || 20));
         const skip = (page - 1) * limit;
 
-        // Optimized Search: Always use normalized 10-digit phone
-        // We still check variations for backward compatibility if needed, but prefer normalized
-        const phoneVariations = [phone, `+91${phone}`, `91${phone}`];
+        const variations = [phone, `+91${phone}`, `91${phone}`];
 
-        // Fetch current user for distance calculation
-        const caller = await User.findOne({ phone: { $in: phoneVariations } }, 'lat lng location').lean();
+        // 1. Fetch current user coords once
+        const caller = await User.findOne({ phone: { $in: variations } }, 'lat lng location').lean();
         const userLat = caller?.lat || caller?.location?.coordinates?.[1];
         const userLng = caller?.lng || caller?.location?.coordinates?.[0];
 
-        // 1. Fetch conversations
-        const [conversations, allMetadata] = await Promise.all([
-            Conversation.find({ userPhone: { $in: phoneVariations } })
-                .sort({ 'lastMessage.timestamp': -1 })
-                .skip(skip)
-                .limit(limit)
-                .lean(),
-            ConversationMetadata.find({ phone: { $in: phoneVariations } }).lean()
-        ]);
+        // 2. Optimized Aggregation for Inbox (Scales to millions of records)
+        const conversations = await Conversation.find({ userPhone: { $in: variations } })
+            .sort({ 'lastMessage.timestamp': -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
 
-        const metaMap = {};
-        allMetadata.forEach(m => metaMap[normalize(m.partnerPhone)] = m);
+        if (conversations.length === 0) {
+            return res.json({ totalUnread: 0, chats: [] });
+        }
 
-        // 2. Filter and Deduplicate conversations (in case of +91 variations)
-        const conversationMap = {};
-        conversations.forEach(c => {
-            const normPartner = normalize(c.partnerPhone);
-            // Keep the one with the most recent message
-            if (!conversationMap[normPartner] ||
-                new Date(c.lastMessage?.timestamp || 0) > new Date(conversationMap[normPartner].lastMessage?.timestamp || 0)) {
-                conversationMap[normPartner] = c;
-            }
-        });
+        const partnerPhones = conversations.map(c => c.partnerPhone);
+        const searchVariations = partnerPhones.reduce((acc, p) => {
+            const n = normalize(p);
+            acc.push(n, `+91${n}`, `91${n}`);
+            return acc;
+        }, []);
 
-        const visibleConversations = Object.values(conversationMap).filter(c => {
-            // Support old conversations that might not have a lastMessage object
-            const normPartner = normalize(c.partnerPhone);
-            const meta = metaMap[normPartner];
-            if (meta && meta.isHidden) {
-                const lastMsgTime = new Date(c.lastMessage?.timestamp || 0).getTime();
-                const clearTime = new Date(meta.lastClearedAt || 0).getTime();
-                return lastMsgTime > clearTime;
-            }
-            return true;
-        });
-
-        const partnerPhones = visibleConversations.map(c => c.partnerPhone);
-
-        // 3. Fetch partners and blocks in parallel with robust phone matching
-        const [partners, blocks] = await Promise.all([
-            User.find({
-                $or: partnerPhones.map(p => ({ phone: new RegExp(normalize(p) + '$') }))
-            }, 'phone name isOnline isVerified city area position lat lng location').lean(),
+        // 3. Parallel fetch of required supporting data
+        const [partners, blocks, metadata, unreadAgg] = await Promise.all([
+            User.find({ phone: { $in: searchVariations } }, 'phone name isOnline isVerified city area position lat lng location').lean(),
             Block.find({
                 $or: [
                     { blockerPhone: phone, blockedPhone: { $in: partnerPhones } },
                     { blockerPhone: { $in: partnerPhones }, blockedPhone: phone }
                 ]
-            }).lean()
+            }).lean(),
+            ConversationMetadata.find({ phone: phone, partnerPhone: { $in: partnerPhones } }).lean(),
+            page === 1 ? Conversation.aggregate([{ $match: { userPhone: phone } }, { $group: { _id: null, total: { $sum: "$unreadCount" } } }]) : Promise.resolve([])
         ]);
 
-        const userMap = {};
-        partners.forEach(u => userMap[normalize(u.phone)] = u);
+        const userMap = {}; partners.forEach(u => userMap[normalize(u.phone)] = u);
+        const metaMap = {}; metadata.forEach(m => metaMap[normalize(m.partnerPhone)] = m);
 
-        const chats = visibleConversations.map(conv => {
-            const otherOriginal = conv.partnerPhone;
-            const other = normalize(otherOriginal);
+        // Redis-based real-time online status for everyone in the inbox
+        const redis = req.app.get('redis');
+        let onlinePhones = [];
+        try {
+            if (redis) onlinePhones = await redis.sMembers('online_users');
+        } catch (err) {
+            console.error("Redis Inbox Status Error:", err.message);
+        }
+        const onlineSet = new Set(onlinePhones);
+
+        const chats = conversations.map(conv => {
+            const other = normalize(conv.partnerPhone);
             const u = userMap[other] || {};
-            const block = blocks.find(b => (normalize(b.blockerPhone) === phone && normalize(b.blockedPhone) === other) || (normalize(b.blockerPhone) === other && normalize(b.blockedPhone) === phone));
             const meta = metaMap[other] || {};
-
-            const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
-            const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
+            const block = blocks.find(b => (normalize(b.blockerPhone) === phone && normalize(b.blockedPhone) === other) || (normalize(b.blockerPhone) === other && normalize(b.blockedPhone) === phone));
 
             const uLat = u.lat || u.location?.coordinates?.[1];
             const uLng = u.lng || u.location?.coordinates?.[0];
@@ -135,29 +118,24 @@ exports.getInbox = async (req, res) => {
                 timestamp: conv.lastMessage?.timestamp || new Date(),
                 name: u.name || 'User',
                 unread: conv.unreadCount || 0,
-                isOnline: u.isOnline || false,
+                isOnline: onlineSet.has(other) || u.isOnline || false,
                 isVerified: u.isVerified || false,
                 isBlocked: !!block,
                 iBlocked: block?.blockerPhone === phone,
-                city: cleanArea || cleanCity || 'Nearby',
+                city: (u.area || u.city || 'Nearby'),
                 distance: distStr,
                 position: u.position || '',
                 isFavourite: meta.isFavourite || false,
-                isMuted: meta.isMuted || false
+                isMuted: meta.isMuted || false,
+                isHidden: meta.isHidden || false,
+                lastClearedAt: meta.lastClearedAt
             };
-        });
+        }).filter(c => !c.isHidden || (new Date(c.timestamp) > new Date(c.lastClearedAt || 0)));
 
-        // 4. Calculate total unread (Optional: this could be cached or kept in User model for speed)
-        const totalUnread = await Conversation.aggregate([
-            { $match: { userPhone: phone } },
-            { $group: { _id: null, total: { $sum: "$unreadCount" } } }
-        ]);
-
-        res.json({
-            totalUnread: totalUnread.length > 0 ? totalUnread[0].total : 0,
-            chats
-        });
+        let totalUnread = unreadAgg.length > 0 ? unreadAgg[0].total : 0;
+        res.json({ totalUnread, chats });
     } catch (e) {
+        console.error("Inbox Scale Error:", e);
         res.status(500).json({ chats: [], totalUnread: 0 });
     }
 };
@@ -184,19 +162,14 @@ exports.getChatHistory = async (req, res) => {
 
         const [chats, block, partner, existingReview] = await Promise.all([
             Message.find({
-                $or: [
-                    { roomId: { $in: possibleRoomIds } },
-                    // Backup for any weird formats
-                    { roomId: new RegExp(`^${p1}_${p2}$`, 'i') },
-                    { roomId: new RegExp(`^${p2}_${p1}$`, 'i') }
-                ],
+                roomId: { $in: possibleRoomIds },
                 deletedBy: { $nin: [p1, `+91${p1}`, `91${p1}`] } // Robust deletedBy check
             })
                 .sort({ timestamp: -1 })
                 .skip((parseInt(page) - 1) * parseInt(limit))
                 .limit(parseInt(limit)),
             Block.findOne({ $or: [{ blockerPhone: p1, blockedPhone: p2 }, { blockerPhone: p2, blockedPhone: p1 }] }),
-            User.findOne({ phone: p2 }, 'isDeactivated accountStatus'),
+            User.findOne(phoneQuery(p2), 'isDeactivated accountStatus'),
             parseInt(page) === 1 ? Review.findOne({ reviewerPhone: p1, reviewedPhone: p2 }) : Promise.resolve(null)
         ]);
 
@@ -390,10 +363,19 @@ exports.getBlockedList = async (req, res) => {
         // IDOR Prevention: Always prefer token phone for users
         if (req.user && !req.user.role) phone = normalize(req.user.phone);
 
-        const blocks = await Block.find({ blockerPhone: new RegExp(phone + '$') }).lean();
+        const phoneVariations = [phone, `+91${phone}`, `91${phone}`];
+        const blocks = await Block.find({ blockerPhone: { $in: phoneVariations } }).lean();
         const partnerPhones = blocks.map(b => b.blockedPhone);
 
-        const blockedUsers = await User.find({ phone: { $in: partnerPhones.map(p => new RegExp(normalize(p) + '$')) } }, 'phone name profileImages').lean();
+        const searchPhones = [];
+        partnerPhones.forEach(p => {
+            const n = normalize(p);
+            searchPhones.push(n);
+            searchPhones.push(`+91${n}`);
+            searchPhones.push(`91${n}`);
+        });
+
+        const blockedUsers = await User.find({ phone: { $in: searchPhones } }, 'phone name profileImages').lean();
 
         const result = blockedUsers.map(u => ({
             phone: u.phone,

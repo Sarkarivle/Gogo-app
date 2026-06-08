@@ -21,11 +21,16 @@ import 'package:gogo/features/premium/providers/premium_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await UserRepository().initialize();
+  
+  // Parallel Boot: Initialize multiple services at once to save startup time
+  await Future.wait([
+    Firebase.initializeApp(),
+    UserRepository().initialize(),
+    AppVisibilityCoordinator().init(),
+  ]);
+  
   ModerationRepository().init();
   ChatRealtimeRepository().init();
-  await AppVisibilityCoordinator().init();
   
   AnalyticsService.logAppOpen();
 
@@ -83,7 +88,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0F0F0F),
+        scaffoldBackgroundColor: const Color(0xFF121212),
         useMaterial3: true,
         fontFamily: 'Inter',
       ),
@@ -198,7 +203,7 @@ else if (type == 'profile_sync_required') {
       context: navContext,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF222222),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Access Restricted', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
         content: Text(reason),
@@ -263,7 +268,7 @@ else if (type == 'profile_sync_required') {
       context: navContext,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF222222),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(title, style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
         content: Text(message, style: const TextStyle(color: Colors.white)),

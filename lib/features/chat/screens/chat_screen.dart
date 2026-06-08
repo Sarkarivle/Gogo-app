@@ -82,7 +82,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   String? _myName;
   String? _normalizedReceiverPhone;
   bool _isBlocked = false;
-  bool _isBlockedByMe = false;
   bool _isPartnerDeactivated = false;
   bool _hasReviewed = false;
   StreamSubscription? _socketSubscription;
@@ -147,11 +146,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       debugPrint("📢 [CHAT] Syncing Block from Global: $newStatus by $blocker");
       setState(() {
         _isBlocked = newStatus;
-        if (_isBlocked) {
-          _isBlockedByMe = PhoneUtils.normalize(blocker) == PhoneUtils.normalize(_myPhone);
-        } else {
-          _isBlockedByMe = false;
-        }
       });
       if (!_isBlocked) _fetchHistory(forceRefresh: true);
     }
@@ -218,6 +212,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Switch to Scoped Room Stream for massive CPU savings
     _socketSubscription = ChatRealtimeRepository().getRoomStream(currentRoomId).listen((event) {
       if (!mounted) return;
+      
+      // OPTIMIZATION: If blocked, ignore incoming real-time events for this user 
+      // (Except for unblock events which are handled by global moderation sync)
+      if (_isBlocked) return;
+
       final dynamic data = event['data'];
       if (data == null) return;
 
@@ -453,7 +452,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               _messages.addAll(fetched);
             }
             _isBlocked = result['isBlocked'] ?? false;
-            _isBlockedByMe = _isBlocked && PhoneUtils.normalize(result['blockerPhone']?.toString()) == PhoneUtils.normalize(_myPhone);
             _isPartnerDeactivated = result['isPartnerDeactivated'] ?? false;
             _hasReviewed = result['hasReviewed'] ?? false;
             _isLoading = false;
@@ -491,36 +489,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     final String localId = customLocalId ?? DateTime.now().millisecondsSinceEpoch.toString();
     
-    if (_isBlocked) {
-      // 1. Add to UI as Error
-      final errorMsg = ChatMessage(
-        localId: localId,
-        isMe: true,
-        text: msgText,
-        type: type,
-        imageUrl: imageUrl,
-        audioUrl: audioUrl,
-        timestamp: DateTime.now(),
-        status: MessageStatus.error,
-        isViewOnce: isViewOnce,
-        isNew: true,
-        replyToId: _replyingTo?.id,
-        replyText: _replyingTo?.text,
-        replyType: _replyingTo?.type,
-      );
-
-      setState(() {
-        _messageCount++;
-        _messages.insert(0, errorMsg);
-        _messageController.clear();
-        _replyingTo = null;
-      });
-      _checkAndShowReviewPopup();
-      ChatRepository().updateCacheWithNewMessage(_myPhone!, widget.receiverPhone, errorMsg);
-      _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-      return;
-    }
-
     // 1. Send via Socket
     ChatRepository().sendMessage(
       senderPhone: _myPhone!,
@@ -539,6 +507,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         if (res != null && res['success'] == true) {
           _updateMessageWithRealId(localId, res['messageId']);
         } else {
+          // Show red error status if sending failed (e.g. blocked or server error)
           _updateMessageStatus(localId, MessageStatus.error);
         }
       }
@@ -569,12 +538,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _replyingTo = null;
       });
       _checkAndShowReviewPopup();
-
-      // Update memory cache
       ChatRepository().updateCacheWithNewMessage(_myPhone!, widget.receiverPhone, optimisticMsg);
       _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     } else {
-      // For media, just clear input
+      // For media, just clear input as it was already added optimistically
       setState(() {
         _messageCount++;
         _messageController.clear();
@@ -599,11 +566,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // UI Helpers
   void _handleTypingStatus() {
-    if (_isBlocked) return;
+    if (_isPartnerDeactivated) return;
 
     if (_messageController.text.trim().isNotEmpty) {
       if (!_isMeTyping) {
         _isMeTyping = true;
+        // Shadow Mode: We still emit typing so the server can ignore it silently
         SocketService().emit('typing', {'otherPhone': _normalizedReceiverPhone});
       }
       _typingTimer?.cancel();
@@ -651,7 +619,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
         return Scaffold(
           resizeToAvoidBottomInset: true, // Keep this true for chat, but optimized elsewhere
-          backgroundColor: const Color(0xFF0F0F0F),
+          backgroundColor: const Color(0xFF121212),
           appBar: _buildAppBar(),
           body: Column(
             children: [
@@ -671,7 +639,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: const Color(0xFF1C1421), // Baingani Black
       elevation: 0,
       leadingWidth: 40,
       title: InkWell(
@@ -736,16 +704,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
       ),
       actions: [
-        if (!_isBlocked) ...[
-          IconButton(
-            icon: const Icon(Icons.videocam_rounded, color: Colors.orangeAccent),
-            onPressed: () => _handleCall(true),
-          ),
-          IconButton(
-            icon: const Icon(Icons.call_rounded, color: Colors.orangeAccent),
-            onPressed: () => _handleCall(false),
-          ),
-        ],
+        IconButton(
+          icon: const Icon(Icons.videocam_rounded, color: Colors.orangeAccent),
+          onPressed: () => _handleCall(true),
+        ),
+        IconButton(
+          icon: const Icon(Icons.call_rounded, color: Colors.orangeAccent),
+          onPressed: () => _handleCall(false),
+        ),
         IconButton(
           icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone))),
@@ -760,8 +726,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       return;
     }
 
-    if (_isBlocked) return;
-    
     final hasPermission = await PermissionManager().checkAndRequestCallPermissions(context, isVideo: isVideo);
     if (hasPermission) {
       CallService().startCall(widget.receiverPhone, widget.name, isVideo: isVideo);
@@ -789,6 +753,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               return ValueListenableBuilder<bool>(
                 valueListenable: TypingManager().getTypingNotifier(_normalizedReceiverPhone),
                 builder: (context, isTyping, _) {
+                  // Optimization: Hide typing indicator if user is blocked
                   return AnimatedTypingIndicator(isTyping: !_isBlocked && isTyping);
                 },
               );
@@ -913,25 +878,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildInputArea() {
-    if (_isBlocked) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
-          border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
-        ),
-        child: SafeArea(
-          child: Text(
-            _isBlockedByMe 
-                ? 'You have blocked this user. Unblock to message.' 
-                : 'You cannot message this user.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white38, fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
-    }
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: const BoxDecoration(
@@ -1091,8 +1037,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // --- RECORDING LOGIC ---
   void _startRecording() async {
-    if (_isBlocked) return;
-
     final hasPermission = await _audioRecorder.hasPermission();
     if (!hasPermission) return;
 
@@ -1175,8 +1119,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _uploadAndSendMedia(File file, String type, {bool isViewOnce = false, String? existingUrl}) async {
-    if (_isBlocked) return;
-
     File fileToUpload = file;
     
     // 1. Show optimistic message immediately
@@ -1996,7 +1938,7 @@ class ChatMessageTile extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: m.isViewOnce && !m.isMe && !m.isOpened 
-            ? _buildViewOncePlaceholder()
+            ? _buildViewOncePlaceholder(m)
             : Stack(
                 fit: StackFit.expand,
                 children: [
@@ -2038,8 +1980,8 @@ class ChatMessageTile extends StatelessWidget {
     );
   }
 
-  Widget _buildViewOncePlaceholder() {
-    final bool isVideo = message.type == 'video';
+  Widget _buildViewOncePlaceholder(ChatMessage m) {
+    final bool isVideo = m.type == 'video';
     return Container(
       color: Colors.black87,
       child: Column(

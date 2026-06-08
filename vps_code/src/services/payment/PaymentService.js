@@ -7,7 +7,7 @@ const PaymentTransaction = require('../../models/PaymentTransaction');
 const User = require('../../models/User');
 const analyticsService = require('../analyticsService');
 const revenueService = require('../revenueService');
-const { normalize } = require('../../utils/phoneUtils');
+const { normalize, phoneQuery } = require('../../utils/phoneUtils');
 
 class PaymentService {
     static async getProvider(gatewayName) {
@@ -57,7 +57,7 @@ class PaymentService {
             const config = await Config.findOne({ key: 'payment_settings' });
             const settings = config?.value || {};
 
-            const user = await User.findOne({ phone: normalizedPhone });
+            const user = await User.findOne(phoneQuery(normalizedPhone));
             const hasUsedTrial = user?.subscription?.hasUsedTrial || false;
 
             let amount = hasUsedTrial ? (settings.monthlyPrice || 199) : (settings.trialPrice || 1);
@@ -117,7 +117,7 @@ class PaymentService {
             newExpiry = new Date(transaction.current_period_end * 1000);
         } else {
             const durationHours = isTrial ? 24 : (30 * 24);
-            const user = await User.findOne({ phone: normalizedPhone });
+            const user = await User.findOne(phoneQuery(normalizedPhone));
             let baseDate = (user && user.premiumExpiry && user.premiumExpiry > now) ? user.premiumExpiry : now;
             newExpiry = new Date(baseDate.getTime() + (durationHours * 60 * 60 * 1000));
         }
@@ -128,7 +128,7 @@ class PaymentService {
 
         // 1. DEDUPLICATION CHECK: Ensure we don't add the same transaction twice
         const alreadyProcessed = await User.findOne({
-            phone: normalizedPhone,
+            ...phoneQuery(normalizedPhone),
             'paymentHistory.orderId': transactionId
         });
 
@@ -155,7 +155,7 @@ class PaymentService {
         }
 
         const updatedUser = await User.findOneAndUpdate(
-            { phone: normalizedPhone },
+            phoneQuery(normalizedPhone),
             {
                 $set: updateFields,
                 $inc: { 'subscription.totalAmountPaid': transaction.amount },
@@ -191,7 +191,7 @@ class PaymentService {
         }
 
         return await User.findOneAndUpdate(
-            { phone: normalizedPhone },
+            phoneQuery(normalizedPhone),
             { $set: updateFields },
             { new: true }
         );
@@ -199,7 +199,7 @@ class PaymentService {
 
     static async syncUserStatus(phone) {
         const normalizedPhone = normalize(phone);
-        const user = await User.findOne({ phone: normalizedPhone });
+        const user = await User.findOne(phoneQuery(normalizedPhone));
         if (!user) return { isPremium: false, status: 'none' };
 
         const config = await Config.findOne({ key: 'payment_settings' });
@@ -247,7 +247,7 @@ class PaymentService {
 
     static async cancelSubscription(phone) {
         const normalizedPhone = normalize(phone);
-        const user = await User.findOne({ phone: normalizedPhone });
+        const user = await User.findOne(phoneQuery(normalizedPhone));
         if (!user || !user.subscription?.id) throw new Error("No active subscription found");
 
         const provider = await this.getProvider('razorpay');
@@ -358,7 +358,7 @@ class PaymentService {
 
                 if (!transaction) {
                     const alreadyDone = await PaymentTransaction.findOne({ orderId, status: 'SUCCESS' });
-                    if (alreadyDone) return { success: true, user: await User.findOne({ phone: normalizedPhone }) };
+                    if (alreadyDone) return { success: true, user: await User.findOne(phoneQuery(normalizedPhone)) };
                     throw new Error("Invalid or duplicate transaction");
                 }
 
@@ -408,14 +408,14 @@ class PaymentService {
 
                 case 'CANCELLED':
                     // Just turn off auto-renew, keep premium until current expiry
-                    await User.findOneAndUpdate({ phone: normalize(phone) }, {
+                    await User.findOneAndUpdate(phoneQuery(phone), {
                         $set: { 'subscription.autoRenew': false, 'subscription.status': 'cancelled' }
                     });
                     break;
 
                 case 'PAYMENT_FAILED':
                     // Notify system of failure, maybe give 2 days grace period
-                    await User.findOneAndUpdate({ phone: normalize(phone) }, {
+                    await User.findOneAndUpdate(phoneQuery(phone), {
                         $set: { 'subscription.status': 'payment_failed' }
                     });
                     break;

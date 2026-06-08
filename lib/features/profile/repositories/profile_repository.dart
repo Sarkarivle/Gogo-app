@@ -2,13 +2,30 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:gogo/core/api/api_service.dart';
 
+/// Helper for background parsing to keep UI thread smooth during discovery
+List<dynamic> parseProfiles(String responseBody) {
+  final data = jsonDecode(responseBody);
+  if (data['success'] == true) {
+    final List<dynamic> users = data['users'] ?? [];
+    for (var u in users) {
+      if (u is Map && u['profileImages'] != null && u['profileImages'] is List) {
+        u['profileImages'] = (u['profileImages'] as List)
+            .map((img) => ApiService.getSecureUrl(img.toString()))
+            .toList();
+      }
+    }
+    return users;
+  }
+  return [];
+}
+
 class ProfileRepository {
   // Production-grade cache: tab -> List of profiles
   static final Map<String, List<dynamic>> _cache = {};
-  
+
   // Track last fetch timestamp to avoid duplicate simultaneous requests
   static final Map<String, int> _lastFetchTime = {};
-  
+
   // Cache TTL: 5 minutes for feed profiles
   static const int _cacheTTL = 5 * 60 * 1000;
 
@@ -32,7 +49,7 @@ class ProfileRepository {
   }) async {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
-      
+
       // If requesting first page, check if we have a fresh cache
       if (page == 1 && _cache.containsKey(tab)) {
         final lastFetch = _lastFetchTime[tab] ?? 0;
@@ -59,37 +76,22 @@ class ProfileRepository {
       };
 
       final uri = Uri.parse('${ApiService.baseUrl}/api/user/discover').replace(queryParameters: queryParams);
-      
+
       // Use ApiService instead of direct http to include security headers automatically
       final endpoint = uri.toString().replaceFirst(ApiService.baseUrl, '');
       final response = await ApiService.get(endpoint);
 
       if (response.statusCode == 200) {
-        try {
-          final data = jsonDecode(response.body);
-          if (data['success'] == true) {
-            final List<dynamic> users = data['users'] ?? [];
-            
-            // Secure profile images with defensive parsing
-            for (var u in users) {
-              if (u is Map && u['profileImages'] != null && u['profileImages'] is List) {
-                u['profileImages'] = (u['profileImages'] as List)
-                  .map((img) => ApiService.getSecureUrl(img.toString()))
-                  .toList();
-              }
-            }
-            
-            if (page == 1) {
-              // Update cache for the first page
-              _cache[tab] = List.from(users);
-              _lastFetchTime[tab] = now;
-            }
-            
-            return users;
-          }
-        } catch (parseErr) {
-          debugPrint('Discovery JSON Parse Error: $parseErr');
+        // Optimization: Use Isolate for parsing large discovery batches
+        final List<dynamic> users = await compute(parseProfiles, response.body);
+
+        if (page == 1) {
+          // Update cache for the first page
+          _cache[tab] = List.from(users);
+          _lastFetchTime[tab] = now;
         }
+
+        return users;
       }
       return [];
     } catch (e) {

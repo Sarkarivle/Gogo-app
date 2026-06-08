@@ -314,7 +314,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: const Color(0xFF121212),
       body: Stack(
         children: [
           CustomScrollView(
@@ -324,7 +324,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 expandedHeight: 280,
                 pinned: true,
                 stretch: true,
-                backgroundColor: const Color(0xFF2A0D17),
+                backgroundColor: const Color(0xFF1C1421), // Baingani Black
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -333,7 +333,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 ],
                 leading: Container(
                   margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+                  decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
                   child: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18), onPressed: () => Navigator.pop(context)),
                 ),
                 flexibleSpace: FlexibleSpaceBar(
@@ -346,7 +346,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                           gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
-                            colors: [Color(0xFF2A0D17), Color(0xFF0F0F0F)],
+                            colors: [Color(0xFF1C1421), Color(0xFF121212)],
                           ),
                         ),
                       ),
@@ -372,7 +372,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                   offset: const Offset(0, -30),
                   child: Container(
                     decoration: const BoxDecoration(
-                      color: Color(0xFF0F0F0F),
+                      color: Color(0xFF121212),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
                     ),
                     padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
@@ -436,7 +436,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1A1A1A),
+                              color: const Color(0xFF222222),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(

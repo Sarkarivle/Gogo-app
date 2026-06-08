@@ -7,6 +7,46 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const connectDB = require('./src/config/db');
+const { createClient } = require('redis');
+
+// Redis Setup for High-Speed Presence & Caching
+const redisClient = createClient({
+    socket: {
+        host: '127.0.0.1',
+        port: 6379,
+        reconnectStrategy: (retries) => Math.min(retries * 500, 2000)
+    }
+});
+
+// Pub/Sub Clients for Real-time Indicators (Optimized)
+const pubClient = redisClient.duplicate();
+const subClient = redisClient.duplicate();
+
+redisClient.on('error', (err) => console.error('❌ Redis Client Error:', err.message));
+redisClient.on('ready', async () => {
+    console.log('🚀 Redis Connected: High-Performance Engine Active');
+    try {
+        await redisClient.del('online_users'); // Fresh start
+    } catch (err) {}
+});
+
+(async () => {
+    try {
+        await Promise.all([
+            redisClient.connect(),
+            pubClient.connect(),
+            subClient.connect()
+        ]);
+    } catch (err) {
+        console.error("❌ Redis Initial Connection Failed:", err.message);
+    }
+})();
+
+// Subscribe to Typing Channel (Scalability)
+subClient.subscribe('typing_events', (message) => {
+    const data = JSON.parse(message);
+    io.to(`user_${data.other}`).emit(data.event, { phone: data.from });
+});
 
 // Models
 const User = require('./src/models/User');
@@ -19,7 +59,7 @@ const revenueService = require('./src/services/revenueService');
 const notificationService = require('./src/services/notificationService');
 const randomMatchController = require('./src/controllers/RandomMatchController');
 const { normalize, phoneQuery } = require('./src/utils/phoneUtils');
-const { updateConversationSummary, resetUnreadCount } = require('./src/utils/chatUtils');
+const { updateConversationSummary, resetUnreadCount, queueStatusUpdate } = require('./src/utils/chatUtils');
 
 const app = express();
 const server = http.createServer(app);
@@ -47,7 +87,13 @@ app.use(mongoSanitize());
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 2000, message: { success: false, message: "Too many requests" } });
 app.use('/api/', limiter);
 
-const io = new Server(server, { cors: { origin: "*" }, pingTimeout: 20000, pingInterval: 5000, transports: ['websocket'] });
+const io = new Server(server, {
+    cors: { origin: "*" },
+    pingTimeout: 60000, // 60s timeout for stability on mobile networks
+    pingInterval: 25000,
+    transports: ['websocket'],
+    maxHttpBufferSize: 1e6 // 1MB limit for messages
+});
 
 const jwt = require('jsonwebtoken');
 // IMPORTANT: In production, always set JWT_SECRET in .env
@@ -74,22 +120,26 @@ connectDB().then(() => {
 }).catch(err => {
     console.error("❌ Database connection error:", err);
 });
-analyticsService.init(io);
-revenueService.init(io);
+analyticsService.init(io, redisClient);
+revenueService.init(io, redisClient);
 
 setInterval(() => { randomMatchController.performGlobalCleanup(); }, 120000);
 
 app.set('socketio', io);
+app.set('redis', redisClient);
+app.set('redisPub', pubClient);
 app.use(cors());
 app.use(express.json());
 
-// Global Request Logger for Debugging
-app.use((req, res, next) => {
-    if (!req.url.includes('/media/')) {
-        console.log(`🌐 [${new Date().toISOString()}] ${req.method} ${req.url}`);
-    }
-    next();
-});
+// Global Request Logger (Development Only)
+if (process.env.NODE_ENV !== 'production') {
+    app.use((req, res, next) => {
+        if (!req.url.includes('/media/')) {
+            console.log(`🌐 [${new Date().toISOString()}] ${req.method} ${req.url}`);
+        }
+        next();
+    });
+}
 
 app.get('/api/media/:filename', require('./src/controllers/ChatController').serveSecureMedia);
 app.use(express.static(path.join(__dirname, 'public')));
@@ -114,16 +164,19 @@ app.use('/api/admin', require('./src/routes/adminRoutes'));
 app.use('/api/payment', require('./src/routes/paymentRoutes'));
 app.use('/api/review', require('./src/routes/reviewRoutes'));
 
-// --- GLOBAL ERROR HANDLING (PREVENTS CRASHES) ---
+// --- GLOBAL ERROR HANDLING (PREVENTS CORRUPTION) ---
 process.on('uncaughtException', (err) => {
     console.error('❌ FATAL: Uncaught Exception:', err);
+    process.exit(1); // Exit and let PM2 restart for a clean state
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ FATAL: Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1); // Exit and let PM2 restart for a clean state
 });
 
 const phoneToSockets = new Map();
+io.onlineUsers = phoneToSockets; // Make it accessible to controllers
 
 io.on('connection', (socket) => {
     const myPhone = socket.userPhone;
@@ -132,6 +185,9 @@ io.on('connection', (socket) => {
         socket.join('admin');
         console.log(`👨‍💼 Admin connected: ${socket.decoded.username}`);
         io.to('admin').emit('admin_live_event', { type: 'ADMIN_JOIN', label: 'Admin Logged In', user: socket.decoded.username });
+        if (socket.decoded.username) {
+            redisClient.sAdd('active_admins', socket.decoded.username).catch(() => {});
+        }
     }
 
     if (myPhone) {
@@ -139,18 +195,30 @@ io.on('connection', (socket) => {
         if (!phoneToSockets.has(myPhone)) {
             phoneToSockets.set(myPhone, new Set());
             io.to('admin').emit('admin_live_event', { type: 'USER_JOIN', label: 'User Online', phone: myPhone });
+            analyticsService.trackEvent('app_open', myPhone);
         }
         phoneToSockets.get(myPhone).add(socket.id);
     }
 
     socket.on('set_online', async (phone) => {
-        // Security: Use myPhone from socket to prevent spoofing other users
         const normalized = myPhone;
         if (!normalized) return;
 
         try {
-            await User.findOneAndUpdate({ phone: normalized }, { isOnline: true, lastSeen: new Date() });
-            socket.broadcast.emit('user_status_change', { phone: normalized, isOnline: true });
+            const user = await User.findOne(phoneQuery(normalized), 'hasCompletedOnboarding dobYear').lean();
+            const isComplete = user && (user.hasCompletedOnboarding || user.dobYear);
+
+            if (isComplete) {
+                // Track in Redis for 100% real-time status across all screens
+                await redisClient.sAdd('online_users', normalized);
+                console.log(`[Redis] User Online: ${normalized}`);
+            }
+
+            await User.findOneAndUpdate(phoneQuery(normalized), { isOnline: true, lastSeen: new Date() });
+
+            if (isComplete) {
+                socket.broadcast.emit('user_status_change', { phone: normalized, isOnline: true });
+            }
 
             const phoneVariations = [normalized, `+91${normalized}`, `91${normalized}`];
             const result = await Message.updateMany({
@@ -160,8 +228,9 @@ io.on('connection', (socket) => {
 
             if (result.modifiedCount > 0) {
                 io.to(`user_${normalized}`).emit('pending_messages_delivered', { phone: normalized });
-                const senders = await Message.find({ receiverPhone: normalized, isDelivered: true }).distinct('senderPhone');
-                senders.forEach(s => io.to(`user_${normalize(s)}`).emit('global_delivery_update', { receiverPhone: normalized }));
+                // Optimization: Instead of distinct query and massive loop, broadcast a single event
+                // Senders will receive this and update their UI if they are currently chatting with this user.
+                socket.broadcast.emit('global_delivery_update', { receiverPhone: normalized });
             }
         } catch (e) {
             console.error("set_online error:", e);
@@ -170,12 +239,24 @@ io.on('connection', (socket) => {
 
     socket.on('typing', (data) => {
         const other = normalizePhone(data.otherPhone);
-        if (other) io.to(`user_${other}`).emit('display_typing', { phone: myPhone });
+        if (other) {
+            pubClient.publish('typing_events', JSON.stringify({
+                event: 'display_typing',
+                from: myPhone,
+                other: other
+            }));
+        }
     });
 
     socket.on('stop_typing', (data) => {
         const other = normalizePhone(data.otherPhone);
-        if (other) io.to(`user_${other}`).emit('hide_typing', { phone: myPhone });
+        if (other) {
+            pubClient.publish('typing_events', JSON.stringify({
+                event: 'hide_typing',
+                from: myPhone,
+                other: other
+            }));
+        }
     });
 
     // --- CALLING SYSTEM ---
@@ -242,10 +323,13 @@ io.on('connection', (socket) => {
     socket.on('mark_delivered', async (data) => {
         try {
             const { messageId, localId } = data;
-            const msg = await Message.findById(messageId);
-            if (msg && !msg.isDelivered) {
-                msg.isDelivered = true;
-                await msg.save();
+            if (!messageId) return;
+
+            // Ultra Pro: Queue for batch DB update and emit instantly via socket
+            queueStatusUpdate(messageId, 'delivered');
+
+            const msg = await Message.findById(messageId, 'senderPhone receiverPhone localId').lean();
+            if (msg) {
                 io.to(`user_${normalizePhone(msg.senderPhone)}`).emit('message_delivered', {
                     messageId: messageId,
                     localId: localId || msg.localId,
@@ -260,16 +344,23 @@ io.on('connection', (socket) => {
     socket.on('mark_opened', async (data) => {
         try {
             const { messageId, otherPhone } = data;
+            if (!messageId) return;
+
+            // Ultra Pro: Queue for batch DB update
+            queueStatusUpdate(messageId, 'seen');
+
             const msg = await Message.findById(messageId);
             // Security: Ensure only the receiver can mark a message as opened
             if (msg && normalizePhone(msg.receiverPhone) === myPhone) {
-                msg.isOpened = true;
-                msg.isDelivered = true;
+                // View Once cleanup can stay individual as it involves nulling fields
                 if (msg.isViewOnce) {
+                    msg.isOpened = true;
+                    msg.isDelivered = true;
                     msg.imageUrl = null;
                     msg.audioUrl = null;
+                    await msg.save();
                 }
-                await msg.save();
+
                 const roomId = getRoomId(myPhone, otherPhone);
                 const statusData = {
                     messageId,
@@ -278,7 +369,6 @@ io.on('connection', (socket) => {
                     receiverPhone: msg.receiverPhone
                 };
                 io.to(roomId).emit('message_opened', statusData);
-                // Also notify sender via their private channel in case they left the room
                 io.to(`user_${normalizePhone(msg.senderPhone)}`).emit('message_opened', statusData);
             }
         } catch (e) {
@@ -430,6 +520,8 @@ io.on('connection', (socket) => {
             if (isReceiverOnline) io.to(`user_${myPhone}`).emit('message_delivered', { messageId: tempId.toString(), localId: data.localId, roomId });
             if (callback) callback({ success: true, messageId: tempId.toString(), localId: data.localId });
 
+            analyticsService.trackMessage();
+
             const newMessage = new Message({
                 _id: tempId, roomId, senderPhone: myPhone, receiverPhone: receiver,
                 localId: data.localId, // Save client's local ID
@@ -441,11 +533,11 @@ io.on('connection', (socket) => {
             await User.updateOne({ phone: myPhone }, { $inc: { chatCount: 1 } });
             updateConversationSummary(newMessage);
 
-            // --- SEND PUSH NOTIFICATION ---
+            // --- SEND PUSH NOTIFICATION (BACKGROUND) ---
             try {
-                const receiverUser = await User.findOne({ phone: receiver }, 'fcmToken');
+                const receiverUser = await User.findOne(phoneQuery(receiver), 'fcmToken').lean();
                 if (receiverUser?.fcmToken) {
-                    const senderUser = await User.findOne({ phone: myPhone }, 'name position');
+                    const senderUser = await User.findOne(phoneQuery(myPhone), 'name position').lean();
                     const senderName = senderUser?.name || "Someone";
 
                     let body = data.message;
@@ -453,7 +545,8 @@ io.on('connection', (socket) => {
                     else if (data.type === 'audio') body = "🎵 Sent a voice message";
                     else if (data.type === 'video') body = "🎥 Sent a video";
 
-                    const result = await notificationService.sendPushNotification(
+                    // Fire and forget (don't await) to keep socket event loop fast
+                    notificationService.sendPushNotification(
                         receiverUser.fcmToken,
                         senderName,
                         body,
@@ -465,16 +558,14 @@ io.on('connection', (socket) => {
                             roomId: roomId,
                             messageId: tempId.toString()
                         }
-                    );
-
-                    // If token is invalid, clear it from DB to stop future failed attempts
-                    if (result && result.isInvalidToken) {
-                        console.log(`🧹 Cleaning up invalid FCM token for user: ${receiver}`);
-                        await User.updateOne({ phone: receiver }, { $unset: { fcmToken: 1 } });
-                    }
+                    ).then(result => {
+                        if (result && result.isInvalidToken) {
+                            User.updateOne({ _id: receiverUser._id }, { $unset: { fcmToken: 1 } }).exec();
+                        }
+                    }).catch(e => {});
                 }
             } catch (notifyErr) {
-                console.error("FCM Send Error in server.js:", notifyErr.message);
+                // Silent catch for notification errors
             }
         } catch (err) {
             console.error("SEND_MESSAGE_ERROR:", err);
@@ -583,6 +674,9 @@ io.on('connection', (socket) => {
     socket.on('random_block', (data) => randomMatchController.handleBlock(io, socket, data));
 
     socket.on('disconnect', () => {
+        if (socket.decoded?.role && socket.decoded.username) {
+            redisClient.sRem('active_admins', socket.decoded.username).catch(() => {});
+        }
         if (myPhone) {
             // Clean up random rooms immediately on disconnect
             randomMatchController.leaveRoom(io, socket);
@@ -593,7 +687,14 @@ io.on('connection', (socket) => {
                 if (sockets.size === 0) {
                     phoneToSockets.delete(myPhone);
                     io.to('admin').emit('admin_live_event', { type: 'USER_LEAVE', label: 'User Offline', phone: myPhone });
-                    User.findOneAndUpdate({ phone: myPhone }, { isOnline: false }).then(() => {
+
+                    // CRITICAL: Remove from Redis presence set
+                    redisClient.sRem('online_users', myPhone).then(() => {
+                        console.log(`[Redis] User Offline: ${myPhone}`);
+                    }).catch(() => {});
+
+                    // CRITICAL: Robust status update on disconnect
+                    User.updateMany(phoneQuery(myPhone), { isOnline: false }).then(() => {
                         io.emit('user_status_change', { phone: myPhone, isOnline: false });
                     }).catch(e => console.error("Disconnect status update error:", e));
                 }

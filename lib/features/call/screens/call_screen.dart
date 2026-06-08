@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -63,6 +62,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       }
       if (state == CallState.connected) {
         _startTimer();
+        // Attach local stream when connected for performance
+        if (_localRenderer.srcObject == null && WebRTCManager().localStream != null) {
+          _localRenderer.srcObject = WebRTCManager().localStream;
+        }
       }
       
       // Update UI only when state changes significantly
@@ -94,18 +97,18 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       _localStreamSubscription = WebRTCManager().localStreamStream.listen((stream) {
         if (mounted) {
           if (_localRenderer.srcObject?.id != stream?.id) {
-            _localRenderer.srcObject = stream;
-            setState(() {});
+            // ONLY attach local stream to UI if call is CONNECTED
+            if (CallService().state == CallState.connected) {
+              _localRenderer.srcObject = stream;
+              setState(() {});
+            }
           }
         }
       });
       
       if (widget.isVideo) {
-        if (WebRTCManager().localStream == null) {
-          await WebRTCManager().initLocalStream(true);
-        } else {
-          _localRenderer.srcObject = WebRTCManager().localStream;
-        }
+        // We don't call initLocalStream here anymore for outgoing calls to keep camera OFF.
+        // It will be triggered by CallService when the receiver accepts.
         if (mounted) setState(() {});
       }
     } catch (e) {
@@ -359,7 +362,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
   }
 
   Widget _buildLocalView() {
-    if (CallService().state == CallState.ended || CallService().state == CallState.idle || !widget.isVideo) {
+    if (CallService().state != CallState.connected || !widget.isVideo) {
       return const SizedBox.shrink();
     }
 
@@ -426,32 +429,25 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
             child: IconButton(
               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
               onPressed: () {
-                // Triggering pop will now end the call via PopScope
                 Navigator.of(context).maybePop();
               },
             ),
           ),
           if (widget.isVideo && CallService().state == CallState.connected)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black45,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: ValueListenableBuilder<int>(
-                    valueListenable: _callDuration,
-                    builder: (context, seconds, _) {
-                      return Text(
-                        _formatDuration(seconds),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      );
-                    },
-                  ),
-                ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black45,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: ValueListenableBuilder<int>(
+                valueListenable: _callDuration,
+                builder: (context, seconds, _) {
+                  return Text(
+                    _formatDuration(seconds),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  );
+                },
               ),
             ),
           IconButton(
@@ -662,56 +658,51 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
   Widget _buildActiveCallControls() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(40),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(40),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildControlIcon(
+              _isMuted ? Icons.mic_off : Icons.mic,
+              _isMuted,
+              () {
+                setState(() => _isMuted = !_isMuted);
+                WebRTCManager().setMuted(_isMuted);
+                CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
+              },
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildControlIcon(
-                  _isMuted ? Icons.mic_off : Icons.mic,
-                  _isMuted,
-                  () {
-                    setState(() => _isMuted = !_isMuted);
-                    WebRTCManager().setMuted(_isMuted);
-                    CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
-                  },
-                ),
-                if (widget.isVideo)
-                  _buildControlIcon(
-                    _isVideoOff ? Icons.videocam_off : Icons.videocam,
-                    _isVideoOff,
-                    () {
-                      setState(() => _isVideoOff = !_isVideoOff);
-                      WebRTCManager().setVideoEnabled(!_isVideoOff);
-                      CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
-                    },
-                  ),
-                _buildControlIcon(
-                  _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
-                  !_isSpeakerOn,
-                  () {
-                    setState(() => _isSpeakerOn = !_isSpeakerOn);
-                  },
-                ),
-                if (widget.isVideo)
-                  _buildControlIcon(
-                    Icons.switch_camera_outlined,
-                    false,
-                    () => WebRTCManager().switchCamera(),
-                  ),
-                _buildEndCallBtn(),
-              ],
+            if (widget.isVideo)
+              _buildControlIcon(
+                _isVideoOff ? Icons.videocam_off : Icons.videocam,
+                _isVideoOff,
+                () {
+                  setState(() => _isVideoOff = !_isVideoOff);
+                  WebRTCManager().setVideoEnabled(!_isVideoOff);
+                  CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
+                },
+              ),
+            _buildControlIcon(
+              _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
+              !_isSpeakerOn,
+              () {
+                setState(() => _isSpeakerOn = !_isSpeakerOn);
+                Helper.setSpeakerphoneOn(_isSpeakerOn);
+              },
             ),
-          ),
+            if (widget.isVideo)
+              _buildControlIcon(
+                Icons.switch_camera_outlined,
+                false,
+                () => WebRTCManager().switchCamera(),
+              ),
+            _buildEndCallBtn(),
+          ],
         ),
       ),
     );

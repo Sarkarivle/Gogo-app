@@ -103,13 +103,40 @@ class ChatRepository {
       final nPhone = PhoneUtils.normalize(phone) ?? phone;
       final response = await ApiService.get('/api/chat/inbox/$nPhone?page=$page&limit=$limit');
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final data = jsonDecode(response.body);
+        if (page == 1 && data['chats'] != null) {
+          _saveInboxToCache(nPhone, data);
+        }
+        return data;
       }
       return {'chats': [], 'totalUnread': 0};
     } catch (e) {
       debugPrint("Inbox fetch error: $e");
       return {'chats': [], 'totalUnread': 0};
     }
+  }
+
+  Future<void> _saveInboxToCache(String phone, Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_inbox_$phone', jsonEncode(data));
+    } catch (e) {
+      debugPrint("Cache Save Error: $e");
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCachedInbox(String phone) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final nPhone = PhoneUtils.normalize(phone) ?? phone;
+      final cached = prefs.getString('cached_inbox_$nPhone');
+      if (cached != null) {
+        return jsonDecode(cached);
+      }
+    } catch (e) {
+      debugPrint("Cache Load Error: $e");
+    }
+    return null;
   }
 
   Future<String?> uploadMedia(File file, String phone, String type) async {

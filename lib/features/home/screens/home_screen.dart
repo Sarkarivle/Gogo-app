@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int _lastRequestTimestamp = 0;
   bool _isRequestInProgress = false;
 
-  String _selectedDistance = '20km';
+  String _selectedDistance = '300km';
   bool _isDistanceManuallySelected = false;
   String _selectedAge = 'Any';
   bool _isOnlineOnly = false;
@@ -63,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_handleTabChange);
     _scrollController.addListener(_scrollListener);
     UserRepository().userNotifier.addListener(_onUserUpdated);
@@ -149,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   Future<void> _updateLocationAndProfiles() async {
     // 1. Show cache immediately if available for instant feel
     if (mounted) {
-      final tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
+      final tabName = ['Nearby', 'Online'][_tabController.index];
       final cached = ProfileRepository.getCachedProfiles(tabName);
       
       if (cached != null && cached.isNotEmpty) {
@@ -233,58 +233,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _isRequestInProgress = true;
 
     try {
-      final String tabName = ['Nearby', 'Online', 'New', 'Popular'][_tabController.index];
+      final String tabName = ['Nearby', 'Online'][_tabController.index];
       const int limit = 10; // Professional small batch size
       
       List<dynamic> newProfiles = [];
       
-      // AUTO-EXPANSION LOGIC: 
-      // If tab is 'Nearby', it's the first page, and user hasn't manually picked a distance,
-      // try expanding radius incrementally if no results found at 20km.
-      if (tabName == 'Nearby' && !loadMore && !_isDistanceManuallySelected) {
-        final List<String> expansionSteps = ['20km', '50km', '100km', '200km', '500km'];
-        
-        for (String radius in expansionSteps) {
-          newProfiles = await ProfileRepository.getDiscoverProfiles(
-            myPhone: currentUser?['phone'] ?? '',
-            page: 1,
-            limit: limit,
-            tab: tabName,
-            distance: radius,
-            age: _selectedAge,
-            isOnlineOnly: _isOnlineOnly,
-            havePlace: _havePlaceStatus,
-            position: _selectedPosition,
-            lat: _lastKnownPosition?.latitude,
-            lng: _lastKnownPosition?.longitude,
-          );
-          
-          if (newProfiles.isNotEmpty) {
-            // Update the UI state to show the current successful radius
-            if (mounted) {
-              setState(() {
-                _selectedDistance = radius;
-              });
-            }
-            break; 
-          }
-        }
-      } else {
-        // Standard Fetch (Online, New, Popular or Manual Nearby Filter)
-        newProfiles = await ProfileRepository.getDiscoverProfiles(
-          myPhone: currentUser?['phone'] ?? '',
-          page: loadMore ? _currentPage + 1 : 1,
-          limit: limit,
-          tab: tabName,
-          distance: tabName == 'Nearby' ? _selectedDistance : null,
-          age: _selectedAge,
-          isOnlineOnly: tabName == 'Online' ? true : _isOnlineOnly,
-          havePlace: _havePlaceStatus,
-          position: _selectedPosition,
-          lat: _lastKnownPosition?.latitude,
-          lng: _lastKnownPosition?.longitude,
-        );
-      }
+      // Standard Fetch (Nearby or Online)
+      newProfiles = await ProfileRepository.getDiscoverProfiles(
+        myPhone: currentUser?['phone'] ?? '',
+        page: loadMore ? _currentPage + 1 : 1,
+        limit: limit,
+        tab: tabName,
+        distance: (tabName == 'Nearby' && _isDistanceManuallySelected) ? _selectedDistance : null,
+        age: _selectedAge,
+        isOnlineOnly: tabName == 'Online' ? true : _isOnlineOnly,
+        havePlace: _havePlaceStatus,
+        position: _selectedPosition,
+        lat: _lastKnownPosition?.latitude,
+        lng: _lastKnownPosition?.longitude,
+      );
 
       if (!loadMore && requestTimestamp != _lastRequestTimestamp) {
         return;
@@ -484,7 +451,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         // Custom App Bar Area
         Container(
           padding: EdgeInsets.only(top: topPadding + 10, bottom: 10),
-          color: const Color(0xFF0F0F0F),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1C1421), // Dark Purple-ish Black (Baingani Black)
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
           child: Column(
             children: [
               SingleChildScrollView(
@@ -492,8 +468,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(children: [
                   HomeFilterChip(
-                    label: 'Distance: $_selectedDistance', 
-                    onTap: () => FilterDialog.show(context, 'Distance Range', ['1km', '5km', '10km', '20km', '50km', '100km', '200km', '500km'], _selectedDistance, (val) { setState(() { _selectedDistance = val; _isDistanceManuallySelected = true; }); _resetAndFetch(); }),
+                    label: _isDistanceManuallySelected ? 'Range: $_selectedDistance' : 'Distance',
+                    onTap: () => FilterDialog.show(context, 'Distance Range', ['1km', '5km', '10km', '20km', '50km', '100km', '200km', '300km', '500km'], _selectedDistance, (val) { setState(() { _selectedDistance = val; _isDistanceManuallySelected = true; }); _resetAndFetch(); }),
                   ),
                   HomeFilterChip(
                     label: 'Age: $_selectedAge', 
@@ -518,8 +494,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
               const SizedBox(height: 10),
               TabBar(
                 controller: _tabController,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
+                isScrollable: false,
+                tabAlignment: TabAlignment.fill,
                 indicatorColor: Colors.orangeAccent,
                 indicatorWeight: 3,
                 labelColor: Colors.orangeAccent,
@@ -530,8 +506,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                 tabs: [
                   const Tab(text: 'Nearby'),
                   Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [const Text('Online'), const SizedBox(width: 8), const BlinkingDot()])),
-                  const Tab(text: 'New'),
-                  const Tab(text: 'Popular'),
                 ],
               ),
             ],
@@ -543,7 +517,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           child: TabBarView(
             controller: _tabController, 
             physics: const NeverScrollableScrollPhysics(),
-            children: [_buildProfileGrid(), _buildProfileGrid(), _buildProfileGrid(), _buildProfileGrid()]
+            children: [_buildProfileGrid(), _buildProfileGrid()]
           ),
         ),
       ],
@@ -554,7 +528,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     return RefreshIndicator(
       onRefresh: () async => _resetAndFetch(),
       color: Colors.orangeAccent,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: const Color(0xFF222222),
       child: Stack(
         children: [
           _profiles.isEmpty && !_isLoadingProfiles
@@ -578,6 +552,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                  cacheExtent: 1500, // Pre-render 1.5 pages worth of cards for smoother scroll
+                  addRepaintBoundaries: true,
+                  addAutomaticKeepAlives: true,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     childAspectRatio: 0.68,
@@ -597,24 +574,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                     }
 
                     final p = _profiles[i];
-                    return ValueListenableBuilder<bool>(
-                      valueListenable: PresenceManager().getStatusNotifier(p['phone'], p['isOnline'] ?? false),
-                      builder: (context, isOnline, _) {
-                        return ProfileCard(
-                          distance: p['calculated_dist'] ?? 'Unknown',
-                          city: p['city'] ?? '',
-                          area: p['area'] ?? '',
-                          name: p['name'] ?? 'Unknown',
-                          phone: p['phone'] ?? '',
-                          nameColor: const Color(0xFFC69C55),
-                          age: p['age'] ?? 20,
-                          position: p['position'] ?? 'Top',
-                          havePlace: p['havePlace'] ?? 'NO',
-                          isVerified: p['isVerified'] ?? false,
-                          isOnline: isOnline,
-                          likedBy: (i + 1) * 12,
-                        );
-                      },
+                    return RepaintBoundary(
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: PresenceManager().getStatusNotifier(p['phone'], p['isOnline'] ?? false),
+                        builder: (context, isOnline, _) {
+                          return ProfileCard(
+                            distance: p['calculated_dist'] ?? 'Unknown',
+                            city: p['city'] ?? '',
+                            area: p['area'] ?? '',
+                            name: p['name'] ?? 'Unknown',
+                            phone: p['phone'] ?? '',
+                            nameColor: const Color(0xFFC69C55),
+                            age: p['age'] ?? 20,
+                            position: p['position'] ?? 'Top',
+                            havePlace: p['havePlace'] ?? 'NO',
+                            isVerified: p['isVerified'] ?? false,
+                            isOnline: isOnline,
+                            likedBy: (i + 1) * 12,
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
@@ -653,7 +632,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     return Container(
       decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.5))),
       child: BottomNavigationBar(
-        backgroundColor: const Color(0xFF0F0F0F),
+        backgroundColor: const Color(0xFF1A1A1A),
         selectedItemColor: Colors.orangeAccent,
         unselectedItemColor: Colors.white54,
         currentIndex: _selectedIndex,
@@ -692,7 +671,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: const Color(0xFF222222),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24), 

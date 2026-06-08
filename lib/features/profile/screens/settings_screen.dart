@@ -89,9 +89,9 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2A0D17),
+        backgroundColor: const Color(0xFF1C1421), // Baingani Black
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
@@ -112,7 +112,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     Container(
                       width: double.infinity,
-                      color: const Color(0xFF2A0D17),
+                      color: const Color(0xFF1C1421), // Baingani Black
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                       child: SettingsHeaderCard(userData: userData),
                     ),

@@ -42,22 +42,31 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
 
       // 2. Listen for stream events
       _localStreamSub = RandomRtcService().localStreamStream.listen((stream) {
-        if (mounted) setState(() => _localRenderer.srcObject = stream);
+        if (mounted && _remoteRenderer.srcObject != null) {
+          setState(() => _localRenderer.srcObject = stream);
+        }
       });
 
       _remoteStreamSub = RandomRtcService().remoteStreamStream.listen((stream) {
         if (mounted) {
           debugPrint("[RTC] Remote stream attached to renderer");
-          setState(() => _remoteRenderer.srcObject = stream);
+          setState(() {
+            _remoteRenderer.srcObject = stream;
+            // Also attach local stream now that we are connected
+            if (RandomRtcService().localStream != null) {
+              _localRenderer.srcObject = RandomRtcService().localStream;
+            }
+          });
         }
       });
       
-      // 3. Immediate attach if streams already exist (Safety)
-      if (RandomRtcService().localStream != null) {
-        _localRenderer.srcObject = RandomRtcService().localStream;
-      }
+      // 3. Attach streams only if matched to save performance
+      // Remote stream is usually null here, but we listen for it in the stream subs above
       if (RandomRtcService().remoteStream != null) {
         _remoteRenderer.srcObject = RandomRtcService().remoteStream;
+        if (RandomRtcService().localStream != null) {
+          _localRenderer.srcObject = RandomRtcService().localStream;
+        }
       }
 
       setState(() => _isInitialized = true);
@@ -383,7 +392,7 @@ class _RandomVideoCallScreenState extends State<RandomVideoCallScreen> {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: _isInitialized 
+        child: (_isInitialized && _remoteRenderer.srcObject != null)
             ? RTCVideoView(_localRenderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover, mirror: true)
             : Container(color: Colors.black),
       ),

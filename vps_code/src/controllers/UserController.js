@@ -30,16 +30,15 @@ async function verifyFirebaseToken(phone, token) {
 }
 
 /**
- * Helper to calculate distance for privacy
+ * Helper to calculate numeric distance in KM
  */
-function calculateDistance(lat1, lon1, lat2, lon2) {
+function getDistanceKm(lat1, lon1, lat2, lon2) {
     try {
         const p1Lat = parseFloat(lat1);
         const p1Lon = parseFloat(lon1);
         const p2Lat = parseFloat(lat2);
         const p2Lon = parseFloat(lon2);
-
-        if (isNaN(p1Lat) || isNaN(p1Lon) || isNaN(p2Lat) || isNaN(p2Lon)) return "";
+        if (isNaN(p1Lat) || isNaN(p1Lon) || isNaN(p2Lat) || isNaN(p2Lon)) return null;
 
         const R = 6371;
         const dLat = (p2Lat - p1Lat) * Math.PI / 180;
@@ -48,15 +47,26 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
                   Math.cos(p1Lat * Math.PI / 180) * Math.cos(p2Lat * Math.PI / 180) *
                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const d = R * c;
+        return R * c;
+    } catch (e) { return null; }
+}
 
-        if (d < 0.5) return "0.5 km";
-        if (d < 1) return "Within 1 km";
-        if (d < 5) return "Under 5 km";
-        return d.toFixed(1) + " km";
-    } catch (e) {
-        return "";
-    }
+/**
+ * Helper to format distance string
+ */
+function formatDistanceString(d) {
+    if (d === null) return "";
+    if (d < 0.5) return "0.5 km";
+    if (d < 1) return "Within 1 km";
+    if (d < 5) return "Under 5 km";
+    return d.toFixed(1) + " km";
+}
+
+/**
+ * Legacy helper for other controllers if needed
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    return formatDistanceString(getDistanceKm(lat1, lon1, lat2, lon2));
 }
 
 exports.submitVerification = async (req, res) => {
@@ -83,7 +93,7 @@ exports.updateFcmToken = async (req, res) => {
         const phone = (req.user && !req.user.role) ? req.user.phone : req.body.phone;
         const normalizedPhone = normalize(phone);
         const { fcmToken } = req.body;
-        await User.findOneAndUpdate({ phone: normalizedPhone }, { fcmToken });
+        await User.findOneAndUpdate(phoneQuery(normalizedPhone), { fcmToken });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
@@ -149,12 +159,6 @@ exports.getProfile = async (req, res) => {
 
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // REALTIME STATUS CHECK: Ensure status is accurate from socket state
-        const io = req.app.get('socketio');
-        if (io) {
-            user.isOnline = io.sockets.adapter.rooms.has(`user_${normalize(phone)}`);
-        }
-
         const isStandardMode = reviewConfig?.value?.isReviewMode === true;
         await syncUserStatus(user, isStandardMode);
 
@@ -176,7 +180,7 @@ exports.markTrialUsed = async (req, res) => {
         if (!phone) return res.status(401).json({ success: false });
 
         const User = require('../models/User');
-        await User.findOneAndUpdate({ phone: normalize(phone) }, { oneMessageTrialUsed: true });
+        await User.findOneAndUpdate(phoneQuery(phone), { oneMessageTrialUsed: true });
 
         res.json({ success: true });
     } catch (e) {
@@ -319,6 +323,7 @@ exports.register = async (req, res) => {
         const newUser = new User(userData);
         const savedUser = await newUser.save();
 
+        analyticsService.trackEvent('registration', normalizedPhone);
         marketingService.triggerS2SPostback('registration', req.body.clickId);
 
         const token = jwt.sign({ phone: savedUser.phone, id: savedUser._id }, JWT_SECRET, { expiresIn: '90d' });
@@ -411,7 +416,7 @@ exports.getDiscover = async (req, res) => {
         let userLat = lat ? parseFloat(lat) : null;
         let userLng = lng ? parseFloat(lng) : null;
         if (!userLat || !userLng) {
-            const caller = await User.findOne({ phone: normalizedPhone }, 'lat lng location').lean();
+            const caller = await User.findOne(phoneQuery(normalizedPhone), 'lat lng location').lean();
             if (caller) {
                 userLat = caller.lat || caller.location?.coordinates?.[1];
                 userLng = caller.lng || caller.location?.coordinates?.[0];
@@ -420,6 +425,25 @@ exports.getDiscover = async (req, res) => {
         const pageNum = Math.max(1, parseInt(page));
         const limitNum = Math.max(1, parseInt(limit));
         const skip = (pageNum - 1) * limitNum;
+
+        // --- REDIS CACHING (30s TTL) for Discovery ---
+        const redis = req.app.get('redis');
+
+        // Location-aware cache key for Nearby to avoid inconsistency
+        let locationSegment = 'global';
+        if (tab === 'Nearby' && typeof userLat === 'number' && typeof userLng === 'number' && !isNaN(userLat)) {
+            // Round to ~1km precision to allow some caching benefits without showing far away data
+            locationSegment = `${userLat.toFixed(2)}_${userLng.toFixed(2)}`;
+        }
+
+        const cacheKey = `discover:${tab}:${locationSegment}:${distance || 'any'}:${age || 'any'}:${position || 'any'}:${havePlace || 'any'}:${isOnlineOnly || 'false'}:${page}`;
+
+        if (redis && page <= 5) { // Increased cache pages
+            const cachedData = await redis.get(cacheKey);
+            if (cachedData) {
+                return res.json(JSON.parse(cachedData));
+            }
+        }
 
         // Exclude caller and incomplete profiles
         const phoneVariations = [normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`];
@@ -434,17 +458,35 @@ exports.getDiscover = async (req, res) => {
             ]
         };
 
+        const io = req.app.get('socketio');
+
         if (tab === 'Online') {
-            const io = req.app.get('socketio');
-            if (io) {
-                const onlinePhones = Array.from(io.sockets.adapter.rooms.keys())
-                    .filter(room => room.startsWith('user_'))
-                    .map(room => room.replace('user_', ''));
-                baseQuery.phone = { $in: onlinePhones, $nin: phoneVariations };
+            if (redis) {
+                // EXTREME SPEED: Fetch current online phones from Redis
+                try {
+                    const onlinePhones = await redis.sMembers('online_users');
+                    console.log(`🌐 Redis Online Users Count: ${onlinePhones.length}`);
+                    if (onlinePhones.length > 0) {
+                        const searchVariations = onlinePhones.reduce((acc, p) => {
+                            const n = normalize(p);
+                            acc.push(n, `+91${n}`, `91${n}`);
+                            return acc;
+                        }, []);
+                        // IMPORTANT: Still need to filter out the caller and ensure they are active/complete
+                        baseQuery.phone = { $in: searchVariations, $nin: phoneVariations };
+                    } else {
+                        // If Redis is empty (server restart?), fallback to DB isOnline field
+                        baseQuery.isOnline = true;
+                    }
+                } catch (err) {
+                    console.error("Redis Online Fetch Error:", err.message);
+                    baseQuery.isOnline = true;
+                }
             } else {
                 baseQuery.isOnline = true;
             }
-        } else if (isOnlineOnly === 'true') {
+        }
+ else if (isOnlineOnly === 'true') {
             baseQuery.isOnline = true;
         }
 
@@ -452,16 +494,17 @@ exports.getDiscover = async (req, res) => {
         if (position && position !== 'Any') {
             const searchTerms = position.split(',').map(p => p.trim()).filter(p => p);
             if (searchTerms.length > 0) {
-                const posQuery = { $or: searchTerms.map(term => ({ position: { $regex: term, $options: 'i' } })) };
+                // Optimized: Use $in for exact matches or prefix matching if possible.
+                // Case-insensitive exact match is better than full regex.
+                const posQuery = { position: { $in: searchTerms } };
                 if (baseQuery.$or) {
-                    // Combine with existing $or using $and to avoid overwriting
                     const existingOr = baseQuery.$or;
                     delete baseQuery.$or;
                     baseQuery.$and = [{ $or: existingOr }, posQuery];
                 } else if (baseQuery.$and) {
                     baseQuery.$and.push(posQuery);
                 } else {
-                    baseQuery.$or = posQuery.$or;
+                    baseQuery.position = posQuery.position;
                 }
             }
         }
@@ -470,16 +513,49 @@ exports.getDiscover = async (req, res) => {
             if (ageMap[age]) baseQuery.age = ageMap[age];
         }
 
-        console.log(`🛠 Discovery Query: ${JSON.stringify(baseQuery)}`);
-
         let users = [];
-        if (tab === 'Nearby' && userLat && userLng) {
-            let maxDist = 500 * 1000;
+        if (tab === 'Nearby' && typeof userLat === 'number' && typeof userLng === 'number') {
+            let maxDist = 300 * 1000; // Default: 300km (0 to 300km)
+
+            // Apply distance filter ONLY if explicitly requested and not 'Any'
+            // We ignore common app defaults like '50km' if it's the first load/default state
+            // But to be safe, we'll check if distance is provided and not 'Any'
             if (distance && distance !== 'Any') {
                 const requestedDist = parseInt(distance.replace('km', ''));
-                if (!isNaN(requestedDist)) maxDist = requestedDist * 1000;
+                // If the app sends a distance but we want 300km default,
+                // we only apply it if it's not the 'standard' starting distance
+                // OR we just trust the 'Any' logic from the frontend.
+                if (!isNaN(requestedDist)) {
+                    maxDist = requestedDist * 1000;
+                }
             }
-            users = await User.find({ ...baseQuery, location: { $near: { $geometry: { type: "Point", coordinates: [userLng, userLat] }, $maxDistance: maxDist } } }).skip(skip).limit(limitNum).lean();
+
+            // Using $near requires a 2dsphere index on the 'location' field
+            // It automatically sorts by distance from 0km to maxDist
+            try {
+                users = await User.find({
+                    ...baseQuery,
+                    location: {
+                        $near: {
+                            $geometry: { type: "Point", coordinates: [userLng, userLat] },
+                            $maxDistance: maxDist
+                        }
+                    }
+                })
+                .select('name phone gender age profileImages city area lat lng location position havePlace isOnline isVerified isPremium chatCount hasCompletedOnboarding accountStatus isDeactivated')
+                .skip(skip)
+                .limit(limitNum)
+                .lean();
+            } catch (queryErr) {
+                console.error("MongoDB $near Error:", queryErr.message);
+                // Fallback to regular query if $near fails (e.g. missing index)
+                users = await User.find(baseQuery)
+                    .select('name phone gender age profileImages city area lat lng location position havePlace isOnline isVerified isPremium chatCount hasCompletedOnboarding accountStatus isDeactivated')
+                    .sort({ lastSeen: -1 })
+                    .skip(skip)
+                    .limit(limitNum)
+                    .lean();
+            }
         } else {
             let sort = { lastSeen: -1 };
             if (tab === 'New') {
@@ -487,28 +563,62 @@ exports.getDiscover = async (req, res) => {
             } else if (tab === 'Popular') {
                 sort = { chatCount: -1, lastSeen: -1 };
             }
-            users = await User.find(baseQuery).sort(sort).skip(skip).limit(limitNum).lean();
+            users = await User.find(baseQuery)
+                .select('name phone gender age profileImages city area lat lng location position havePlace isOnline isVerified isPremium chatCount hasCompletedOnboarding accountStatus isDeactivated')
+                .sort(sort)
+                .skip(skip)
+                .limit(limitNum)
+                .lean();
         }
 
         console.log(`✅ Discovery Found: ${users.length} users`);
-        const io = req.app.get('socketio');
+
+        // Fetch real-time online status from Redis for all displayed users
+        let onlineSet = new Set();
+        if (redis) {
+            try {
+                const onlinePhones = await redis.sMembers('online_users');
+                onlinePhones.forEach(p => onlineSet.add(normalize(p)));
+            } catch (err) {}
+        }
+
         const processedUsers = users.map(u => {
             const uLat = u.lat || u.location?.coordinates?.[1];
             const uLng = u.lng || u.location?.coordinates?.[0];
-            const distStr = (userLat && userLng && uLat && uLng) ? calculateDistance(userLat, userLng, uLat, uLng) : "";
+
+            let distStr = "";
+            if (userLat && userLng && uLat && uLng) {
+                // Calculate distance again to apply display rules
+                const d = getDistanceKm(userLat, userLng, uLat, uLng);
+                // Rule: On Home Page (Discovery), hide distance if > 20km for privacy
+                // This applies to ALL tabs (Nearby, Online, etc.) on the home page.
+                if (d > 20) {
+                    distStr = "";
+                } else {
+                    distStr = formatDistanceString(d);
+                }
+            }
+
             const cleanArea = (u.area && u.area.toLowerCase() !== 'unknown') ? u.area : '';
             const cleanCity = (u.city && u.city.toLowerCase() !== 'unknown') ? u.city : '';
 
-            // REALTIME STATUS CHECK: Accurate online status from socket state
+            // REALTIME STATUS: Use Redis set if available, fallback to DB isOnline field
             let isOnline = u.isOnline;
-            if (io) {
-                isOnline = io.sockets.adapter.rooms.has(`user_${normalize(u.phone)}`);
+            if (onlineSet.size > 0) {
+                isOnline = onlineSet.has(normalize(u.phone));
             }
 
             const { lat, lng, location, ...rest } = u;
             return { ...rest, isOnline, city: cleanArea || cleanCity || 'Nearby', area: '', distance: distStr };
         });
-        res.json({ success: true, page: pageNum, users: processedUsers });
+
+        const resultPayload = { success: true, page: pageNum, users: processedUsers };
+
+        if (redis && page <= 3) {
+            await redis.setEx(cacheKey, 30, JSON.stringify(resultPayload));
+        }
+
+        res.json(resultPayload);
     } catch (e) {
         res.status(500).json({ success: false, users: [] });
     }
@@ -584,16 +694,3 @@ exports.reactivateAccount = async (req, res) => {
     }
 };
 
-exports.markTrialUsed = async (req, res) => {
-    try {
-        const phone = req.user?.phone;
-        if (!phone) return res.status(401).json({ success: false });
-
-        const User = require('../models/User');
-        await User.findOneAndUpdate({ phone: normalize(phone) }, { oneMessageTrialUsed: true });
-
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ success: false });
-    }
-};

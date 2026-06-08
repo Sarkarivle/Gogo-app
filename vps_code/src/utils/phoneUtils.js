@@ -4,10 +4,11 @@ const normalize = (p) => {
     return clean.length >= 10 ? clean.slice(-10) : clean;
 };
 
-// Helper for DB query to match phone flexibly (exact or last 10)
+// Helper for DB query to match phone flexibly (exact or common variations)
+// Optimized: Using $in instead of RegExp to allow MongoDB to use indexes efficiently.
 const phoneQuery = (p) => {
     const n = normalize(p);
-    return { $or: [{ phone: n }, { phone: new RegExp(n + '$') }] };
+    return { phone: { $in: [n, `+91${n}`, `91${n}`] } };
 };
 
 module.exports = { normalize, phoneQuery };

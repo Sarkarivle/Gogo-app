@@ -37,7 +37,7 @@ class RandomLiveIntroScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: const Color(0xFF121212),
       body: Stack(
         children: [
           // Background Aesthetic
@@ -165,9 +165,12 @@ class RandomLiveIntroScreen extends StatelessWidget {
           Positioned(
             top: 50,
             left: 20,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
-              onPressed: () => Navigator.pop(context),
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
           ),
         ],
