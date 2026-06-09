@@ -191,6 +191,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _profiles.removeWhere((p) => p['phone'] == phone);
           });
         }
+      } else if (event['event'] == 'premium_status_refresh') {
+        final data = event['data'];
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(
+                    data['type'] == 'warning' ? Icons.warning_amber_rounded : Icons.check_circle_outline, 
+                    color: Colors.white
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(data['message'] ?? 'Subscription Status Updated', style: const TextStyle(fontWeight: FontWeight.bold))),
+                ],
+              ),
+              backgroundColor: data['type'] == 'warning' ? Colors.deepOrangeAccent : Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       } else if (event['event'] == 'user_reactivated') {
         // We don't necessarily need to add them back instantly 
         // as they'll show up on next refresh/pagination, 

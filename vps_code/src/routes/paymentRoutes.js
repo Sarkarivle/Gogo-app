@@ -10,6 +10,7 @@ router.post('/create-order', isUser, PaymentController.createOrder);
 router.post('/verify-payment', isUser, PaymentController.verifyPayment);
 router.post('/cancel', isUser, PaymentController.cancelSubscription);
 router.get('/sync-status', isUser, PaymentController.syncUserStatus);
+router.post('/sync-provider', isAdmin, PaymentController.syncWithProvider);
 router.post('/broadcast-status-change', isAdmin, PaymentController.broadcastStatusChange);
 router.get('/settings', PaymentController.getPublicSettings);
 
@@ -17,6 +18,7 @@ router.get('/settings', PaymentController.getPublicSettings);
 router.post('/webhook/razorpay', PaymentController.handleRazorpayWebhook);
 router.post('/webhook/phonepe', PaymentController.handlePhonePeWebhook);
 router.post('/webhook/cashfree', PaymentController.handleCashfreeWebhook);
+router.post('/webhook/google-play', PaymentController.handleGooglePlayWebhook);
 
 // Backward compatibility
 router.post('/webhook', PaymentController.handleRazorpayWebhook);

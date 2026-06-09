@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 // Core
 import 'package:gogo/core/services/app_visibility_coordinator.dart';
@@ -28,6 +29,17 @@ void main() async {
     UserRepository().initialize(),
     AppVisibilityCoordinator().init(),
   ]);
+
+  // Activate App Check for Play Integrity (Mandatory for SMS Hash Key)
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+      appleProvider: AppleProvider.deviceCheck,
+    );
+    debugPrint("✅ Firebase App Check Activated Successfully");
+  } catch (e) {
+    debugPrint("❌ Firebase App Check Error: $e");
+  }
   
   ModerationRepository().init();
   ChatRealtimeRepository().init();

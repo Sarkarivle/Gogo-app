@@ -185,7 +185,10 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
         phoneNumber: fullPhoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await _auth.signInWithCredential(credential);
-          _handleBackendLogin(phone);
+          if (mounted) {
+            _showSnackBar('Phone number verified automatically! ⚡');
+            _handleBackendLogin(phone);
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           setState(() => _isLoading = false);
@@ -404,7 +407,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
         TextField(
           controller: _phoneController,
           keyboardType: TextInputType.phone,
-          autofillHints: const [AutofillHints.telephoneNumber],
+          autofillHints: const [AutofillHints.telephoneNumber, AutofillHints.username],
           style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             hintText: 'Phone Number', 
@@ -450,45 +453,25 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   }
 
   Widget _buildOTPInput() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: List.generate(6, (index) => SizedBox(
-        width: 42, height: 50,
-        child: TextField(
-          controller: _otpControllers[index], focusNode: _focusNodes[index],
-          keyboardType: TextInputType.number, textAlign: TextAlign.center, maxLength: 1,
-          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-          decoration: InputDecoration(
-            counterText: "", 
-            contentPadding: EdgeInsets.zero,
-            filled: true, 
-            fillColor: Colors.white.withValues(alpha: 0.05),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12), 
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
-            ), 
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12), 
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12), 
-              borderSide: const BorderSide(color: Colors.pinkAccent, width: 1.5),
-            ),
-          ),
-          onChanged: (value) {
-            if (value.length == 1 && index < 5) {
-              _focusNodes[index + 1].requestFocus();
-            }
-            if (value.isEmpty && index > 0) {
-              _focusNodes[index - 1].requestFocus();
-            }
-            if (index == 5 && value.isNotEmpty) {
-              _verifyOTP();
-            }
-          },
-        ),
-      )),
+    return PinFieldAutoFill(
+      decoration: BoxLooseDecoration(
+        strokeColorBuilder: FixedColorBuilder(Colors.pinkAccent.withValues(alpha: 0.5)),
+        bgColorBuilder: FixedColorBuilder(Colors.white.withValues(alpha: 0.05)),
+        strokeWidth: 1.5,
+        radius: const Radius.circular(12),
+        gapSpace: 8,
+        textStyle: const TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
+      ),
+      currentCode: code,
+      onCodeChanged: (val) {
+        if (val != null && val.length == 6) {
+          for (int i = 0; i < 6; i++) {
+            _otpControllers[i].text = val[i];
+          }
+          _verifyOTP();
+        }
+      },
+      codeLength: 6,
     );
   }
 

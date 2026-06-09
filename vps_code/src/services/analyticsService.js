@@ -201,6 +201,10 @@ class AnalyticsService {
         this.sendToFacebookCAPI(type, dId, metadata);
     }
 
+    async trackPremiumUpgrade(distinctId) {
+        return await this.trackEvent('premium_activated', distinctId);
+    }
+
     async sendToFacebookCAPI(type, distinctId, metadata = {}) {
         try {
             const MarketingConfig = require('../models/MarketingConfig');

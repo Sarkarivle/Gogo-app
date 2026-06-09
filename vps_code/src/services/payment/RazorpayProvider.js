@@ -134,7 +134,8 @@ class RazorpayProvider extends PaymentProvider {
             event: eventType,
             orderId: subscription ? subscription.id : (payment ? payment.order_id : null),
             paymentId: payment ? payment.id : null,
-            amount: payment ? (payment.amount / 100) : (subscription ? (subscription.paid_count === 0 ? 1 : 199) : 0),
+            // Fetch actual amount from payment object if available, otherwise fallback to 0
+            amount: payment ? (payment.amount / 100) : 0,
             userPhone: (payment && payment.notes) ? payment.notes.phone : (subscription && subscription.notes ? subscription.notes.phone : null),
             status: status,
             current_period_end: subscription ? subscription.current_end : null,

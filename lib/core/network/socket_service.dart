@@ -166,6 +166,7 @@ class SocketService with WidgetsBindingObserver {
 
     _socket!.on('premium_status_refresh', (data) async {
       debugPrint('⚡ Premium status refresh triggered via socket');
+      _eventController.add({'event': 'premium_status_refresh', 'data': data});
       await PremiumService().refreshAccessState();
     });
     

@@ -53,6 +53,7 @@ const UserSchema = new mongoose.Schema({
         startDate: Date,
         nextBillingDate: Date,
         totalAmountPaid: { type: Number, default: 0 },
+        lastAmountPaid: { type: Number, default: 0 },
         autoRenew: { type: Boolean, default: true },
         cancellationDate: Date,
         lastPaymentDate: Date,

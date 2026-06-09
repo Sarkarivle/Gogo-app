@@ -1,285 +1,558 @@
+let activeMonetizationTab = 'premium';
+let activeAdProvider = 'google'; // google, facebook, mediation
+
 async function loadMonetization() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Financial Operations & Monetization";
 
-    // Skeleton Loading State
+    mainContent.innerHTML = UI.skeleton(4);
+
+    try {
+        const [configData, gpConfigData, reviewData, statsData, adsData] = await Promise.all([
+            API.getConfig('payment_settings').catch(e => ({ success: false, config: {} })),
+            API.getConfig('google_play_settings').catch(e => ({ success: false, config: {} })),
+            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isReviewMode: false, isGradualEnabled: false } })),
+            API.getMonetizationStats().catch(e => ({ success: false, stats: {} })),
+            API.getConfig('ads_settings').catch(e => ({ success: false, config: {} }))
+        ]);
+
+        window.monetizationState = {
+            settings: configData.config || {},
+            gpSettings: gpConfigData.config || {},
+            reviewData: reviewData.config || {},
+            stats: statsData.stats || {},
+            adsSettings: adsData.config || {
+                isEnabled: false,
+                activeProvider: 'google',
+                google: {},
+                facebook: {},
+                mediation: {}
+            }
+        };
+
+        if (window.monetizationState.adsSettings.activeProvider) {
+            activeAdProvider = window.monetizationState.adsSettings.activeProvider;
+        }
+
+        renderMonetizationUI();
+    } catch (err) {
+        console.error(err);
+        mainContent.innerHTML = `<p class="p-20 text-center text-red-500 font-black uppercase">Monetization Sync Failed</p>`;
+    }
+}
+
+function renderMonetizationUI() {
+    const mainContent = document.getElementById('mainContent');
+    const { settings, gpSettings, reviewData, stats, adsSettings } = window.monetizationState;
+
     mainContent.innerHTML = `
-        <div class="space-y-10 animate-fade pb-20">
-            <div class="grid grid-cols-4 gap-6">
-                ${UI.skeletonCard()}
-                ${UI.skeletonCard()}
-                ${UI.skeletonCard()}
-                ${UI.skeletonCard()}
+        <div class="space-y-8 animate-fade pb-20">
+            <!-- TABS -->
+            <div class="flex items-center space-x-4">
+                <button onclick="switchMonetizationTab('premium')" class="px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMonetizationTab === 'premium' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/5 text-slate-500 hover:bg-white/10'}">
+                    <i class="fas fa-gem mr-2"></i> Premium
+                </button>
+                <button onclick="switchMonetizationTab('ads')" class="px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMonetizationTab === 'ads' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/5 text-slate-500 hover:bg-white/10'}">
+                    <i class="fas fa-ad mr-2"></i> Ads
+                </button>
             </div>
-            <div class="grid grid-cols-4 gap-6">
-                ${Array(4).fill('<div class="glass p-6 rounded-3xl skeleton h-20"></div>').join('')}
-            </div>
-            <div class="grid grid-cols-2 gap-10">
-                <div class="skeleton h-[30rem] rounded-[3rem]"></div>
-                <div class="skeleton h-[30rem] rounded-[3rem]"></div>
+
+            <div id="monetizationContent">
+                ${activeMonetizationTab === 'premium' ? renderPremiumContent(settings, gpSettings, reviewData, stats) : renderAdsContent(adsSettings)}
             </div>
         </div>
     `;
 
-    try {
-        const [configData, gpConfigData, reviewData, statsData] = await Promise.all([
-            API.getConfig('payment_settings').catch(e => ({ success: false, config: {} })),
-            API.getConfig('google_play_settings').catch(e => ({ success: false, config: {} })),
-            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isReviewMode: false, isGradualEnabled: false } })),
-            API.getMonetizationStats().catch(e => ({ success: false, stats: {} }))
-        ]);
+    if (activeMonetizationTab === 'premium') {
+        loadPaymentHistory();
+    }
+}
 
-        let settings = configData.config || {};
-        let gpSettings = gpConfigData.config || {};
-        let isReviewMode = reviewData.config?.isReviewMode || false;
-        let isGradualEnabled = reviewData.config?.isGradualEnabled || false;
+function switchMonetizationTab(tab) {
+    activeMonetizationTab = tab;
+    renderMonetizationUI();
+}
 
-        if (!settings.activeGateway) settings.activeGateway = 'razorpay';
+function renderPremiumContent(settings, gpSettings, reviewData, statsRaw) {
+    let isReviewMode = reviewData?.isReviewMode || false;
+    let isGradualEnabled = reviewData?.isGradualEnabled || false;
 
-        let s = statsData.stats || {};
-        const stats = {
-            grossRevenue: s.grossRevenue || 0,
-            todayEarnings: s.todayEarnings || 0,
-            monthlyRevenue: s.monthlyRevenue || 0,
-            activePremiumUsers: s.activePremiumUsers || 0,
-            topGateway: s.topGateway || 'N/A',
-            arpu: s.arpu || 0,
-            failedToday: s.failedToday || 0,
-            subscriptionHealth: s.subscriptionHealth || { churnRate: '0.0%' }
-        };
+    if (!settings.activeGateway) settings.activeGateway = 'razorpay';
 
-        mainContent.innerHTML = `
-            <div class="space-y-10 animate-fade pb-20">
-                <!-- Advanced Monetization Logic -->
-                <div class="glass p-8 rounded-[2rem] border border-white/5 bg-gradient-to-br from-white/5 to-transparent">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+    const stats = {
+        grossRevenue: statsRaw.grossRevenue || 0,
+        todayEarnings: statsRaw.todayEarnings || 0,
+        monthlyRevenue: statsRaw.monthlyRevenue || 0,
+        activePremiumUsers: statsRaw.activePremiumUsers || 0,
+        topGateway: statsRaw.topGateway || 'N/A',
+        arpu: statsRaw.arpu || 0,
+        failedToday: statsRaw.failedToday || 0,
+        subscriptionHealth: statsRaw.subscriptionHealth || { churnRate: '0.0%' }
+    };
 
-                        <!-- Google Compliance Switch -->
-                        <div class="space-y-4">
-                            <div class="flex items-center space-x-3">
-                                <div class="p-2 bg-red-500/10 rounded-xl">
-                                    <i class="fas fa-shield-check text-red-500"></i>
-                                </div>
-                                <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Google Compliance</h3>
+    return `
+        <div class="space-y-10 animate-fade">
+            <!-- Advanced Monetization Logic -->
+            <div class="glass p-8 rounded-[2rem] border border-white/5 bg-gradient-to-br from-white/5 to-transparent">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+                    <!-- Google Compliance Switch -->
+                    <div class="space-y-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="p-2 bg-red-500/10 rounded-xl">
+                                <i class="fas fa-shield-check text-red-500"></i>
                             </div>
-                            <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                                <div>
-                                    <p id="reviewModeStatus" class="text-[9px] font-bold ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
-                                        ${isReviewMode ? 'REVIEW MODE ON' : 'LIVE MODE ACTIVE'}
-                                    </p>
-                                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">Global Override (All Users Free)</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer scale-110">
-                                    <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
-                                    <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
-                                </label>
-                            </div>
+                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Google Compliance</h3>
                         </div>
-
-                        <!-- Gradual Monetization (Split Logic) -->
-                        <div class="space-y-4">
-                            <div class="flex items-center space-x-3">
-                                <div class="p-2 bg-blue-500/10 rounded-xl">
-                                    <i class="fas fa-users-medical text-blue-500"></i>
-                                </div>
-                                <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Gradual Monetization</h3>
+                        <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                            <div>
+                                <p id="reviewModeStatus" class="text-[9px] font-bold ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
+                                    ${isReviewMode ? 'REVIEW MODE ON' : 'LIVE MODE ACTIVE'}
+                                </p>
+                                <p class="text-[7px] text-slate-500 uppercase mt-0.5">Global Override (All Users Free)</p>
                             </div>
-                            <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                                <div>
-                                    <p class="text-[9px] font-bold ${isGradualEnabled ? 'text-blue-500' : 'text-slate-500'}">
-                                        ${isGradualEnabled ? 'HYBRID MODE ON' : 'HYBRID MODE OFF'}
-                                    </p>
-                                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">Old Users Free | New Users Pay</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer scale-110">
-                                    <input type="checkbox" id="gradual_mode_toggle" ${isGradualEnabled ? 'checked' : ''} onchange="toggleGradualMode(this)" class="sr-only peer">
-                                    <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
-                                </label>
-                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer scale-110">
+                                <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
+                                <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
+                            </label>
                         </div>
-
-                        <!-- 1 Message Trial -->
-                        <div class="space-y-4">
-                            <div class="flex items-center space-x-3">
-                                <div class="p-2 bg-orange-500/10 rounded-xl">
-                                    <i class="fas fa-comment-alt-dots text-orange-500"></i>
-                                </div>
-                                <h3 class="text-[10px] font-black text-white uppercase tracking-widest">1-Message Trial</h3>
-                            </div>
-                            <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                                <div>
-                                    <p class="text-[9px] font-bold ${reviewData.config?.isOneMessageTrialEnabled ? 'text-orange-500' : 'text-slate-500'}">
-                                        ${reviewData.config?.isOneMessageTrialEnabled ? 'TRIAL ENABLED' : 'TRIAL DISABLED'}
-                                    </p>
-                                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">For Users in Standard/Free Mode</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer scale-110">
-                                    <input type="checkbox" id="one_message_trial_toggle" ${reviewData.config?.isOneMessageTrialEnabled ? 'checked' : ''} onchange="toggleOneMessageTrial(this)" class="sr-only peer">
-                                    <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
-                                </label>
-                            </div>
-                        </div>
-
                     </div>
 
-                    <div class="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
-                        <div class="flex items-center space-x-2 text-[8px] text-slate-500 font-bold uppercase italic">
-                            <i class="fas fa-info-circle text-blue-500"></i>
-                            <span>Status: ${isReviewMode ? 'Review Mode Overrides everything (Everyone Free)' : (isGradualEnabled ? 'Hybrid Active (New users created after setup will be prompted to pay)' : 'Global Live (Everyone will be prompted to pay)')}</span>
+                    <!-- Gradual Monetization (Split Logic) -->
+                    <div class="space-y-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="p-2 bg-blue-500/10 rounded-xl">
+                                <i class="fas fa-users-medical text-blue-500"></i>
+                            </div>
+                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Gradual Monetization</h3>
                         </div>
-                        ${isGradualEnabled && reviewData.config?.monetizationStartDate ? `<span class="text-[8px] text-slate-600 font-black uppercase tracking-widest">Monetization Start: ${new Date(reviewData.config.monetizationStartDate).toLocaleDateString()}</span>` : ''}
+                        <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                            <div>
+                                <p class="text-[9px] font-bold ${isGradualEnabled ? 'text-blue-500' : 'text-slate-500'}">
+                                    ${isGradualEnabled ? 'HYBRID MODE ON' : 'HYBRID MODE OFF'}
+                                </p>
+                                <p class="text-[7px] text-slate-500 uppercase mt-0.5">Old Users Free | New Users Pay</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer scale-110">
+                                <input type="checkbox" id="gradual_mode_toggle" ${isGradualEnabled ? 'checked' : ''} onchange="toggleGradualMode(this)" class="sr-only peer">
+                                <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
+                            </label>
+                        </div>
                     </div>
+
+                    <!-- 1 Message Trial -->
+                    <div class="space-y-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="p-2 bg-orange-500/10 rounded-xl">
+                                <i class="fas fa-comment-alt-dots text-orange-500"></i>
+                            </div>
+                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">1-Message Trial</h3>
+                        </div>
+                        <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                            <div>
+                                <p class="text-[9px] font-bold ${reviewData?.isOneMessageTrialEnabled ? 'text-orange-500' : 'text-slate-500'}">
+                                    ${reviewData?.isOneMessageTrialEnabled ? 'TRIAL ENABLED' : 'TRIAL DISABLED'}
+                                </p>
+                                <p class="text-[7px] text-slate-500 uppercase mt-0.5">For Users in Standard/Free Mode</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer scale-110">
+                                <input type="checkbox" id="one_message_trial_toggle" ${reviewData?.isOneMessageTrialEnabled ? 'checked' : ''} onchange="toggleOneMessageTrial(this)" class="sr-only peer">
+                                <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
+                            </label>
+                        </div>
+                    </div>
+
                 </div>
 
-                <!-- Primary Revenue Cards -->
-                <div class="grid grid-cols-4 gap-6">
-                    ${UI.card('Gross Revenue', '₹' + stats.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500', 'gross-revenue')}
-                    ${UI.card('Today Earnings', '₹' + stats.todayEarnings.toLocaleString(), '24h Performance', 'text-orange-500', 'today-earnings')}
-                    ${UI.card('Monthly Revenue', '₹' + stats.monthlyRevenue.toLocaleString(), 'Current Period', 'text-blue-500', 'monthly-revenue')}
-                    ${UI.card('Active Premium', stats.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500', 'active-premium')}
+                <div class="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
+                    <div class="flex items-center space-x-2 text-[8px] text-slate-500 font-bold uppercase italic">
+                        <i class="fas fa-info-circle text-blue-500"></i>
+                        <span>Status: ${isReviewMode ? 'Review Mode Overrides everything (Everyone Free)' : (isGradualEnabled ? 'Hybrid Active (New users created after setup will be prompted to pay)' : 'Global Live (Everyone will be prompted to pay)')}</span>
+                    </div>
+                    ${isGradualEnabled && reviewData?.monetizationStartDate ? `<span class="text-[8px] text-slate-600 font-black uppercase tracking-widest">Monetization Start: ${new Date(reviewData.monetizationStartDate).toLocaleDateString()}</span>` : ''}
                 </div>
+            </div>
 
-                <div class="grid grid-cols-2 gap-10">
-                    <!-- Pricing & Gateway Config -->
-                    <div class="space-y-6">
+            <!-- Primary Revenue Cards -->
+            <div class="grid grid-cols-4 gap-6">
+                ${UI.card('Gross Revenue', '₹' + stats.grossRevenue.toLocaleString(), 'Lifetime Earnings', 'text-emerald-500', 'gross-revenue')}
+                ${UI.card('Today Earnings', '₹' + stats.todayEarnings.toLocaleString(), '24h Performance', 'text-orange-500', 'today-earnings')}
+                ${UI.card('Monthly Revenue', '₹' + stats.monthlyRevenue.toLocaleString(), 'Current Period', 'text-blue-500', 'monthly-revenue')}
+                ${UI.card('Active Premium', stats.activePremiumUsers.toLocaleString(), 'Live Subscriptions', 'text-pink-500', 'active-premium')}
+            </div>
 
-                        <!-- NEW PRICING ENGINE -->
-                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-emerald-500/10">
-                            <div class="border-b border-white/5 pb-6">
-                                <h3 class="text-xs font-black text-white uppercase tracking-widest">Subscription Pricing Engine</h3>
-                                <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Control upfront and display costs</p>
+            <div class="grid grid-cols-2 gap-10">
+                <!-- Pricing & Gateway Config -->
+                <div class="space-y-6">
+
+                    <!-- NEW PRICING ENGINE -->
+                    <div class="glass p-10 rounded-[3rem] space-y-8 border border-emerald-500/10">
+                        <div class="border-b border-white/5 pb-6">
+                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Subscription Pricing Engine</h3>
+                            <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Control upfront and display costs</p>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-[9px] font-black text-emerald-500 uppercase tracking-widest ml-1">Trial Price (INR)</label>
+                                <input type="number" id="trialPrice" value="${settings.trialPrice || 1}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-emerald-500 font-bold mt-2 focus:border-emerald-500/50 transition">
+                                <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Instant Setup/Trial Fee</p>
                             </div>
-
-                            <div class="grid grid-cols-2 gap-6">
-                                <div>
-                                    <label class="text-[9px] font-black text-emerald-500 uppercase tracking-widest ml-1">Trial Price (INR)</label>
-                                    <input type="number" id="trialPrice" value="${settings.trialPrice || 1}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-emerald-500 font-bold mt-2 focus:border-emerald-500/50 transition">
-                                    <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Instant Setup/Trial Fee</p>
-                                </div>
-                                <div>
-                                    <label class="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Main Price (INR)</label>
-                                    <input type="number" id="monthlyPrice" value="${settings.monthlyPrice || 199}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white font-bold mt-2 focus:border-orange-500/50 transition">
-                                    <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Display Price on App</p>
-                                </div>
+                            <div>
+                                <label class="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Main Price (INR)</label>
+                                <input type="number" id="monthlyPrice" value="${settings.monthlyPrice || 199}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white font-bold mt-2 focus:border-orange-500/50 transition">
+                                <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Display Price on App</p>
                             </div>
+                        </div>
 
-                            <button onclick="savePricingStrategy()" class="w-full py-4 bg-emerald-500 text-black rounded-2xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-emerald-500/30">
-                                <i class="fas fa-save mr-2"></i> Save Pricing Strategy
-                            </button>
+                        <button onclick="savePricingStrategy()" class="w-full py-4 bg-emerald-500 text-black rounded-2xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-emerald-500/30">
+                            <i class="fas fa-save mr-2"></i> Save Pricing Strategy
+                        </button>
 
-                            <!-- Retention Win-back Offer -->
-                            <div class="mt-8 pt-8 border-t border-white/5 space-y-6">
-                                <div class="flex justify-between items-center">
-                                    <h4 class="text-[10px] font-black text-pink-500 uppercase tracking-widest">Retention Campaign</h4>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" id="offer_toggle" ${settings.isOfferEnabled ? 'checked' : ''} class="sr-only peer">
-                                        <div class="w-10 h-5 bg-white/10 rounded-full peer peer-checked:bg-pink-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
-                                    </label>
-                                </div>
-                                <div class="grid grid-cols-2 gap-4">
-                                    <input type="number" id="offerPrice" value="${settings.offerPrice || 99}" placeholder="Offer Price" class="bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
-                                    <input type="text" id="offerPlanId" value="${settings.offerPlanId || ''}" placeholder="Offer Plan ID" class="bg-black/20 border border-white/5 p-3 rounded-xl text-[10px] text-white">
-                                    <div class="col-span-2 grid grid-cols-2 gap-4">
-                                        <div>
-                                            <p class="text-[7px] text-slate-500 mb-1">SHOW AFTER (DAYS)</p>
-                                            <input type="number" id="offerStartDay" value="${settings.offerStartDay || 1}" class="w-full bg-black/20 border border-white/5 p-2 rounded-lg text-xs text-white">
-                                        </div>
-                                        <div>
-                                            <p class="text-[7px] text-slate-500 mb-1">HIDE AFTER (DAYS)</p>
-                                            <input type="number" id="offerEndDay" value="${settings.offerEndDay || 7}" class="w-full bg-black/20 border border-white/5 p-2 rounded-lg text-xs text-white">
-                                        </div>
+                        <!-- Retention Win-back Offer -->
+                        <div class="mt-8 pt-8 border-t border-white/5 space-y-6">
+                            <div class="flex justify-between items-center">
+                                <h4 class="text-[10px] font-black text-pink-500 uppercase tracking-widest">Retention Campaign</h4>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="offer_toggle" ${settings.isOfferEnabled ? 'checked' : ''} class="sr-only peer">
+                                    <div class="w-10 h-5 bg-white/10 rounded-full peer peer-checked:bg-pink-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                                </label>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <input type="number" id="offerPrice" value="${settings.offerPrice || 99}" placeholder="Offer Price" class="bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
+                                <input type="text" id="offerPlanId" value="${settings.offerPlanId || ''}" placeholder="Offer Plan ID" class="bg-black/20 border border-white/5 p-3 rounded-xl text-[10px] text-white">
+                                <div class="col-span-2 grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-[7px] text-slate-500 mb-1">SHOW AFTER (DAYS)</p>
+                                        <input type="number" id="offerStartDay" value="${settings.offerStartDay || 1}" class="w-full bg-black/20 border border-white/5 p-2 rounded-lg text-xs text-white">
+                                    </div>
+                                    <div>
+                                        <p class="text-[7px] text-slate-500 mb-1">HIDE AFTER (DAYS)</p>
+                                        <input type="number" id="offerEndDay" value="${settings.offerEndDay || 7}" class="w-full bg-black/20 border border-white/5 p-2 rounded-lg text-xs text-white">
                                     </div>
                                 </div>
-                                <button onclick="saveOfferStrategy()" class="w-full py-3 bg-pink-500/10 text-pink-500 border border-pink-500/20 rounded-xl text-[9px] font-black uppercase hover:bg-pink-500 hover:text-white transition">Update Win-back Offer</button>
                             </div>
-                        </div>
-
-                        <!-- GATEWAY CONFIG -->
-                        <div class="glass p-10 rounded-[3rem] space-y-8 border border-white/5">
-                            <div class="border-b border-white/5 pb-6">
-                                <h3 class="text-xs font-black text-white uppercase tracking-widest">Gateway Credentials</h3>
-                            </div>
-
-                            <div class="flex items-center justify-between glass p-4 rounded-2xl">
-                                <div>
-                                    <p class="text-[10px] font-black text-white uppercase">Enable UPI Payments</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" id="upi_toggle" ${settings.isUpiEnabled !== false ? 'checked' : ''} class="sr-only peer">
-                                    <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                                </label>
-                            </div>
-
-                            <div class="flex gap-2">
-                                ${['razorpay', 'phonepe', 'cashfree'].map(g => `
-                                    <button onclick="toggleGateway('${g}')" class="flex-1 py-3 rounded-xl border ${settings.activeGateway === g ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-white/5 text-slate-500'} transition text-[10px] font-black uppercase">
-                                        ${g}
-                                    </button>
-                                `).join('')}
-                            </div>
-
-                            <div id="activeGatewayForm">
-                                ${renderGatewayForm(settings.activeGateway, settings)}
-                            </div>
-
-                            <button onclick="savePaymentSettings('${settings.activeGateway}')" class="w-full py-4 bg-white/5 text-white border border-white/10 rounded-xl text-[10px] font-black uppercase hover:bg-white/10 transition">
-                                Sync Gateway Keys
-                            </button>
+                            <button onclick="saveOfferStrategy()" class="w-full py-3 bg-pink-500/10 text-pink-500 border border-pink-500/20 rounded-xl text-[9px] font-black uppercase hover:bg-pink-500 hover:text-white transition">Update Win-back Offer</button>
                         </div>
                     </div>
 
-                    <!-- Google Play Integration (Replaced Financial Intelligence) -->
-                    <div class="glass p-10 rounded-[3rem] space-y-8 border border-blue-500/10">
+                    <!-- GATEWAY CONFIG -->
+                    <div class="glass p-10 rounded-[3rem] space-y-8 border border-white/5">
                         <div class="border-b border-white/5 pb-6">
-                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Google Play Billing</h3>
-                            <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">In-app purchase settings</p>
+                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Gateway Credentials</h3>
                         </div>
-                        <div class="space-y-6">
-                            <div class="flex items-center justify-between glass p-4 rounded-2xl">
-                                <div>
-                                    <p class="text-[10px] font-black text-white uppercase">Enable Play Billing</p>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" id="gp_enabled" ${gpSettings.isEnabled ? 'checked' : ''} class="sr-only peer">
-                                    <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                                </label>
-                            </div>
+
+                        <div class="flex items-center justify-between glass p-4 rounded-2xl">
                             <div>
-                                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Subscription Product ID</label>
-                                <input type="text" id="gp_product_id" value="${gpSettings.productId || ''}" placeholder="premium_subscription" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+                                <p class="text-[10px] font-black text-white uppercase">Enable UPI Payments</p>
                             </div>
-                            <div>
-                                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Service Account Key (JSON)</label>
-                                <textarea id="gp_service_key" rows="8" placeholder='{ "type": "service_account", ... }' class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-[10px] text-slate-400 font-mono mt-2">${gpSettings.serviceAccountKey || ''}</textarea>
-                            </div>
-                            <button onclick="saveGooglePlaySettings()" class="w-full py-4 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition">
-                                Update Google Play Config
-                            </button>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="upi_toggle" ${settings.isUpiEnabled !== false ? 'checked' : ''} class="sr-only peer">
+                                <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                            </label>
                         </div>
+
+                        <div class="flex gap-2">
+                            ${['razorpay', 'phonepe', 'cashfree'].map(g => `
+                                <button onclick="toggleGateway('${g}')" class="flex-1 py-3 rounded-xl border ${settings.activeGateway === g ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-white/5 text-slate-500'} transition text-[10px] font-black uppercase">
+                                    ${g}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <div id="activeGatewayForm">
+                            ${renderGatewayForm(settings.activeGateway, settings)}
+                        </div>
+
+                        <button onclick="savePaymentSettings('${settings.activeGateway}')" class="w-full py-4 bg-white/5 text-white border border-white/10 rounded-xl text-[10px] font-black uppercase hover:bg-white/10 transition">
+                            Sync Gateway Keys
+                        </button>
                     </div>
                 </div>
 
-                <!-- Payment History -->
-                <div class="glass rounded-[3rem] overflow-hidden">
-                    <div class="p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
-                        <h3 class="text-xs font-black text-white uppercase">Ledger History</h3>
-                        <div class="flex items-center space-x-4">
-                            <input type="text" id="historySearch" placeholder="Phone / Order ID" class="bg-black/20 border border-white/5 px-4 py-2 rounded-xl text-[10px] outline-none w-64">
-                            <button onclick="searchHistory()" class="px-4 py-2 bg-white/5 rounded-xl text-[10px] font-bold uppercase hover:bg-white/10">Filter</button>
-                        </div>
+                <!-- Google Play Integration (Replaced Financial Intelligence) -->
+                <div class="glass p-10 rounded-[3rem] space-y-8 border border-blue-500/10">
+                    <div class="border-b border-white/5 pb-6">
+                        <h3 class="text-xs font-black text-white uppercase tracking-widest">Google Play Billing</h3>
+                        <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">In-app purchase settings</p>
                     </div>
-                    <div id="historyTable">
-                        ${UI.skeletonTable(5)}
+                    <div class="space-y-6">
+                        <div class="flex items-center justify-between glass p-4 rounded-2xl">
+                            <div>
+                                <p class="text-[10px] font-black text-white uppercase">Enable Play Billing</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="gp_enabled" ${gpSettings.isEnabled ? 'checked' : ''} class="sr-only peer">
+                                <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Subscription Product ID</label>
+                            <input type="text" id="gp_product_id" value="${gpSettings.productId || ''}" placeholder="premium_subscription" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Service Account Key (JSON)</label>
+                            <textarea id="gp_service_key" rows="8" placeholder='{ "type": "service_account", ... }' class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-[10px] text-slate-400 font-mono mt-2">${gpSettings.serviceAccountKey || ''}</textarea>
+                        </div>
+                        <button onclick="saveGooglePlaySettings()" class="w-full py-4 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase hover:bg-blue-500 hover:text-white transition">
+                            Update Google Play Config
+                        </button>
                     </div>
                 </div>
             </div>
-        `;
 
-        loadPaymentHistory();
+            <!-- Payment History -->
+            <div class="glass rounded-[3rem] overflow-hidden">
+                <div class="p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
+                    <h3 class="text-xs font-black text-white uppercase">Ledger History</h3>
+                    <div class="flex items-center space-x-4">
+                        <input type="text" id="historySearch" placeholder="Phone / Order ID" class="bg-black/20 border border-white/5 px-4 py-2 rounded-xl text-[10px] outline-none w-64">
+                        <button onclick="searchHistory()" class="px-4 py-2 bg-white/5 rounded-xl text-[10px] font-bold uppercase hover:bg-white/10">Filter</button>
+                    </div>
+                </div>
+                <div id="historyTable">
+                    ${UI.skeletonTable(5)}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdsContent(ads) {
+    const google = ads.google || {};
+    const facebook = ads.facebook || {};
+    const mediation = ads.mediation || {};
+
+    return `
+        <div class="animate-fade space-y-10">
+            <!-- Global Ad Engine Controls -->
+            <div class="glass p-8 rounded-[2rem] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+                            <i class="fas fa-tower-broadcast text-black text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-black text-white uppercase tracking-widest">Unified Ad Engine</h3>
+                            <p class="text-[10px] text-slate-500 uppercase font-bold mt-1">Select your active traffic monetization strategy</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-6">
+                        <div class="flex bg-black/40 p-1.5 rounded-2xl border border-white/5">
+                            ${['google', 'facebook', 'mediation'].map(p => `
+                                <button onclick="switchAdProvider('${p}')" class="px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeAdProvider === p ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}">
+                                    ${p === 'google' ? 'AdMob/AdX' : (p === 'facebook' ? 'Facebook' : 'Mediation')}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <div class="h-10 w-px bg-white/10 mx-2"></div>
+
+                        <div class="flex items-center space-x-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/5">
+                             <span class="text-[9px] font-black text-white uppercase">Master Switch</span>
+                             <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="ads_enabled" ${ads.isEnabled ? 'checked' : ''} class="sr-only peer">
+                                <div class="w-11 h-6 bg-white/10 rounded-full peer peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                <!-- Dynamic Provider Form -->
+                <div class="glass p-10 rounded-[3rem] space-y-8 border border-white/5 relative overflow-hidden">
+                    <div id="providerIcon" class="absolute -top-10 -right-10 opacity-5 pointer-events-none">
+                         <i class="fas ${activeAdProvider === 'google' ? 'fa-google' : (activeAdProvider === 'facebook' ? 'fa-facebook' : 'fa-layer-group')} text-[15rem]"></i>
+                    </div>
+
+                    <div class="border-b border-white/5 pb-6">
+                        <h3 class="text-xs font-black text-white uppercase tracking-widest">${activeAdProvider.toUpperCase()} CONFIGURATION</h3>
+                        <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Manage units for ${activeAdProvider === 'google' ? 'AdMob & AdX' : activeAdProvider}</p>
+                    </div>
+
+                    <div id="adProviderForm" class="space-y-6">
+                        ${renderAdProviderFields(activeAdProvider, ads)}
+                    </div>
+
+                    <button onclick="saveAdsSettings()" class="w-full py-4 bg-orange-500 text-black rounded-2xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-orange-500/30">
+                        <i class="fas fa-save mr-2"></i> Sync ${activeAdProvider} Settings
+                    </button>
+                </div>
+
+                <!-- Ad Controls & Targeting -->
+                <div class="space-y-8">
+                    <div class="glass p-10 rounded-[3rem] space-y-8 border border-white/5">
+                        <div class="border-b border-white/5 pb-6">
+                            <h3 class="text-xs font-black text-white uppercase tracking-widest">Global Visibility Rules</h3>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between glass p-5 rounded-2xl bg-white/[0.02]">
+                                <div>
+                                    <p class="text-[10px] font-black text-white uppercase tracking-wider">Ads for Free Users Only</p>
+                                    <p class="text-[8px] text-slate-500 uppercase font-bold mt-0.5">Premium users will never see ads</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="ads_free_users_only" ${ads.freeUsersOnly !== false ? 'checked' : ''} class="sr-only peer">
+                                    <div class="w-10 h-5 bg-white/10 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                                </label>
+                            </div>
+
+                            <div class="flex items-center justify-between glass p-5 rounded-2xl bg-white/[0.02]">
+                                <div>
+                                    <p class="text-[10px] font-black text-white uppercase tracking-wider">Interstitials on App Start</p>
+                                    <p class="text-[8px] text-slate-500 uppercase font-bold mt-0.5">Trigger ad as soon as splash finishes</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="ads_on_start" ${ads.showOnStart ? 'checked' : ''} class="sr-only peer">
+                                    <div class="w-10 h-5 bg-white/10 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
+                                </label>
+                            </div>
+
+                             <div class="flex items-center justify-between glass p-5 rounded-2xl bg-white/[0.02]">
+                                <div>
+                                    <p class="text-[10px] font-black text-white uppercase tracking-wider">Ad Frequency Capping</p>
+                                    <p class="text-[8px] text-slate-500 uppercase font-bold mt-0.5">Minutes between Interstitials</p>
+                                </div>
+                                <input type="number" id="ads_frequency" value="${ads.frequencyMinutes || 5}" class="w-16 bg-black/40 border border-white/10 rounded-lg p-2 text-xs text-white text-center outline-none focus:border-orange-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Setup Guide -->
+                    <div class="glass p-8 rounded-[3rem] border border-blue-500/10 bg-blue-500/5">
+                        <div class="flex items-center space-x-3 mb-4">
+                            <i class="fas fa-circle-info text-blue-500 text-sm"></i>
+                            <h4 class="text-[10px] font-black text-white uppercase tracking-widest">Implementation Guide</h4>
+                        </div>
+                        <ul class="space-y-3">
+                            <li class="flex items-start space-x-3">
+                                <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5"><span class="text-[8px] font-bold text-blue-500">1</span></div>
+                                <p class="text-[9px] text-slate-400 font-medium">For **AdX Manager**, use the same fields as AdMob but enter your GAM/AdX Ad Unit paths.</p>
+                            </li>
+                            <li class="flex items-start space-x-3">
+                                <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5"><span class="text-[8px] font-bold text-blue-500">2</span></div>
+                                <p class="text-[9px] text-slate-400 font-medium">**Mediation Mode** expects you to use AdMob/GAM as the primary host with FAN integrated via bidding.</p>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdProviderFields(provider, allAds) {
+    const data = allAds[provider] || {};
+
+    if (provider === 'google') {
+        return `
+            <div>
+                <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">App ID (AdMob/AdX)</label>
+                <input type="text" id="ad_google_app_id" value="${data.appId || ''}" placeholder="ca-app-pub-xxx~xxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2 focus:border-orange-500/50 transition">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Interstitial Unit ID</label>
+                    <input type="text" id="ad_google_interstitial" value="${data.interstitialId || ''}" placeholder="ca-app-pub-xxx/xxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Banner Unit ID</label>
+                    <input type="text" id="ad_google_banner" value="${data.bannerId || ''}" placeholder="ca-app-pub-xxx/xxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+            </div>
+            <div>
+                <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Native Ad Unit ID</label>
+                <input type="text" id="ad_google_native" value="${data.nativeId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+            </div>
+        `;
+    } else if (provider === 'facebook') {
+        return `
+            <div>
+                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Facebook App ID</label>
+                <input type="text" id="ad_fb_app_id" value="${data.appId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Placement: Interstitial</label>
+                    <input type="text" id="ad_fb_interstitial" value="${data.interstitialId || ''}" placeholder="IMG_16_9_APP_INSTALL#xxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Placement: Banner</label>
+                    <input type="text" id="ad_fb_banner" value="${data.bannerId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+            </div>
+        `;
+    } else if (provider === 'mediation') {
+        return `
+            <div class="bg-blue-500/10 p-6 rounded-2xl border border-blue-500/20 mb-6">
+                <p class="text-[10px] text-blue-400 font-bold uppercase leading-relaxed">
+                    <i class="fas fa-info-circle mr-2"></i> Mediation is powered by Google AdMob/AdX.
+                    Ensure you have linked Facebook Audience Network in your Google Console bidding/waterfall.
+                </p>
+            </div>
+            <div>
+                <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Mediation App ID (Primary)</label>
+                <input type="text" id="ad_med_app_id" value="${data.appId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Mediation: Interstitial</label>
+                    <input type="text" id="ad_med_interstitial" value="${data.interstitialId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Mediation: Banner</label>
+                    <input type="text" id="ad_med_banner" value="${data.bannerId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+            </div>
+        `;
+    }
+}
+
+function switchAdProvider(p) {
+    activeAdProvider = p;
+    renderMonetizationUI();
+}
+
+async function saveAdsSettings() {
+    try {
+        const ads = window.monetizationState.adsSettings;
+
+        ads.isEnabled = document.getElementById('ads_enabled').checked;
+        ads.freeUsersOnly = document.getElementById('ads_free_users_only').checked;
+        ads.showOnStart = document.getElementById('ads_on_start').checked;
+        ads.frequencyMinutes = parseInt(document.getElementById('ads_frequency').value) || 5;
+        ads.activeProvider = activeAdProvider;
+
+        if (activeAdProvider === 'google') {
+            ads.google = {
+                appId: document.getElementById('ad_google_app_id').value,
+                interstitialId: document.getElementById('ad_google_interstitial').value,
+                bannerId: document.getElementById('ad_google_banner').value,
+                nativeId: document.getElementById('ad_google_native').value
+            };
+        } else if (activeAdProvider === 'facebook') {
+            ads.facebook = {
+                appId: document.getElementById('ad_fb_app_id').value,
+                interstitialId: document.getElementById('ad_fb_interstitial').value,
+                bannerId: document.getElementById('ad_fb_banner').value
+            };
+        } else if (activeAdProvider === 'mediation') {
+            ads.mediation = {
+                appId: document.getElementById('ad_med_app_id').value,
+                interstitialId: document.getElementById('ad_med_interstitial').value,
+                bannerId: document.getElementById('ad_med_banner').value
+            };
+        }
+
+        await API.updateConfig('ads_settings', ads);
+        showSystemToast("Ads Synced", `${activeAdProvider.toUpperCase()} config broadcasted to app`, 'bg-orange-500');
+        loadMonetization();
     } catch (err) {
-        console.error(err);
-        mainContent.innerHTML = `<p class="p-20 text-center text-red-500 font-black uppercase">Monetization Sync Failed</p>`;
+        showSystemToast("Save Failed", "API communication error", 'bg-red-500');
     }
 }
 
@@ -456,6 +729,8 @@ async function toggleGateway(g) {
 
 async function loadPaymentHistory(page = 1, search = '') {
     const container = document.getElementById('historyTable');
+    if (!container) return; // Silent return if we are in another tab
+
     try {
         const data = await API.getPaymentHistory(page);
         const filtered = search ? data.transactions.filter(t => t.userPhone.includes(search) || t.orderId.includes(search)) : data.transactions;

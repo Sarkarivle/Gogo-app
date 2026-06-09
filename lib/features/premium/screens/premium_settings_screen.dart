@@ -164,25 +164,6 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                               ),
                             ),
                           
-                          if (status == 'cancelled' && isPremium)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const TrialOnboardingScreen(forceShow: true)));
-                                  },
-                                  icon: const Icon(Icons.bolt, color: Colors.black),
-                                  label: const Text("REACTIVATE MEMBERSHIP", style: TextStyle(fontWeight: FontWeight.bold)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.greenAccent,
-                                    foregroundColor: Colors.black,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),

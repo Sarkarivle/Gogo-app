@@ -232,6 +232,12 @@ const API = {
             body: JSON.stringify({ title, message })
         });
     },
+    async syncProvider(phone) {
+        return await this.request('/api/payment/sync-provider', {
+            method: 'POST',
+            body: JSON.stringify({ phone })
+        });
+    },
     // Generic methods
     async get(endpoint) {
         return await this.request(`/api${endpoint}`);

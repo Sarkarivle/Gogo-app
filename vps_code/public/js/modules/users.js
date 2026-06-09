@@ -488,21 +488,22 @@ async function loadUserFinance(phone, filter = 'all') {
     UI.modal.setDynamicContent(UI.skeletonModal());
     try {
         const data = await API.getUserFull(phone);
-        const sub = data.subscription || {};
+        const user = data.user || {};
+        const sub = user.subscription || {};
         let payments = data.paymentHistory || [];
 
         // Calculate Total Spent (only successful transactions)
         const totalSpent = payments
-            .filter(p => p.status?.toLowerCase() === 'captured' || p.status?.toLowerCase() === 'success' || p.status?.toLowerCase() === 'active')
+            .filter(p => ['captured', 'success', 'active', 'SUCCESS'].includes(p.status?.toLowerCase() || p.status))
             .reduce((acc, p) => acc + (p.amount || 0), 0);
 
         // Filter payments for display
         if (filter !== 'all') {
             payments = payments.filter(p => {
-                const s = p.status?.toLowerCase();
-                if (filter === 'success') return s === 'captured' || s === 'success' || s === 'active';
-                if (filter === 'pending') return s === 'created' || s === 'pending';
-                if (filter === 'failed') return s === 'failed' || s === 'refunded';
+                const s = p.status?.toLowerCase() || p.status;
+                if (filter === 'success') return ['captured', 'success', 'active', 'SUCCESS'].includes(s);
+                if (filter === 'pending') return ['created', 'pending', 'PENDING'].includes(s);
+                if (filter === 'failed') return ['failed', 'refunded', 'FAILED', 'CANCELLED'].includes(s);
                 return true;
             });
         }
@@ -514,29 +515,54 @@ async function loadUserFinance(phone, filter = 'all') {
                     <div class="flex justify-between items-start mb-6">
                         <div>
                             <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Active Subscription</p>
-                            <h3 class="text-xl font-black text-white uppercase">${sub.planName || (data.user?.isPremium ? 'Premium Plan' : 'Free Tier')}</h3>
+                            <h3 class="text-xl font-black text-white uppercase">${user.premiumPlan || 'Free Tier'}</h3>
                             <div class="flex items-center space-x-2 mt-2">
-                                <div class="w-2 h-2 rounded-full ${data.user?.isPremium ? 'bg-orange-500 animate-pulse' : 'bg-slate-600'}"></div>
-                                <p class="text-[9px] font-black uppercase ${data.user?.isPremium ? 'text-orange-500' : 'text-slate-500'}">
-                                    ${data.user?.isPremium ? 'PREMIUM USER' : 'FREE USER'}
+                                <div class="w-2 h-2 rounded-full ${user.isPremium ? 'bg-orange-500 animate-pulse' : 'bg-slate-600'}"></div>
+                                <p class="text-[9px] font-black uppercase ${user.isPremium ? 'text-orange-500' : 'text-slate-500'}">
+                                    ${user.isPremium ? 'PREMIUM USER' : 'FREE USER'}
                                 </p>
                             </div>
                         </div>
-                        <div class="text-right">
-                             ${UI.badge(sub.status || (data.user?.isPremium ? 'Active' : 'None'), (sub.status === 'active' || data.user?.isPremium) ? 'bg-emerald-500 text-black' : 'bg-slate-700 text-white')}
-                             <p class="text-[8px] font-black text-slate-500 uppercase mt-2">Type: ${sub.planId || 'Standard'}</p>
+                        <div class="flex flex-col items-end">
+                             <div class="flex space-x-2">
+                                <button onclick="syncUserFinance('${phone}')" class="p-2 glass rounded-lg text-white hover:bg-white/10 transition" title="Sync with Provider">
+                                    <i class="fas fa-sync-alt text-[10px]"></i>
+                                </button>
+                                ${UI.badge(sub.status || (user.isPremium ? 'Active' : 'None'), (sub.status === 'active' || user.isPremium) ? 'bg-emerald-500 text-black' : 'bg-slate-700 text-white')}
+                             </div>
+                             <p class="text-[8px] font-black text-slate-500 uppercase mt-2">Source: ${sub.paymentMethod || 'Manual'}</p>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-6">
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
                         <div>
                             <p class="text-[8px] font-black text-slate-500 uppercase">Valid Until</p>
-                            <p class="text-xs font-bold text-white">${data.user?.premiumExpiry ? new Date(data.user.premiumExpiry).toLocaleDateString() : (sub.expiryDate ? new Date(sub.expiryDate).toLocaleDateString() : 'N/A')}</p>
+                            <p class="text-xs font-bold text-white">${user.premiumExpiry ? new Date(user.premiumExpiry).toLocaleDateString() : 'N/A'}</p>
                         </div>
                         <div>
-                            <p class="text-[8px] font-black text-slate-500 uppercase">Total Spent (Success)</p>
+                            <p class="text-[8px] font-black text-slate-500 uppercase">Next Billing</p>
+                            <p class="text-xs font-bold text-blue-400">${sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A'}</p>
+                        </div>
+                        <div>
+                            <p class="text-[8px] font-black text-slate-500 uppercase">Auto Renew</p>
+                            <p class="text-xs font-bold ${sub.autoRenew ? 'text-emerald-500' : 'text-red-500'}">${sub.autoRenew ? 'ENABLED' : 'DISABLED'}</p>
+                        </div>
+                        <div>
+                            <p class="text-[8px] font-black text-slate-500 uppercase">Last Paid</p>
+                            <p class="text-xs font-bold text-orange-500">₹${sub.lastAmountPaid || 0}</p>
+                        </div>
+                        <div>
+                            <p class="text-[8px] font-black text-slate-500 uppercase">Total Spent</p>
                             <p class="text-xs font-bold text-emerald-500">₹${totalSpent}</p>
                         </div>
                     </div>
+
+                    ${sub.id ? `
+                        <div class="mt-6 pt-4 border-t border-white/5">
+                            <p class="text-[7px] font-black text-slate-600 uppercase">Provider ID</p>
+                            <p class="text-[9px] font-mono text-slate-400">${sub.id}</p>
+                        </div>
+                    ` : ''}
                 </div>
 
                 <!-- Payment Logs Header & Filters -->
@@ -552,8 +578,9 @@ async function loadUserFinance(phone, filter = 'all') {
                     </div>
                     <div class="space-y-2">
                         ${payments.map(p => {
-                            const isSuccess = ['captured', 'success', 'active'].includes(p.status?.toLowerCase());
-                            const isFailed = ['failed', 'refunded'].includes(p.status?.toLowerCase());
+                            const s = p.status?.toLowerCase() || p.status;
+                            const isSuccess = ['captured', 'success', 'active', 'SUCCESS'].includes(s);
+                            const isFailed = ['failed', 'refunded', 'FAILED', 'CANCELLED'].includes(s);
                             const color = isSuccess ? 'text-emerald-500' : (isFailed ? 'text-red-500' : 'text-yellow-500');
 
                             return `
@@ -580,6 +607,28 @@ async function loadUserFinance(phone, filter = 'all') {
     } catch (e) {
         console.error("loadUserFinance Error:", e);
         UI.modal.setDynamicContent('<p class="text-red-500">Failed to load finance data</p>');
+    }
+}
+
+async function syncUserFinance(phone) {
+    const btn = event.currentTarget;
+    const icon = btn.querySelector('i');
+    icon.classList.add('animate-spin');
+    btn.disabled = true;
+
+    try {
+        const res = await API.syncProvider(phone);
+        if (res.success) {
+            UI.showToast("Sync Complete", "User status updated from provider", "bg-emerald-500");
+            loadUserFinance(phone);
+        } else {
+            UI.showToast("Sync Failed", res.message || "Could not sync status", "bg-red-500");
+        }
+    } catch (e) {
+        UI.showToast("Error", e.message, "bg-red-500");
+    } finally {
+        icon.classList.remove('animate-spin');
+        btn.disabled = false;
     }
 }
 

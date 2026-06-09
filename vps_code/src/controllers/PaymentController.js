@@ -105,7 +105,8 @@ exports.verifyPayment = async (req, res) => {
         if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
         const normalizedPhone = normalize(phone);
 
-        const result = await PaymentService.verifyPayment(normalizedPhone, req.body);
+        const io = req.app.get('socketio');
+        const result = await PaymentService.verifyPayment(normalizedPhone, req.body, io);
         res.json(result);
     } catch (error) {
         console.error("Verify Payment Error:", error);
@@ -115,11 +116,32 @@ exports.verifyPayment = async (req, res) => {
 
 exports.syncUserStatus = async (req, res) => {
     try {
-        let phone = req.user?.phone;
+        let phone = req.user?.phone || req.params.phone || req.body.phone;
         if (!phone) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-        const status = await PaymentService.syncUserStatus(phone);
-        res.json({ success: true, ...status });
+        const io = req.app.get('socketio');
+        // If it's an admin request (has role), we can explicitly sync with provider
+        let result;
+        if (req.user?.role || req.admin) {
+            result = await PaymentService.syncWithProvider(phone, io);
+        } else {
+            result = await PaymentService.syncUserStatus(phone);
+        }
+
+        res.json({ success: true, ...result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.syncWithProvider = async (req, res) => {
+    try {
+        const phone = req.params.phone || req.body.phone;
+        if (!phone) return res.status(400).json({ success: false, message: "Phone required" });
+
+        const io = req.app.get('socketio');
+        const result = await PaymentService.syncWithProvider(phone, io);
+        res.json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -144,7 +166,8 @@ exports.cancelSubscription = async (req, res) => {
 exports.handleRazorpayWebhook = async (req, res) => {
     try {
         const signature = req.headers['x-razorpay-signature'];
-        await PaymentService.processWebhook('razorpay', req.body, signature);
+        const io = req.app.get('socketio');
+        await PaymentService.processWebhook('razorpay', req.body, signature, null, io);
         res.json({ status: 'ok' });
     } catch (e) {
         console.error("Razorpay Webhook Error:", e);
@@ -155,7 +178,8 @@ exports.handleRazorpayWebhook = async (req, res) => {
 exports.handlePhonePeWebhook = async (req, res) => {
     try {
         const signature = req.headers['x-verify'];
-        await PaymentService.processWebhook('phonepe', req.body, signature);
+        const io = req.app.get('socketio');
+        await PaymentService.processWebhook('phonepe', req.body, signature, null, io);
         res.json({ status: 'ok' });
     } catch (e) {
         res.status(200).json({ status: 'error' });
@@ -165,10 +189,24 @@ exports.handlePhonePeWebhook = async (req, res) => {
 exports.handleCashfreeWebhook = async (req, res) => {
     try {
         const signature = req.headers['x-cf-signature'];
-        await PaymentService.processWebhook('cashfree', req.body, signature);
+        const io = req.app.get('socketio');
+        await PaymentService.processWebhook('cashfree', req.body, signature, null, io);
         res.json({ status: 'ok' });
     } catch (e) {
         res.status(200).json({ status: 'error' });
+    }
+};
+
+exports.handleGooglePlayWebhook = async (req, res) => {
+    try {
+        // Google Play RTDN (Pub/Sub) doesn't use a standard signature header like Razorpay
+        // Security is usually handled by keeping the endpoint secret or IP filtering
+        const io = req.app.get('socketio');
+        await PaymentService.processWebhook('google_play', req.body, null, null, io);
+        res.status(200).send(); // Google expects 200/204 to acknowledge receipt
+    } catch (e) {
+        console.error("Google Play Webhook Error:", e.message);
+        res.status(200).send(); // Still return 200 to prevent Google from retrying endlessly on parse errors
     }
 };
 
