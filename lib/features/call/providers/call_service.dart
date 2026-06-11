@@ -48,7 +48,7 @@ class CallService {
       final data = event['data'];
       switch (event['event']) {
         case 'incoming_call':
-          _handleIncomingCall(data);
+          handleIncomingCall(data);
           break;
         case 'call_accepted':
           _handleCallAccepted();
@@ -106,9 +106,12 @@ class CallService {
     _showCallScreen();
   }
 
-  void _handleIncomingCall(dynamic data) async {
+  void handleIncomingCall(dynamic data) async {
     if (_state != CallState.idle) {
-      SocketService().emit('call_busy', {'targetPhone': data['callerPhone']});
+      // If we are already in a call, send busy but only if it's a DIFFERENT call
+      if (_remotePhone != data['callerPhone']) {
+        SocketService().emit('call_busy', {'targetPhone': data['callerPhone']});
+      }
       return;
     }
 
@@ -154,9 +157,21 @@ class CallService {
     _callTimeoutTimer = null;
   }
 
-  void _showCallScreen() {
-    final context = MyApp.navigatorKey.currentContext;
-    if (context == null) return;
+  void _showCallScreen() async {
+    BuildContext? context = MyApp.navigatorKey.currentContext;
+    
+    // Retry logic: If app is just launching from terminated state, context might take a moment
+    int retryCount = 0;
+    while (context == null && retryCount < 10) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      context = MyApp.navigatorKey.currentContext;
+      retryCount++;
+    }
+
+    if (context == null) {
+      debugPrint("🚨 [CallService] Cannot show call screen: Navigator context is null");
+      return;
+    }
 
     Navigator.push(
       context,

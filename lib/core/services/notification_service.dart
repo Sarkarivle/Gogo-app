@@ -87,19 +87,25 @@ class NotificationService {
   }
 
   static void _navigateToChat(Map<String, dynamic> data) {
-    if (data['senderPhone'] != null) {
-      final phone = data['senderPhone'].toString();
+    final String? phone = data['senderPhone']?.toString() ?? data['callerPhone']?.toString();
+    final String? name = data['senderName']?.toString() ?? data['callerName']?.toString();
+
+    if (phone != null) {
       _unreadCounts[phone] = 0; // Clear count when navigating
 
       final context = MyApp.navigatorKey.currentContext;
       if (context != null) {
         if (data['type'] == 'call') {
-          // If it was a call notification, we don't necessarily navigate to chat,
-          // but maybe just let them see the missed call log in inbox.
+          // If it's a call, trigger the incoming call UI immediately
+          CallService().handleIncomingCall({
+            'callerPhone': phone,
+            'callerName': name ?? "User",
+            'isVideo': data['isVideo'] == 'true' || data['isVideo'] == true,
+          });
         } else {
           ChatPage.navigate(
             context,
-            name: data['senderName'] ?? "User",
+            name: name ?? "User",
             receiverPhone: phone,
             distance: "Nearby",
             position: data['senderPosition'] ?? "Member",
@@ -177,6 +183,7 @@ class NotificationService {
         'type': 'call',
         'senderPhone': data['callerPhone'],
         'senderName': data['callerName'],
+        'isVideo': data['isVideo'],
       },
     );
   }

@@ -27,7 +27,14 @@ redisClient.on('ready', async () => {
     console.log('🚀 Redis Connected: High-Performance Engine Active');
     try {
         await redisClient.del('online_users'); // Fresh start
-    } catch (err) {}
+        // CRITICAL: Also sync MongoDB on startup to prevent "Ghost" online users after a crash
+        // Using lazy require to avoid circular dependency
+        const User = require('./src/models/User');
+        await User.updateMany({}, { isOnline: false });
+        console.log('✅ MongoDB Online Status Reset');
+    } catch (err) {
+        console.error('❌ Startup Sync Error:', err.message);
+    }
 });
 
 (async () => {

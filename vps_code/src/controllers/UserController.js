@@ -185,44 +185,28 @@ exports.getDiscover = async (req, res) => {
         const currentUser = await User.findOne(phoneQuery(myPhone)).lean();
         const redisClient = req.app.get('redis');
 
-        // 1. Redis Presence Fetch
-        let redisOnlinePhones = [];
-        if (redisClient) {
-            try {
-                redisOnlinePhones = await redisClient.sMembers('online_users');
-            } catch (err) {
-                console.error("Redis Error:", err);
-            }
-        }
+        // 1. Discovery Query Optimization:
+        // For 100k+ users, we avoid fetching ALL online users from Redis.
+        // Instead, we trust the indexed 'isOnline' field in MongoDB which is kept in sync by Socket.io.
 
         // 2. Base Query: Exclude self, banned, and UNREGISTERED users
         let query = {
             phone: { $nin: [myPhone, `+91${myPhone}`, `91${myPhone}`] },
             accountStatus: 'Active',
             isBanned: { $ne: true },
-            // ALWAYS REQUIRE REGISTRATION (Profile complete ya DOB filled)
             $or: [
                 { hasCompletedOnboarding: true },
                 { dobYear: { $exists: true, $ne: null } }
             ]
         };
 
-        // 3. Filters (Only if explicitly requested)
+        // 3. Filters
         if (requestedGender && requestedGender !== 'Any') {
             query.gender = requestedGender;
         }
 
         if (tab === 'Online' || isOnlineOnly === 'true') {
-            // STRICT REDIS ONLINE: Sirf wahi log dikhao jo Redis mein currently active hain
-            const targetOnlinePhones = redisOnlinePhones.filter(p => p !== myPhone);
-
-            // MongoDB query ko strictly Redis phones tak limit kar diya
-            const searchPhones = targetOnlinePhones.reduce((acc, p) => {
-                acc.push(p, `+91${p}`, `91${p}`);
-                return acc;
-            }, []);
-
-            query.phone = { $in: searchPhones };
+            query.isOnline = true;
         }
 
         if (age && age !== 'Any') {
@@ -260,7 +244,7 @@ exports.getDiscover = async (req, res) => {
                             spherical: true
                         }
                     },
-                    { $sort: { isPremium: -1, isVerified: -1, distanceValue: 1, lastSeen: -1 } },
+                    { $sort: { distanceValue: 1, isPremium: -1, lastSeen: -1 } },
                     { $skip: skip },
                     { $limit: limitInt }
                 ]);
@@ -278,9 +262,7 @@ exports.getDiscover = async (req, res) => {
 
         // 6. Final Enrichment & Labels
         const formattedUsers = users.map(u => {
-            const normalizedU = normalize(u.phone);
-            // FIX: Trust Redis more than DB for "Actually Online" status
-            const isActuallyOnline = redisOnlinePhones.includes(normalizedU);
+            const isActuallyOnline = u.isOnline === true;
 
             let distKm = u.distanceValue !== undefined ? u.distanceValue / 1000 : null;
             if (distKm === null && userLat && userLng && (u.lat || u.location?.coordinates)) {

@@ -90,6 +90,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _isPartnerDeactivated = false;
   bool _hasReviewed = false;
   StreamSubscription? _socketSubscription;
+  final Map<String, ChatMessage> _messageLookup = {}; // O(1) Lookup for extreme performance
 
   // Audio Recording
   final AudioRecorder _audioRecorder = AudioRecorder();
@@ -123,12 +124,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _messageController.addListener(_handleTypingStatus);
 
     // Automatic Pagination (Infinite Scroll)
-    _scrollController.addListener(() {
-      // Trigger earlier (when 80% through the last 300px)
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 600) {
-        _fetchHistory(loadMore: true);
-      }
-    });
+    _scrollController.addListener(_scrollListener);
 
     // Centralized Block Listening
     ModerationRepository().blockStatusNotifier.addListener(_syncBlockFromGlobal);
@@ -199,11 +195,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  void _scrollListener() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 600) {
+      _fetchHistory(loadMore: true);
+    }
+  }
+
   String _getRoomId() {
     if (_myPhone == null || _normalizedReceiverPhone == null) return '';
     List<String> phones = [_myPhone!, _normalizedReceiverPhone!];
     phones.sort();
     return phones.join('_');
+  }
+
+  void _addToLookup(ChatMessage m) {
+    if (m.id != null) _messageLookup[m.id!] = m;
+    if (m.localId != null) _messageLookup[m.localId!] = m;
   }
 
   void _setupSocketListeners() {
@@ -281,36 +289,33 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _handleReceivedMessage(dynamic data) {
     final newMessage = ChatMessage.fromJson(data, _myPhone!);
     newMessage.isNew = true; // Mark for animation
-    
-    // Note: Global cache is already updated by ChatRealtimeRepository
 
-    setState(() {
-      _messageCount++;
-      _adMessageCounter++;
-      // DEDUP & UPDATE: Check if message already exists (either by real ID or localId)
-      final int index = _messages.indexWhere((m) => 
-        (m.id != null && m.id == newMessage.id) || 
-        (m.localId != null && newMessage.localId != null && m.localId == newMessage.localId)
-      );
+    final existing = _messageLookup[newMessage.id] ?? _messageLookup[newMessage.localId];
 
-      if (index == -1) {
+    if (existing == null) {
+      setState(() {
+        _messageCount++;
+        _adMessageCounter++;
         _messages.insert(0, newMessage);
+        _addToLookup(newMessage);
+        
         // Only animate scroll if at the bottom
         if (_scrollController.hasClients && _scrollController.offset < 100) {
           _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
         }
-      } else {
-        // Update the existing optimistic message with server-side data
-        _messages[index].id = newMessage.id;
-        // Status forward only
-        if (newMessage.status.index > _messages[index].status.index) {
-          _messages[index].status = newMessage.status;
-        }
-        if (newMessage.isViewOnce) _messages[index].isOpened = newMessage.isOpened;
-        if (newMessage.audioUrl != null) _messages[index].audioUrl = newMessage.audioUrl;
-        if (newMessage.imageUrl != null) _messages[index].imageUrl = newMessage.imageUrl;
-      }
-    });
+      });
+    } else {
+      // Update the existing optimistic message with server-side data
+      existing.id = newMessage.id;
+      _addToLookup(existing); // Ensure real ID is now in lookup
+      
+      // Status forward only (handled by setter in ChatMessage)
+      existing.status = newMessage.status;
+      
+      if (newMessage.isViewOnce) existing.isOpened = newMessage.isOpened;
+      if (newMessage.audioUrl != null) existing.audioUrl = newMessage.audioUrl;
+      if (newMessage.imageUrl != null) existing.imageUrl = newMessage.imageUrl;
+    }
 
     _checkAndShowReviewPopup();
   }
@@ -332,16 +337,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Timer? _statusSyncTimer;
-
   void _updateMessageStatus(String? id, MessageStatus status) {
     if (id == null) return;
     
-    final int index = _messages.indexWhere((m) => m.id == id || m.localId == id);
+    final m = _messageLookup[id];
     
-    if (index != -1) {
-      final m = _messages[index];
-      // Update the ValueNotifier directly
+    if (m != null) {
+      // Update the ValueNotifier directly (Performance: No setState needed)
       m.status = status;
       if ((status == MessageStatus.seen || status == MessageStatus.delivered) && m.isViewOnce) {
         // If it's a view-once and we got a seen/delivered status from server, sync it
@@ -355,17 +357,32 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _markAllMeMessagesSeen() {
+    int alreadySeenCount = 0;
     for (var m in _messages) {
-      if (m.isMe && m.status != MessageStatus.seen && !m.isViewOnce) {
-        m.status = MessageStatus.seen;
+      if (m.isMe && !m.isViewOnce) {
+        if (m.status != MessageStatus.seen) {
+          m.status = MessageStatus.seen;
+          alreadySeenCount = 0;
+        } else {
+          alreadySeenCount++;
+          // Optimization: If we hit 15 already-seen messages, stop iterating
+          if (alreadySeenCount > 15) break;
+        }
       }
     }
   }
 
   void _markAllMeMessagesDelivered() {
+    int alreadyDeliveredCount = 0;
     for (var m in _messages) {
-      if (m.isMe && m.status == MessageStatus.sent) {
-        m.status = MessageStatus.delivered;
+      if (m.isMe) {
+        if (m.status == MessageStatus.sent) {
+          m.status = MessageStatus.delivered;
+          alreadyDeliveredCount = 0;
+        } else if (m.status.index >= MessageStatus.delivered.index) {
+          alreadyDeliveredCount++;
+          if (alreadyDeliveredCount > 15) break;
+        }
       }
     }
   }
@@ -376,35 +393,35 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ChatRepository().updateMessageDeletionInCache(_myPhone!, widget.receiverPhone, messageId);
     }
     
-    setState(() {
-      final index = _messages.indexWhere((m) => m.id == messageId);
-      if (index != -1) {
-        final m = _messages[index];
-        m.isDeletedForEveryone = true;
-        m.text = null;
-        m.imageUrl = null;
-        m.audioUrl = null;
-        m.localFilePath = null;
-      }
-    });
+    final m = _messageLookup[messageId];
+    if (m != null) {
+      m.isDeletedForEveryone = true;
+      m.text = null;
+      m.imageUrl = null;
+      m.audioUrl = null;
+      m.localFilePath = null;
+    }
   }
 
   void _handleDeleteForMeLocally(String? messageId) {
     if (messageId == null) return;
+    final m = _messageLookup[messageId];
+    if (m == null) return;
+
     setState(() {
-      _messages.removeWhere((m) => m.id == messageId);
+      _messages.remove(m);
+      _messageLookup.remove(m.id);
+      _messageLookup.remove(m.localId);
+      m.dispose(); // Cleanup!
     });
   }
 
   void _handleMessageEdited(String messageId, String newText) {
-    final index = _messages.indexWhere((m) => m.id == messageId);
-    if (index != -1) {
-      setState(() {
-        final m = _messages[index];
-        m.text = newText;
-        m.isEdited = true;
-        m.textNotifier.value = newText;
-      });
+    final m = _messageLookup[messageId];
+    if (m != null) {
+      m.text = newText;
+      m.isEdited = true;
+      m.textNotifier.value = newText;
     }
   }
 
@@ -429,13 +446,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
       final List<ChatMessage> fetched = result['messages'] ?? [];
       
-      if (mounted) {
+          if (mounted) {
         setState(() {
           if (loadMore) {
             // Deduplicate when adding more
             for (var m in fetched) {
-              if (!_messages.any((em) => (em.id != null && em.id == m.id) || (em.localId != null && m.localId != null && em.localId == m.localId))) {
+              if (_messageLookup[m.id] == null && _messageLookup[m.localId] == null) {
                 _messages.add(m);
+                _addToLookup(m);
               }
             }
             _currentPage++;
@@ -444,19 +462,38 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (forceRefresh) {
               final optimisticOnes = _messages.where((m) => m.status == MessageStatus.sending || m.status == MessageStatus.error).toList();
               
+              // Dispose the ones we are discarding to prevent memory leaks
+              for (var m in _messages) {
+                if (m.status != MessageStatus.sending && m.status != MessageStatus.error) {
+                  m.dispose();
+                }
+              }
+              
               _messages.clear();
+              _messageLookup.clear();
+
               // Add optimistic ones back first to maintain order (top of list)
-              _messages.addAll(optimisticOnes);
+              for (var m in optimisticOnes) {
+                _messages.add(m);
+                _addToLookup(m);
+              }
               
               // Add fetched ones, but skip any that match an optimistic one by localId
               for (var m in fetched) {
-                if (!_messages.any((em) => em.localId != null && m.localId != null && em.localId == m.localId)) {
+                if (_messageLookup[m.id] == null && _messageLookup[m.localId] == null) {
                   _messages.add(m);
+                  _addToLookup(m);
                 }
               }
             } else if (fetched.isNotEmpty) {
+              // Dispose old ones
+              for (var m in _messages) { m.dispose(); }
               _messages.clear();
-              _messages.addAll(fetched);
+              _messageLookup.clear();
+              for (var m in fetched) {
+                _messages.add(m);
+                _addToLookup(m);
+              }
             }
             _isBlocked = result['isBlocked'] ?? false;
             _isPartnerDeactivated = result['isPartnerDeactivated'] ?? false;
@@ -545,6 +582,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         replyType: _replyingTo?.type,
       );
 
+      _addToLookup(optimisticMsg);
+
       setState(() {
         _messageCount++;
         _adMessageCounter++;
@@ -566,6 +605,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       });
       _checkAndShowAdPopup();
       _checkAndShowReviewPopup();
+    }
+  }
+
+  void _updateMessageWithRealId(String localId, String realId) {
+    final m = _messageLookup[localId];
+    if (m != null) {
+      m.id = realId;
+      _messageLookup[realId] = m;
+      // Status should only move forward (handled by ChatMessage setter)
+      m.status = MessageStatus.sent;
     }
   }
 
@@ -643,19 +692,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  void _updateMessageWithRealId(String localId, String realId) {
-    setState(() {
-      final index = _messages.indexWhere((m) => m.localId == localId);
-      if (index != -1) {
-        _messages[index].id = realId;
-        // Status should only move forward: never downgrade delivered/seen back to sent
-        if (MessageStatus.sent.index > _messages[index].status.index) {
-          _messages[index].status = MessageStatus.sent;
-        }
-      }
-    });
-  }
-
   // UI Helpers
   void _handleTypingStatus() {
     if (_isPartnerDeactivated) return;
@@ -680,17 +716,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _statusSyncTimer?.cancel();
     ModerationRepository().blockStatusNotifier.removeListener(_syncBlockFromGlobal);
     _typingTimer?.cancel();
     _micHoldTimer?.cancel();
     _messageController.removeListener(_handleTypingStatus);
+    _scrollController.removeListener(_scrollListener);
     WidgetsBinding.instance.removeObserver(this);
     SocketService().leaveRoom();
     _socketSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     _audioRecorder.dispose();
+    
+    // Safety: Clear lookup and references immediately
+    _messageLookup.clear();
+    
+    // We don't manually call m.dispose() here anymore because ValueListenableBuilders 
+    // in the ListView might still be unmounting and need those notifiers for a few milliseconds.
+    // Flutter's garbage collector will handle these as the list itself is cleared.
     super.dispose();
   }
 
@@ -814,10 +857,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return RefreshIndicator(
       onRefresh: () => _fetchHistory(loadMore: true),
       color: Colors.orangeAccent,
-      child: RepaintBoundary(
-        child: ListView.builder(
-          controller: _scrollController,
-          reverse: true,
+      child: ListView.builder(
+        controller: _scrollController,
+        reverse: true,
           cacheExtent: 1000,
           addAutomaticKeepAlives: true,
           addRepaintBoundaries: true,
@@ -843,14 +885,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 key: ValueKey(m.localId ?? m.id ?? m.timestamp.toString()),
                 isNew: m.isNew,
                 onComplete: () => m.isNew = false,
-                child: RepaintBoundary(
-                  child: ChatMessageTile(
-                    message: m,
-                    onLongPress: () => _showMessageOptions(m),
-                    onViewOnceTap: () => _handleViewOnceMedia(m),
-                    onImageTap: (url) => _openFullScreenMedia(url),
-                    onVideoTap: (url) => _openVideoPlayer(url),
-                  ),
+                child: ChatMessageTile(
+                  message: m,
+                  onLongPress: () => _showMessageOptions(m),
+                  onViewOnceTap: () => _handleViewOnceMedia(m),
+                  onImageTap: (url) => _openFullScreenMedia(url),
+                  onVideoTap: (url) => _openVideoPlayer(url),
                 ),
               );
             }
@@ -873,7 +913,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             return const SizedBox.shrink();
           },
         ),
-      ),
     );
   }
 
@@ -1213,6 +1252,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       isNew: true,
     );
     
+    _addToLookup(optimisticMsg);
+
     setState(() {
       _messages.insert(0, optimisticMsg);
     });
@@ -1272,7 +1313,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ChatRepository().deleteMessageForMe(m.id!, _myPhone!, widget.receiverPhone);
     }
     setState(() {
-      _messages.removeWhere((msg) => (msg.id != null && msg.id == m.id) || (msg.localId != null && msg.localId == m.localId));
+      _messages.remove(m);
+      _messageLookup.remove(m.id);
+      _messageLookup.remove(m.localId);
+      m.dispose(); // Cleanup!
     });
   }
 
