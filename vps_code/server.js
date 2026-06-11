@@ -439,8 +439,12 @@ io.on('connection', (socket) => {
             await eventMsg.save();
             updateConversationSummary(eventMsg);
 
-            io.to(roomId).emit('moderation_state_updated', { roomId, isBlocked: true, blockerPhone: b1 });
+            io.to(roomId).emit('moderation_state_updated', { roomId, isBlocked: true, blockerPhone: b1, blockedPhone: b2 });
             io.to(roomId).emit('receive_message', eventMsg);
+
+            // Guarantee blocker sees it too in real-time
+            io.to(`user_${b1}`).emit('receive_message', eventMsg);
+            io.to(`user_${b1}`).emit('moderation_state_updated', { roomId, isBlocked: true, blockerPhone: b1, blockedPhone: b2 });
         } catch (e) {
             console.error("block_user error:", e);
         }
@@ -460,8 +464,12 @@ io.on('connection', (socket) => {
             await eventMsg.save();
             updateConversationSummary(eventMsg);
 
-            io.to(roomId).emit('moderation_state_updated', { roomId, isBlocked: false, blockerPhone: null });
+            io.to(roomId).emit('moderation_state_updated', { roomId, isBlocked: false, blockerPhone: b1, blockedPhone: b2 });
             io.to(roomId).emit('receive_message', eventMsg);
+
+            // Guarantee unblocker sees it too in real-time
+            io.to(`user_${b1}`).emit('receive_message', eventMsg);
+            io.to(`user_${b1}`).emit('moderation_state_updated', { roomId, isBlocked: false, blockerPhone: b1, blockedPhone: b2 });
         } catch (e) {
             console.error("unblock_user error:", e);
         }

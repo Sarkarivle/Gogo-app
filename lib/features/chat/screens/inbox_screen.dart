@@ -839,21 +839,21 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                 ),
                               ),
                               child: CircleAvatar(
-                              radius: 28,
-                              backgroundColor: Colors.white.withValues(alpha: 0.03),
-                              child: chat['profileImage'] != null 
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(28),
-                                    child: CachedNetworkImage(
-                                      imageUrl: ApiService.getSecureUrl(chat['profileImage']),
-                                      fit: BoxFit.cover,
-                                      memCacheWidth: 160,
-                                      memCacheHeight: 160,
-                                      placeholder: (c, u) => Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
-                                    ),
-                                  )
-                                : Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
-                            ),
+                                radius: 28,
+                                backgroundColor: Colors.white.withValues(alpha: 0.03),
+                                child: chat['profileImage'] != null 
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(28),
+                                      child: CachedNetworkImage(
+                                        imageUrl: ApiService.getSecureUrl(chat['profileImage']),
+                                        fit: BoxFit.cover,
+                                        memCacheWidth: 160,
+                                        memCacheHeight: 160,
+                                        placeholder: (c, u) => Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
+                                      ),
+                                    )
+                                  : Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
+                              ),
                             ),
                             if (isOnline)
                               Positioned(

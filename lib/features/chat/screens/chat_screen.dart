@@ -213,14 +213,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _socketSubscription = ChatRealtimeRepository().getRoomStream(currentRoomId).listen((event) {
       if (!mounted) return;
       
-      // OPTIMIZATION: If blocked, ignore incoming real-time events for this user 
-      // (Except for unblock events which are handled by global moderation sync)
-      if (_isBlocked) return;
-
       final dynamic data = event['data'];
       if (data == null) return;
 
       final String? eventType = event['event'];
+      final String? msgType = (data is Map) ? data['type']?.toString() : null;
+
+      // ALWAYS allow block/unblock system events to pass through, regardless of _isBlocked status
+      bool isSystemEvent = msgType == 'block_event' || msgType == 'unblock_event';
+      
+      if (_isBlocked && !isSystemEvent) {
+        if (eventType != 'chat_seen_update') {
+          return;
+        }
+      }
 
       // double check room context for seen update
       bool isMatch = true; 

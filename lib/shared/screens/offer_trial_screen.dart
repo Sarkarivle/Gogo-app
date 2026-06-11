@@ -298,6 +298,12 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.redAccent));
   }
 
+  int _getBoysCount(String area) {
+    if (area == "आस-पास" || area == "unknown") return 457;
+    // Consistent random number based on area name
+    return 42 + (area.hashCode.abs() % 958); 
+  }
+
   Future<void> _handleBackPress() async {
     if (_hasShownExitOffer) {
       if (Navigator.of(context).canPop()) {
@@ -358,9 +364,9 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                       style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
                       children: [
                         TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
-                        const TextSpan(text: "में "),
-                        const TextSpan(text: "1000+ लड़के ", style: TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
-                        const TextSpan(text: "आपका इंतज़ार कर रहे है! इसे अभी अनलॉक करें।"),
+                        const TextSpan(text: "mein "),
+                        TextSpan(text: "${_getBoysCount(currentArea)} profiles ", style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
+                        const TextSpan(text: "active hain! Connect karne ke liye abhi unlock karein."),
                       ],
                     ),
                   ),
@@ -551,12 +557,41 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.orangeAccent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              "LIMITED TIME PRICE DROP",
+                              style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(height: 15),
                           RichText(
                             text: TextSpan(
                               style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                               children: [
                                 const TextSpan(text: "Start Trial for "),
-                                TextSpan(text: "₹499", style: TextStyle(color: Colors.white.withValues(alpha: 0.6), decoration: TextDecoration.lineThrough, decorationThickness: 2)),
+                                TextSpan(
+                                  text: "₹",
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4), 
+                                    decoration: TextDecoration.lineThrough, 
+                                    decorationThickness: 2,
+                                    fontWeight: FontWeight.w300,
+                                    fontSize: 18,
+                                  )
+                                ),
+                                TextSpan(
+                                  text: "${widget.price * 3}", 
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4), 
+                                    decoration: TextDecoration.lineThrough, 
+                                    decorationThickness: 2
+                                  )
+                                ),
                               ],
                             ),
                           ),
@@ -575,25 +610,42 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                 style: const TextStyle(color: Colors.pinkAccent, fontSize: 12, fontWeight: FontWeight.bold),
                               ),
                             ),
-                          Text(
-                            "₹${widget.price}",
-                            style: const TextStyle(color: Colors.white, fontSize: 100, fontWeight: FontWeight.w600, letterSpacing: -2),
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                const TextSpan(
+                                  text: "₹",
+                                  style: TextStyle(color: Colors.white, fontSize: 50, fontWeight: FontWeight.w200),
+                                ),
+                                TextSpan(
+                                  text: "${widget.price}",
+                                  style: const TextStyle(color: Colors.white, fontSize: 100, fontWeight: FontWeight.w600, letterSpacing: -2),
+                                ),
+                              ],
+                            ),
                           ),
-                          Text("Valid for ${widget.duration} Days", style: const TextStyle(color: Colors.white38, fontSize: 13)),
+                          Text("Pure ${widget.duration} dino ke liye • Phir ₹199/month", style: const TextStyle(color: Colors.white38, fontSize: 13)),
                           const SizedBox(height: 15),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: RichText(
-                              textAlign: TextAlign.center,
-                              text: TextSpan(
-                                style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, height: 1.3),
-                                children: [
-                                  TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent)),
-                                  const TextSpan(text: "में "),
-                                  const TextSpan(text: "1000+ लड़के\n", style: TextStyle(color: Colors.pinkAccent)),
-                                  const TextSpan(text: "आपका इंतज़ार कर रहे है!"),
-                                ],
-                              ),
+                            child: Column(
+                              children: [
+                                RichText(
+                                  textAlign: TextAlign.center,
+                                  text: TextSpan(
+                                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, height: 1.3),
+                                    children: [
+                                      TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent)),
+                                      TextSpan(text: "mein ${_getBoysCount(currentArea)} active profiles\n"),
+                                      const TextSpan(text: "aapka intezaar kar rahi hain!", style: TextStyle(color: Colors.pinkAccent)),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                _buildSmallBenefit(Icons.lock_open, "Exclusive Photos unlock karein"),
+                                _buildSmallBenefit(Icons.bolt, "Unlimited Messages bhejien"),
+                                _buildSmallBenefit(Icons.star, "Exclusive Premium Badge"),
+                              ],
                             ),
                           ),
                         ],
@@ -622,31 +674,39 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             ),
                       ),
 
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 10),
                       const Text("Cancel the plan anytime", style: TextStyle(color: Colors.white38, fontSize: 13)),
+                      const SizedBox(height: 30),
 
-                      const SizedBox(height: 50),
-                      
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "• Your GoGo Premium subscription auto-renews at the end of the cycle. You can cancel anytime, and your access will continue until the current period expires.",
-                              style: TextStyle(color: Colors.white38, fontSize: 11),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              "• Premium features like high-quality video calling and verified profile access depend on your internet connectivity and device compatibility.",
-                              style: TextStyle(color: Colors.white38, fontSize: 11),
-                            ),
-                          ],
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.03),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Subscription Details",
+                                style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildSubscriptionBullet("Trial period ke baad ye plan standard ₹199/month par auto-renew hoga."),
+                              _buildSubscriptionBullet("Aap kisi bhi waqt Play Store settings se ise cancel kar sakte hain."),
+                              _buildSubscriptionBullet("Success hone par premium features ka instant access mil jayega."),
+                              _buildSubscriptionBullet("Your GoGo Premium subscription auto-renews at the end of the cycle. You can cancel anytime."),
+                              _buildSubscriptionBullet("Premium features like high-quality video calling depend on your internet connectivity."),
+                            ],
+                          ),
                         ),
                       ),
 
-                      const SizedBox(height: 30),
-
+                      const SizedBox(height: 40),
+                      
                       // Bottom Links
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -668,6 +728,38 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionBullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("• ", style: TextStyle(color: Colors.pinkAccent, fontSize: 14)),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmallBenefit(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.pinkAccent, size: 16),
+          const SizedBox(width: 8),
+          Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+        ],
       ),
     );
   }
