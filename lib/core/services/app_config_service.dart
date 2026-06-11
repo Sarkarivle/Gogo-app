@@ -44,11 +44,11 @@ class AppConfigService {
   final Duration _cacheTTL = const Duration(minutes: 15);
 
   // New Compliance Config with Notifiers for Real-time UI updates
-  final ValueNotifier<bool> isStandardModeNotifier = ValueNotifier<bool>(false);
-  bool get isStandardMode => isStandardModeNotifier.value;
-
   final ValueNotifier<bool> isOneMessageTrialEnabledNotifier = ValueNotifier<bool>(false);
   bool get isOneMessageTrialEnabled => isOneMessageTrialEnabledNotifier.value;
+
+  final ValueNotifier<int> freeMessageLimitNotifier = ValueNotifier<int>(1);
+  int get freeMessageLimit => freeMessageLimitNotifier.value;
 
   final ValueNotifier<bool> isScreenshotDisabledNotifier = ValueNotifier<bool>(true);
   bool get isScreenshotDisabled => isScreenshotDisabledNotifier.value;
@@ -66,6 +66,19 @@ class AppConfigService {
   // New Freemium Configs with Notifiers for Real-time UI updates
   final ValueNotifier<bool> isFreemiumActiveNotifier = ValueNotifier<bool>(false);
   bool get isFreemiumActive => isFreemiumActiveNotifier.value;
+
+  // Ads Settings
+  final ValueNotifier<bool> isAdsEnabledNotifier = ValueNotifier<bool>(false);
+  bool get isAdsEnabled => isAdsEnabledNotifier.value;
+
+  Map<String, dynamic>? _adsConfig;
+  Map<String, dynamic>? get adsConfig => _adsConfig;
+
+  Map<String, dynamic>? _offersConfig;
+  Map<String, dynamic>? get offersConfig => _offersConfig;
+
+  int get rewardMinMsg => _adsConfig?['reward_min_msg'] ?? _adsConfig?['rewardMinMsg'] ?? 4;
+  int get rewardMaxMsg => _adsConfig?['reward_max_msg'] ?? _adsConfig?['rewardMaxMsg'] ?? 7;
 
   int _freemiumDurationDays = 1;
   int get freemiumDurationDays => _freemiumDurationDays;
@@ -88,30 +101,16 @@ class AppConfigService {
     try {
       final responses = await Future.wait([
         ApiService.get('/api/payment/settings'),
-        ApiService.get('/api/user/tracking-config')
+        ApiService.get('/api/user/tracking-config'),
+        ApiService.get('/api/payment/review-mode-config'),
+        ApiService.get('/api/payment/ads-settings'),
+        ApiService.get('/api/payment/special-offers'),
       ]);
 
       if (responses[0].statusCode == 200) {
         final data = jsonDecode(responses[0].body);
         
-        // Update Notifiers ONLY if values changed to prevent junk rebuilds
-        final bool newStandardMode = data['isStandardMode'] ?? false;
-        if (isStandardModeNotifier.value != newStandardMode) {
-          isStandardModeNotifier.value = newStandardMode;
-        }
-
-        final bool newOneMessageTrial = data['isOneMessageTrialEnabled'] ?? false;
-        if (isOneMessageTrialEnabledNotifier.value != newOneMessageTrial) {
-          isOneMessageTrialEnabledNotifier.value = newOneMessageTrial;
-        }
-
-        final bool newScreenshotDisabled = data['isScreenshotDisabled'] ?? true;
-        if (isScreenshotDisabledNotifier.value != newScreenshotDisabled) {
-          isScreenshotDisabledNotifier.value = newScreenshotDisabled;
-          _updateNativeSecureMode(newScreenshotDisabled);
-        }
-
-        final bool newFreemiumMode = data['isFreemiumActive'] ?? data['isStandardMode'] ?? false;
+        final bool newFreemiumMode = data['isFreemiumActive'] ?? false;
         if (isFreemiumActiveNotifier.value != newFreemiumMode) {
           isFreemiumActiveNotifier.value = newFreemiumMode;
         }
@@ -125,6 +124,47 @@ class AppConfigService {
           _trackingConfig = data['config'];
           // Ensure Meta is activated if it was enabled in this config fetch
           AnalyticsService.activateMetaIfEnabled();
+        }
+      }
+
+      if (responses[2].statusCode == 200) {
+        final data = jsonDecode(responses[2].body);
+        if (data['success'] == true) {
+          final config = data['config'];
+          
+          final bool newOneMessageTrial = config['isOneMessageTrialEnabled'] ?? false;
+          if (isOneMessageTrialEnabledNotifier.value != newOneMessageTrial) {
+            isOneMessageTrialEnabledNotifier.value = newOneMessageTrial;
+          }
+
+          final int newFreeMessageLimit = config['freeMessageLimit'] ?? 1;
+          if (freeMessageLimitNotifier.value != newFreeMessageLimit) {
+            freeMessageLimitNotifier.value = newFreeMessageLimit;
+          }
+
+          final bool newScreenshotDisabled = config['isScreenshotDisabled'] ?? true;
+          if (isScreenshotDisabledNotifier.value != newScreenshotDisabled) {
+            isScreenshotDisabledNotifier.value = newScreenshotDisabled;
+            _updateNativeSecureMode(newScreenshotDisabled);
+          }
+        }
+      }
+
+      if (responses[3].statusCode == 200) {
+        final data = jsonDecode(responses[3].body);
+        if (data['success'] == true) {
+          _adsConfig = data['config'];
+          final bool newAdsEnabled = _adsConfig?['isEnabled'] ?? false;
+          if (isAdsEnabledNotifier.value != newAdsEnabled) {
+            isAdsEnabledNotifier.value = newAdsEnabled;
+          }
+        }
+      }
+
+      if (responses.length > 4 && responses[4].statusCode == 200) {
+        final data = jsonDecode(responses[4].body);
+        if (data['success'] == true) {
+          _offersConfig = data['config'];
         }
       }
       _lastConfigFetchTime = DateTime.now();

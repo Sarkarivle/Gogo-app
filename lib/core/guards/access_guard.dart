@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
-import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
+import 'package:gogo/shared/screens/offer_screen.dart';
 
 class AccessGuard {
   static final AccessGuard _instance = AccessGuard._internal();
@@ -19,11 +19,11 @@ class AccessGuard {
       return true;
     }
 
-    // 2. Otherwise, they are restricted (e.g., 1-Msg Trial Exceeded) - send to Paywall
+    // 2. Otherwise, they are restricted (e.g., 1-Msg Trial Exceeded) - send to Offer Page
     if (context.mounted) {
       Navigator.push(
         context, 
-        MaterialPageRoute(builder: (context) => const TrialOnboardingScreen())
+        MaterialPageRoute(builder: (context) => const OfferScreen())
       );
     }
     return false;

@@ -98,8 +98,8 @@ class ChatRealtimeRepository {
  else if (type == 'receive_message') {
       final String? myPhone = SocketService().currentUserPhone;
       
-      // 1-Message Trial Logic: Use up trial on ANY incoming message
-      PremiumService().useOneMessageTrial();
+      // Trial Logic: Use up trial on ANY incoming message
+      PremiumService().incrementMessageCount();
 
       if (myPhone != null) {
         final String? sPhone = PhoneUtils.normalize(data['senderPhone']);

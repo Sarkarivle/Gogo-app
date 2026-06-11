@@ -19,6 +19,7 @@ import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/core/services/ad_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +30,13 @@ void main() async {
     UserRepository().initialize(),
     AppVisibilityCoordinator().init(),
   ]);
+
+  // Initialize Ads separately after Firebase
+  try {
+    await AdService().init();
+  } catch (e) {
+    debugPrint("❌ AdService Initialization Error: $e");
+  }
 
   // Activate App Check for Play Integrity (Mandatory for SMS Hash Key)
   try {
@@ -171,6 +179,9 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
       } else if (type == 'admin_alert') {
         _showAdminAlert(data['title'], data['message']);
       } else if (type == 'app_config_sync' || type == 'premium_status_refresh') {
+        // Sync Ads if config changed
+        AdService().reloadAds();
+
         if (data != null && data['phone'] != null) {
           final currentUser = UserRepository().currentUser;
           if (currentUser != null && currentUser['phone'] == data['phone']) {

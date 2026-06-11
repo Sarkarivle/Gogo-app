@@ -6,7 +6,6 @@ async function loadSecurity() {
 
 const SecurityModule = {
     config: {
-        isReviewMode: false,
         isOneMessageTrialEnabled: false,
         isScreenshotDisabled: true
     },
@@ -47,18 +46,10 @@ const SecurityModule = {
     async syncConfig() {
         try {
             const updatedConfig = {
-                isReviewMode: document.getElementById('isReviewMode').checked,
-                isGradualEnabled: document.getElementById('isGradualEnabled')?.checked || false,
                 isOneMessageTrialEnabled: document.getElementById('isOneMessageTrialEnabled').checked,
                 isScreenshotDisabled: document.getElementById('isScreenshotDisabled').checked,
-                monetizationStartDate: this.config.monetizationStartDate,
                 updatedAt: new Date()
             };
-
-            // Set start date if gradual is enabled now
-            if (updatedConfig.isGradualEnabled && !updatedConfig.monetizationStartDate) {
-                updatedConfig.monetizationStartDate = new Date();
-            }
 
             const response = await API.updateConfig('review_mode_config', updatedConfig);
 
@@ -88,7 +79,7 @@ const SecurityModule = {
                     </button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
                     <!-- Screenshot Protection -->
                     <div class="glass p-10 rounded-[2.5rem] space-y-6 flex flex-col justify-between">
                         <div class="space-y-4">
@@ -105,46 +96,6 @@ const SecurityModule = {
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="isScreenshotDisabled" class="sr-only peer" ${this.config.isScreenshotDisabled ? 'checked' : ''} onchange="SecurityModule.toggleText(this, 'Enabled', 'Disabled')">
                                 <div class="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Review Mode / Standard Mode -->
-                    <div class="glass p-10 rounded-[2.5rem] space-y-6 flex flex-col justify-between border-2 ${this.config.isReviewMode ? 'border-orange-500/50' : 'border-transparent'}">
-                        <div class="space-y-4">
-                            <div class="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center text-orange-500">
-                                <i class="fas fa-store text-2xl"></i>
-                            </div>
-                            <div>
-                                <h3 class="text-xl font-bold text-white">Global Review Mode</h3>
-                                <p class="text-xs text-slate-500 mt-1 font-medium">Overrides everything. Hides all payments for ALL users (Use during App Review).</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <span class="text-[10px] font-black uppercase tracking-widest ${this.config.isReviewMode ? 'text-orange-500' : 'text-slate-500'}">${this.config.isReviewMode ? 'Active' : 'Inactive'}</span>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="isReviewMode" class="sr-only peer" ${this.config.isReviewMode ? 'checked' : ''} onchange="SecurityModule.toggleText(this, 'Active', 'Inactive')">
-                                <div class="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Gradual Monetization -->
-                    <div class="glass p-10 rounded-[2.5rem] space-y-6 flex flex-col justify-between border-2 ${this.config.isGradualEnabled ? 'border-blue-500/50' : 'border-transparent'}">
-                        <div class="space-y-4">
-                            <div class="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500">
-                                <i class="fas fa-users-medical text-2xl"></i>
-                            </div>
-                            <div>
-                                <h3 class="text-xl font-bold text-white">Gradual Monetization</h3>
-                                <p class="text-xs text-slate-500 mt-1 font-medium">Keep Old Users FREE while requiring New Users to Pay.</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <span class="text-[10px] font-black uppercase tracking-widest ${this.config.isGradualEnabled ? 'text-blue-500' : 'text-slate-500'}">${this.config.isGradualEnabled ? 'Hybrid Active' : 'Disabled'}</span>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="isGradualEnabled" class="sr-only peer" ${this.config.isGradualEnabled ? 'checked' : ''} onchange="SecurityModule.toggleText(this, 'Hybrid Active', 'Disabled')">
-                                <div class="w-12 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                             </label>
                         </div>
                     </div>

@@ -11,6 +11,8 @@ import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayser
 import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 
 abstract class PaymentHandler {
   Future<void> initiatePayment(
@@ -133,31 +135,120 @@ class GooglePlayHandler implements PaymentHandler {
 
   @override
   Future<void> initiatePayment(Map<String, dynamic> data, Function(Map<String, dynamic>) onSuccess, Function(String) onError) async {
-    debugPrint("DEBUG: Initiating Google Play Payment...");
+    // Priority 1: Use googlePlayId as the target plan
+    String? targetBasePlanId = data['googlePlayId']?.toString() ?? data['productId']?.toString();
+    
+    // Priority 2: Use googlePlaySubId as the parent product
+    String? parentProductId = data['googlePlaySubId']?.toString();
+
+    // If parentProductId is missing, we try to use targetBasePlanId as the main product ID
+    // (This handles cases where the user only enters one ID in the admin panel)
+    String mainSubscriptionId = (parentProductId != null && parentProductId.isNotEmpty) 
+        ? parentProductId 
+        : (targetBasePlanId ?? 'gogo_monthly_199');
+    
+    debugPrint("DEBUG: 💳 Google Play Priority -> Search Sub: $mainSubscriptionId, Target Offer/Base: $targetBasePlanId");
+    
     try {
       final bool available = await _iap.isAvailable();
       if (!available) {
-        onError("Google Play Billing is not available on this device");
+        onError("Google Play Billing is not available");
         return;
       }
 
-      final String productId = data['productId'] ?? 'premium_subscription_monthly';
-      final ProductDetailsResponse response = await _iap.queryProductDetails({productId});
+      ProductDetailsResponse response = await _iap.queryProductDetails({mainSubscriptionId});
 
       if (response.error != null) {
-        onError(response.error!.message);
+        onError("Play Store Error: ${response.error!.message}");
         return;
       }
 
       if (response.productDetails.isEmpty) {
-        onError("Subscription plan '$productId' not found in Play Store");
-        return;
+        // If the first attempt failed and we had a separate base ID, maybe the base ID IS the product ID
+        if (parentProductId != null && parentProductId.isNotEmpty && targetBasePlanId != null) {
+           debugPrint("🔍 Retrying with Base ID as Product ID: $targetBasePlanId");
+           response = await _iap.queryProductDetails({targetBasePlanId});
+           if (response.productDetails.isNotEmpty) {
+             mainSubscriptionId = targetBasePlanId;
+           }
+        }
+        
+        if (response.productDetails.isEmpty) {
+          onError("Plan '$mainSubscriptionId' not found in Play Store. Check Admin Panel.");
+          return;
+        }
       }
 
       final ProductDetails productDetails = response.productDetails.first;
-      final PurchaseParam purchaseParam = PurchaseParam(productDetails: productDetails);
+      PurchaseParam purchaseParam;
 
-      // Cancel any existing subscription before starting a new one
+      if (productDetails is GooglePlayProductDetails) {
+        String? selectedOfferToken;
+        
+        final GooglePlayProductDetails googleDetails = productDetails;
+        final List<SubscriptionOfferDetailsWrapper> offers = googleDetails.productDetails.subscriptionOfferDetails ?? [];
+        
+        debugPrint("--------------------------------------------------");
+        debugPrint("DEBUG: 📦 Google Play Selection Engine");
+        debugPrint("DEBUG: Target ID from Admin: $targetBasePlanId");
+        debugPrint("DEBUG: Total Paths Found: ${offers.length}");
+
+        // PRIORITY SELECTION LOGIC
+        
+        // 1. First Pass: Look for an exact match on OFFER ID (This is the discount/trial)
+        for (var o in offers) {
+          if (o.offerId != null && o.offerId == targetBasePlanId) {
+            selectedOfferToken = o.offerIdToken;
+            debugPrint("✅ MATCH: Found exact Offer ID: ${o.offerId}");
+            break;
+          }
+        }
+
+        // 2. Second Pass: If no Offer match, look for Base Plan match and pick its best offer
+        if (selectedOfferToken == null) {
+          for (var o in offers) {
+            if (o.basePlanId == targetBasePlanId) {
+              // We prefer an entry with an offerId if available on this base plan
+              if (selectedOfferToken == null || o.offerId != null) {
+                selectedOfferToken = o.offerIdToken;
+                debugPrint("✅ MATCH: Found Base Plan: ${o.basePlanId} (Using Offer: ${o.offerId ?? 'None'})");
+                if (o.offerId != null) break; // Found a discounted path for this base plan
+              }
+            }
+          }
+        }
+
+        // 3. Last Resort: If still nothing matches, just pick the first discounted offer available
+        if (selectedOfferToken == null) {
+          for (var o in offers) {
+            if (o.offerId != null && o.offerId.toString().isNotEmpty) {
+              selectedOfferToken = o.offerIdToken;
+              debugPrint("✅ FALLBACK: Using first available Offer: ${o.offerId}");
+              break;
+            }
+          }
+        }
+        
+        // 4. Default: If absolutely nothing matches, use the one it was originally created for
+        if (selectedOfferToken == null) {
+          selectedOfferToken = googleDetails.offerToken;
+          debugPrint("ℹ️ INFO: No custom match found. Using default offerToken.");
+        }
+        debugPrint("--------------------------------------------------");
+
+        if (selectedOfferToken != null) {
+          purchaseParam = GooglePlayPurchaseParam(
+            productDetails: productDetails,
+            changeSubscriptionParam: null,
+            offerToken: selectedOfferToken,
+          );
+        } else {
+          purchaseParam = PurchaseParam(productDetails: productDetails);
+        }
+      } else {
+        purchaseParam = PurchaseParam(productDetails: productDetails);
+      }
+
       await _subscription?.cancel();
       
       _subscription = _iap.purchaseStream.listen((List<PurchaseDetails> purchaseDetailsList) {
@@ -198,10 +289,24 @@ class GooglePlayHandler implements PaymentHandler {
 }
 
 class PaymentService {
-  static Future<Map<String, dynamic>> createOrder(String phone, {String? gateway}) async {
+  static Future<Map<String, dynamic>> createOrder(String phone, {
+    String? gateway,
+    int? amount,
+    String? offerId,
+    String? googlePlayId,
+    String? googlePlaySubId,
+    int? duration,
+    bool isSubscription = false,
+  }) async {
     final response = await ApiService.post('/api/payment/create-order', {
       'phone': phone,
       'preferredGateway': gateway,
+      if (amount != null) 'amount': amount,
+      if (offerId != null) 'offerId': offerId,
+      if (googlePlayId != null) 'googlePlayId': googlePlayId,
+      if (googlePlaySubId != null) 'googlePlaySubId': googlePlaySubId,
+      if (duration != null) 'duration': duration,
+      'isSubscription': isSubscription,
     });
     return jsonDecode(response.body);
   }
@@ -217,7 +322,7 @@ class PaymentService {
       case 'phonepe': return PhonePeHandler();
       case 'cashfree': return CashfreeHandler();
       case 'google_play': return GooglePlayHandler();
-      default: return RazorpayHandler();
+      default: return GooglePlayHandler();
     }
   }
 }

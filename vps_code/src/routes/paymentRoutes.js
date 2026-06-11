@@ -13,6 +13,9 @@ router.get('/sync-status', isUser, PaymentController.syncUserStatus);
 router.post('/sync-provider', isAdmin, PaymentController.syncWithProvider);
 router.post('/broadcast-status-change', isAdmin, PaymentController.broadcastStatusChange);
 router.get('/settings', PaymentController.getPublicSettings);
+router.get('/review-mode-config', PaymentController.getReviewModeConfig);
+router.get('/ads-settings', PaymentController.getAdsSettings);
+router.get('/special-offers', PaymentController.getSpecialOffers);
 
 // Webhooks
 router.post('/webhook/razorpay', PaymentController.handleRazorpayWebhook);

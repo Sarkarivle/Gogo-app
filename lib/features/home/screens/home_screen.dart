@@ -21,6 +21,8 @@ import 'package:gogo/core/services/notification_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 
 import 'package:gogo/core/guards/access_guard.dart';
+import 'package:gogo/core/services/ad_service.dart';
+import 'package:flutter/rendering.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -38,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   int _currentPage = 1;
   bool _hasMore = true;
   final ScrollController _scrollController = ScrollController();
+  final ValueNotifier<bool> _isFooterVisible = ValueNotifier<bool>(true);
   Position? _lastKnownPosition;
 
   int _totalUnreadCount = 0;
@@ -94,6 +97,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   }
 
   void _scrollListener() {
+    if (_scrollController.position.userScrollDirection == ScrollDirection.reverse) {
+      if (_isFooterVisible.value) _isFooterVisible.value = false;
+    } else if (_scrollController.position.userScrollDirection == ScrollDirection.forward) {
+      if (!_isFooterVisible.value) _isFooterVisible.value = true;
+    }
+
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 500) {
       if (!_isLoadingProfiles && !_isLoadingMore && _hasMore) {
         _fetchProfiles(loadMore: true);
@@ -368,100 +377,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         body: Stack(
           children: [
             // Background Glow
-          Positioned(
-            top: -100, 
-            right: -100, 
-            child: Container(
-              width: 300, 
-              height: 300, 
-              decoration: BoxDecoration(
-                shape: BoxShape.circle, 
-                color: Colors.orange.withValues(alpha: 0.05)
-              )
-            )
-          ),
-          
-          // Using IndexedStack for Instant & Smooth Tab Switching
-          IndexedStack(
-            index: _selectedIndex,
-            children: [
-              _buildHomeContent(),
-              InboxScreen(key: _inboxKey),
-              const MyProfileScreen(),
-            ],
-          ),
-
-          if (_selectedIndex == 0) 
-            Positioned(bottom: 30, left: 30, right: 30, child: _buildLiveButton()),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNav(),
-    ),
-  );
-}
-
-  Widget _buildLiveButton() {
-    return Container(
-      height: 60,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFFAB40), Color(0xFFFF6D00)], // Vibrant Orange Gradient
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orangeAccent.withValues(alpha: 0.4),
-            blurRadius: 20,
-            spreadRadius: 2,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(30), 
-          onTap: () {
-            AccessGuard().runWithAccessCheck(
-              context, 
-              onAllowed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
-                );
-              }
-            );
-          }, 
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center, 
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
+            Positioned(
+              top: -100, 
+              right: -100, 
+              child: Container(
+                width: 300, 
+                height: 300, 
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
+                  shape: BoxShape.circle, 
+                  color: Colors.orange.withValues(alpha: 0.05)
+                )
+              )
+            ),
+          
+            // Using IndexedStack for Instant & Smooth Tab Switching
+            IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _buildHomeContent(),
+                const RandomLiveIntroScreen(),
+                InboxScreen(key: _inboxKey),
+                const MyProfileScreen(),
+              ],
+            ),
+          ],
+        ),
+        bottomNavigationBar: ValueListenableBuilder<bool>(
+          valueListenable: _isFooterVisible,
+          builder: (context, visible, child) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_selectedIndex == 0 && AdService().shouldShowAds)
+                  AdService().getBannerAdWidget(),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  height: visible ? null : 0,
+                  child: Wrap( // Wrap to avoid overflow when height is 0
+                    children: [if (visible) child!],
+                  ),
                 ),
-                child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 14),
-              const Text(
-                'START LIVE VIDEO',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0,
-                  shadows: [
-                    Shadow(color: Colors.black26, offset: Offset(0, 2), blurRadius: 4)
-                  ]
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
-            ],
-          ),
+              ],
+            );
+          },
+          child: _buildBottomNav(),
         ),
       ),
     );
@@ -574,8 +533,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
               : GridView.builder(
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                  cacheExtent: 1500, // Pre-render 1.5 pages worth of cards for smoother scroll
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120), // More bottom padding for banner
+                  cacheExtent: 1500,
                   addRepaintBoundaries: true,
                   addAutomaticKeepAlives: true,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -584,9 +543,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                   ),
-                  itemCount: _profiles.length + (_isLoadingMore ? 2 : 0),
+                  itemCount: _profiles.length + (AdService().shouldShowAds ? (_profiles.length ~/ 5) : 0) + (_isLoadingMore ? 2 : 0),
                   itemBuilder: (context, i) {
-                    if (i >= _profiles.length) {
+                    // Logic: Every 6th item is an ad (after 5 profiles)
+                    bool isAd = AdService().shouldShowAds && (i + 1) % 6 == 0;
+                    
+                    if (isAd) {
+                      return AdService().getNativeAdWidget();
+                    }
+
+                    // Calculate correct profile index by subtracting number of ads shown before this item
+                    int profileIndex = AdService().shouldShowAds ? (i - (i ~/ 6)) : i;
+
+                    if (profileIndex >= _profiles.length) {
                       return Shimmer.fromColors(
                         baseColor: Colors.white.withValues(alpha: 0.05),
                         highlightColor: Colors.white.withValues(alpha: 0.1),
@@ -596,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                       );
                     }
 
-                    final p = _profiles[i];
+                    final p = _profiles[profileIndex];
                     return RepaintBoundary(
                       child: ValueListenableBuilder<bool>(
                         valueListenable: PresenceManager().getStatusNotifier(p['phone'], p['isOnline'] ?? false),
@@ -642,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           mainAxisSpacing: 16,
         ),
         itemCount: 6,
-        itemBuilder: (_, _) => Container(
+        itemBuilder: (context, index) => Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
@@ -662,11 +631,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
         onTap: (i) { 
+          if (i == 1) { // Live Tab
+            AccessGuard().runWithAccessCheck(
+              context, 
+              onAllowed: () {
+                setState(() => _selectedIndex = i);
+              }
+            );
+            return;
+          }
+
           if (i == _selectedIndex) {
             // Already on this tab - Refresh it
             if (i == 0) {
               _resetAndFetch(); // Match Tab Refresh
-            } else if (i == 1) {
+            } else if (i == 2) {
               _inboxKey.currentState?.refresh(); // Inbox Tab Refresh
             }
           } else {
@@ -675,7 +654,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _fetchUnreadCount();
             
             // If switching TO Inbox, we also want it to refresh immediately
-            if (i == 1) {
+            if (i == 2) {
               Future.delayed(const Duration(milliseconds: 100), () {
                 _inboxKey.currentState?.refresh();
               });
@@ -684,6 +663,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         },
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.explore_outlined, size: 28), activeIcon: Icon(Icons.explore, size: 28), label: 'Match'),
+          const BottomNavigationBarItem(icon: Icon(Icons.videocam_outlined, size: 28), activeIcon: Icon(Icons.videocam, size: 28), label: 'Live'),
           BottomNavigationBarItem(icon: _totalUnreadCount > 0 ? Badge(backgroundColor: Colors.redAccent, label: Text(_totalUnreadCount.toString()), child: const Icon(Icons.chat_bubble_outline_rounded, size: 26)) : const Icon(Icons.chat_bubble_outline_rounded, size: 26), activeIcon: const Icon(Icons.chat_bubble_rounded, size: 26), label: 'Inbox'),
           const BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded, size: 28), activeIcon: Icon(Icons.person_rounded, size: 28), label: 'Profile'),
         ],

@@ -6,7 +6,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:gogo/core/services/app_config_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
-import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
 import 'package:gogo/features/auth/screens/profile_setup_screen.dart';
 import 'package:gogo/features/home/screens/home_screen.dart';
 
@@ -64,16 +63,10 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
 
       // 2. Core Logic decision happens ONLY AFTER syncSubscription completes
       if (mounted) {
-        bool isPremium = PremiumService().isPremium;
-        bool isReviewMode = AppConfigService().isStandardMode;
-        bool hasCompleted = user['hasCompletedOnboarding'] ?? false;
+        final user = UserRepository().currentUser;
+        bool hasCompleted = user?['hasCompletedOnboarding'] ?? false;
 
-        Widget nextScreen;
-        if (isPremium || isReviewMode) {
-          nextScreen = hasCompleted ? const HomeScreen() : const ProfileSetupScreen();
-        } else {
-          nextScreen = const TrialOnboardingScreen();
-        }
+        Widget nextScreen = hasCompleted ? const HomeScreen() : const ProfileSetupScreen();
 
         Navigator.pushReplacement(
           context,
@@ -92,16 +85,8 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
         final user = UserRepository().currentUser;
         if (user != null) {
           // Even on sync failure, use whatever we have to decide next screen
-          bool isPremium = user['isPremium'] ?? false;
-          bool isReviewMode = AppConfigService().isStandardMode;
           bool hasCompleted = user['hasCompletedOnboarding'] ?? false;
-
-          Widget nextScreen;
-          if (isPremium || isReviewMode) {
-            nextScreen = hasCompleted ? const HomeScreen() : const ProfileSetupScreen();
-          } else {
-            nextScreen = const TrialOnboardingScreen();
-          }
+          Widget nextScreen = hasCompleted ? const HomeScreen() : const ProfileSetupScreen();
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => nextScreen));
         } else {
           setState(() => _isProcessing = false);

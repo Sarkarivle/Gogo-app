@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/app_config_service.dart';
 
@@ -17,30 +18,43 @@ class PremiumService {
   final ValueNotifier<bool> accessNotifier = ValueNotifier<bool>(true);
   final ValueNotifier<String> statusNotifier = ValueNotifier<String>("FREE");
 
-  // New: Track if 1-message trial has been used
-  bool _isOneMessageTrialUsed = false;
-  bool get isOneMessageTrialUsed => _isOneMessageTrialUsed;
+  // New: Track message count for trial
+  int _messagesSentCount = 0;
+  int get messagesSentCount {
+    final user = UserRepository().currentUser;
+    if (user != null && user['messagesSentCount'] != null) {
+      return user['messagesSentCount'];
+    }
+    return _messagesSentCount;
+  }
 
-  Future<void> useOneMessageTrial() async {
-    if (AppConfigService().isOneMessageTrialEnabled && !_isOneMessageTrialUsed) {
-      _isOneMessageTrialUsed = true;
+  Future<void> incrementMessageCount() async {
+    if (AppConfigService().isOneMessageTrialEnabled) {
+      _messagesSentCount = messagesSentCount + 1;
       
-      // OPTIMIZATION: Update UI state immediately for zero-lag experience
+      // OPTIMIZATION: Update UI state immediately
       hasAccess; 
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('one_message_trial_used', true);
+      await prefs.setInt('messages_sent_count', _messagesSentCount);
       
       // SYNC TO BACKEND in background
-      ApiService.post('/api/user/mark-trial-used', {}).catchError((e) {
-        debugPrint("Error syncing trial usage: $e");
-        // ignore: invalid_return_type_for_catch_error
-        return null;
+      ApiService.post('/api/user/update-message-count', {'count': _messagesSentCount}).then((res) {
+        if (res.statusCode == 200) {
+           final data = jsonDecode(res.body);
+           if (data['success'] == true && data['user'] != null) {
+             UserRepository().updateLocalUser(data['user']);
+           }
+        }
+      }).catchError((e) {
+        debugPrint("Error syncing message count: $e");
       });
       
-      debugPrint("🚀 [PREMIUM] 1-Message Trial USED. Access Revoked.");
+      debugPrint("🚀 [PREMIUM] Message Sent: $_messagesSentCount/${AppConfigService().freeMessageLimit}");
     }
   }
+
+  bool get _isTrialExceeded => AppConfigService().isOneMessageTrialEnabled && messagesSentCount >= AppConfigService().freeMessageLimit;
 
   bool get isPremium => UserRepository().currentUser?['isPremium'] ?? false;
   String? get subscriptionStatus => UserRepository().currentUser?['subscription']?['status'];
@@ -62,19 +76,8 @@ class PremiumService {
 
     bool access = isFreemiumUser;
 
-    // 2. Standard Mode Logic (Legacy Users or Global Review)
-    if (AppConfigService().isStandardMode) {
-      if (AppConfigService().isOneMessageTrialEnabled) {
-        // Reviewers get 1 message
-        access = !_isOneMessageTrialUsed;
-      } else {
-        // Legacy/Old users get unlimited
-        access = true;
-      }
-    } 
-    // 3. New Users (Live Mode) Trial Logic
-    else if (AppConfigService().isOneMessageTrialEnabled && !_isOneMessageTrialUsed) {
-      // New users get 1 message trial before paywall
+    // 2. Trial Logic for Free Users
+    if (!access && AppConfigService().isOneMessageTrialEnabled && !_isTrialExceeded) {
       access = true;
     }
 
@@ -94,14 +97,6 @@ class PremiumService {
   String get accountStatusLabel {
     if (isPremium) return "PREMIUM";
     
-    // Google Compliance Mode Status Labels
-    if (AppConfigService().isStandardMode) {
-      if (AppConfigService().isOneMessageTrialEnabled) {
-        return _isOneMessageTrialUsed ? "FREE (LIMIT EXCEEDED)" : "TRIAL ACCESS (1 MSG)";
-      }
-      return "FREE ACCESS";
-    }
-
     if (isFreemiumUser) return "FREEMIUM";
     return "FREE";
   }
@@ -117,25 +112,21 @@ class PremiumService {
       // 1. Force fetch fresh config from backend (Bypassing cache for compliance)
       await AppConfigService().fetchReviewMode(forceRefresh: true);
       
-      // 2. Refresh user profile to sync isPremium status & trial status
+      // 2. Sync Subscription & User Data
+      // This hits /api/payment/sync-status with cache busting
+      await syncSubscription();
+
+      // 3. Fallback: If for some reason we need even more data, fetch full profile
       final userData = UserRepository().currentUser;
       if (userData != null && userData['phone'] != null) {
-        final freshProfile = await UserRepository().fetchProfile(userData['phone']);
-        
-        // SYNC TRIAL STATUS FROM BACKEND
-        if (freshProfile != null && freshProfile['oneMessageTrialUsed'] == true) {
-          if (!_isOneMessageTrialUsed) {
-             _isOneMessageTrialUsed = true;
-             final prefs = await SharedPreferences.getInstance();
-             await prefs.setBool('one_message_trial_used', true);
-          }
-        }
+        // fetchProfile has cache busting and updates local user if changed
+        await UserRepository().fetchProfile(userData['phone']!, forceRefresh: true);
       }
 
-      // 3. Update local access state & labels via Notifiers
-      final bool currentAccess = hasAccess; 
+      // 4. Final state re-evaluation
+      hasAccess; 
       
-      debugPrint('🔔 Real-time Access Updated: $currentAccess, Status: ${statusNotifier.value}');
+      debugPrint('🔔 Real-time Access Updated: ${accessNotifier.value}, Status: ${statusNotifier.value}');
     } catch (e) {
       debugPrint('Error in refreshAccessState: $e');
     } finally {
@@ -146,35 +137,80 @@ class PremiumService {
   Future<void> init({bool force = false}) async {
     final userData = UserRepository().currentUser;
     if (userData != null) {
+      // Listen for real-time premium updates from socket
+      _setupSocketListener();
+
       // SYNC: Fetch latest toggle status from server
       await AppConfigService().fetchReviewMode();
       
       // Sync local trial usage
       final prefs = await SharedPreferences.getInstance();
-      _isOneMessageTrialUsed = prefs.getBool('one_message_trial_used') ?? false;
+      _messagesSentCount = prefs.getInt('messages_sent_count') ?? 0;
     }
+  }
+
+  void _setupSocketListener() {
+    SocketService().eventStream.listen((event) {
+      if (event['event'] == 'premium_status_refresh') {
+        debugPrint("⚡ [PREMIUM] Real-time Status Refresh Received");
+        refreshAccessState();
+      }
+    });
   }
 
   Future<void> syncSubscription() async {
     try {
-      final response = await ApiService.get('/api/payment/sync-status');
+      // CACHE BYPASS: Add timestamp to ensure fresh data from server
+      final response = await ApiService.get('/api/payment/sync-status?_t=${DateTime.now().millisecondsSinceEpoch}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           final userData = UserRepository().currentUser;
           if (userData != null) {
-            Map<String, dynamic> updatedData = Map.from(userData);
-            updatedData['isPremium'] = data['isPremium'] ?? false;
-            updatedData['isStandardMode'] = data['isStandardMode'] ?? false;
-            if (data['expiry'] != null) updatedData['premiumExpiry'] = data['expiry'];
-            if (data['status'] != null) {
-              updatedData['subscription'] = {
-                ...(updatedData['subscription'] ?? {}),
-                'status': data['status']
-              };
+            // OPTIMIZATION: If backend returns full user, use it directly to ensure absolute sync
+            if (data['user'] != null) {
+              await UserRepository().updateLocalUser(data['user']);
+              
+              // Also sync the local trial count variable
+              if (data['user']['messagesSentCount'] != null) {
+                _messagesSentCount = data['user']['messagesSentCount'];
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setInt('messages_sent_count', _messagesSentCount);
+              }
+              
+              debugPrint('📡 Full User Synced from Payment API');
+            } else {
+              Map<String, dynamic> updatedData = Map.from(userData);
+              updatedData['isPremium'] = data['isPremium'] ?? false;
+              if (data['expiry'] != null) updatedData['premiumExpiry'] = data['expiry'];
+              if (data['premiumPlan'] != null) updatedData['premiumPlan'] = data['premiumPlan'];
+              
+              // Sync trial count if available in root data
+              if (data['messagesSentCount'] != null) {
+                updatedData['messagesSentCount'] = data['messagesSentCount'];
+                _messagesSentCount = data['messagesSentCount'];
+              }
+
+              // REAL-TIME SYNC: Update full subscription and history
+              if (data['subscription'] != null) {
+                updatedData['subscription'] = data['subscription'];
+              } else if (data['status'] != null) {
+                updatedData['subscription'] = {
+                  ...(updatedData['subscription'] ?? {}),
+                  'status': data['status']
+                };
+              }
+
+              if (data['paymentHistory'] != null) {
+                updatedData['paymentHistory'] = data['paymentHistory'];
+              }
+
+              await UserRepository().updateLocalUser(updatedData);
             }
-            await UserRepository().updateLocalUser(updatedData);
-            debugPrint('📡 Subscription Synced: Premium=${updatedData['isPremium']}');
+            
+            // Re-evaluate local access logic labels
+            hasAccess; 
+            debugPrint('📡 Subscription Synced: Premium=${UserRepository().currentUser?['isPremium']}');
           }
         }
       }

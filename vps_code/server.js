@@ -131,6 +131,11 @@ app.set('redisPub', pubClient);
 app.use(cors());
 app.use(express.json());
 
+// 100% FIX: Direct Route for OTP
+const UserController = require('./src/controllers/UserController');
+app.post('/api/user/send-otp', UserController.sendOTP);
+app.post('/api/user/login', UserController.login);
+
 // Global Request Logger (Development Only)
 if (process.env.NODE_ENV !== 'production') {
     app.use((req, res, next) => {
@@ -205,20 +210,13 @@ io.on('connection', (socket) => {
         if (!normalized) return;
 
         try {
-            const user = await User.findOne(phoneQuery(normalized), 'hasCompletedOnboarding dobYear').lean();
-            const isComplete = user && (user.hasCompletedOnboarding || user.dobYear);
-
-            if (isComplete) {
-                // Track in Redis for 100% real-time status across all screens
-                await redisClient.sAdd('online_users', normalized);
-                console.log(`[Redis] User Online: ${normalized}`);
-            }
+            // Track in Redis for 100% real-time status (Removing isComplete check for accuracy)
+            await redisClient.sAdd('online_users', normalized);
+            console.log(`[Redis] User Online: ${normalized}`);
 
             await User.findOneAndUpdate(phoneQuery(normalized), { isOnline: true, lastSeen: new Date() });
 
-            if (isComplete) {
-                socket.broadcast.emit('user_status_change', { phone: normalized, isOnline: true });
-            }
+            socket.broadcast.emit('user_status_change', { phone: normalized, isOnline: true });
 
             const phoneVariations = [normalized, `+91${normalized}`, `91${normalized}`];
             const result = await Message.updateMany({

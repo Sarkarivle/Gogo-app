@@ -78,7 +78,9 @@ class UserRepository {
         }
       }
 
-      final response = await ApiService.get('/api/user/profile/$normalizedPhone');
+      // CACHE BYPASS: Add timestamp to ensure fresh data from server
+      final cacheBuster = forceRefresh ? '?_t=${DateTime.now().millisecondsSinceEpoch}' : '';
+      final response = await ApiService.get('/api/user/profile/$normalizedPhone$cacheBuster');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['user'] != null) {
@@ -145,8 +147,19 @@ class UserRepository {
       if (userData['phone'] != null) {
         userData['phone'] = PhoneUtils.normalize(userData['phone']);
       }
-      await _prefs?.setString('user_data', jsonEncode(userData));
-      userNotifier.value = userData;
+      
+      // Ensure we create a NEW instance to trigger ValueListenableBuilder correctly
+      final freshData = Map<String, dynamic>.from(userData);
+      
+      await _prefs?.setString('user_data', jsonEncode(freshData));
+      userNotifier.value = freshData;
+
+      // UPDATE CACHE: Prevent stale data overwriting fresh syncs
+      if (freshData['phone'] != null) {
+        final normalized = PhoneUtils.normalize(freshData['phone']) ?? freshData['phone'];
+        _profileCache[normalized] = freshData;
+        _profileCacheTime[normalized] = DateTime.now().millisecondsSinceEpoch;
+      }
     }
   }
 

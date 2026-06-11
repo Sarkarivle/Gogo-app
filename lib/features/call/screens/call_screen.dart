@@ -7,6 +7,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:gogo/features/call/providers/call_service.dart';
 import 'package:gogo/core/network/webrtc_manager.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
+import 'package:gogo/features/premium/repositories/premium_repository.dart';
+import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/shared/screens/offer_screen.dart';
 
 class CallScreen extends StatefulWidget {
   final String remoteName;
@@ -65,6 +68,16 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
         // Attach local stream when connected for performance
         if (_localRenderer.srcObject == null && WebRTCManager().localStream != null) {
           _localRenderer.srcObject = WebRTCManager().localStream;
+        }
+
+        // 5 Seconds Teaser Logic for Free Users (Video Call)
+        if (widget.isVideo && !PremiumService().isPremium) {
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted && CallService().state == CallState.connected) {
+              CallService().endCall();
+              _showFreeQuotaExhaustedDialog();
+            }
+          });
         }
       }
       
@@ -459,6 +472,48 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
     );
   }
 
+  void _showFreeQuotaExhaustedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.timer_off_rounded, color: Colors.orangeAccent),
+            SizedBox(width: 12),
+            Text("Free Quota Ended", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          "Your free video call quota has finished. Upgrade to Premium to enjoy unlimited video calls.",
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const OfferScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orangeAccent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text("UPGRADE NOW", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showPremiumModerationSheet() {
     showModalBottomSheet(
       context: context,
@@ -648,6 +703,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       children: [
         _buildActionBtn(Icons.call_end, Colors.redAccent, "Decline", () => CallService().rejectCall()),
         _buildActionBtn(Icons.call, Colors.greenAccent, "Accept", () {
+           if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call')) {
+             CallService().rejectCall();
+             return;
+           }
            CallService().acceptCall();
            setState(() {});
         }),

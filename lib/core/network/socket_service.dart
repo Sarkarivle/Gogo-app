@@ -171,8 +171,9 @@ class SocketService with WidgetsBindingObserver {
     });
     
     if (_currentUserPhone != null) {
-      _socket!.on('premium_update_$_currentUserPhone', (data) {
-        PremiumService().updatePremiumStatus(true);
+      _socket!.on('premium_update_$_currentUserPhone', (data) async {
+        debugPrint('💎 Premium update received for user: $_currentUserPhone');
+        await PremiumService().refreshAccessState();
         _eventController.add({'event': 'premium_update', 'data': data});
       });
     }

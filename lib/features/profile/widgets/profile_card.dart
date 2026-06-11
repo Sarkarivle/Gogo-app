@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/shared/widgets/blinking_dot.dart';
 
-import 'package:gogo/core/guards/access_guard.dart';
-
 class ProfileCard extends StatelessWidget {
   final String distance;
   final String? fullDistance; // New: Raw distance without 20km privacy rule
@@ -66,23 +64,18 @@ class ProfileCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        AccessGuard().runWithAccessCheck(
-          context, 
-          onAllowed: () {
-            ProfileDetailPage.navigate(
-              context,
-              name: name,
-              phone: phone,
-              distance: (fullDistance != null && fullDistance!.isNotEmpty) ? fullDistance! : distance,
-              city: city,
-              area: area,
-              age: age,
-              position: position,
-              havePlace: havePlace,
-              isVerified: isVerified,
-              isOnline: isOnline,
-            );
-          }
+        ProfileDetailPage.navigate(
+          context,
+          name: name,
+          phone: phone,
+          distance: (fullDistance != null && fullDistance!.isNotEmpty) ? fullDistance! : distance,
+          city: city,
+          area: area,
+          age: age,
+          position: position,
+          havePlace: havePlace,
+          isVerified: isVerified,
+          isOnline: isOnline,
         );
       },
       child: Container(

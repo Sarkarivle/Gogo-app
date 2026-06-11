@@ -23,14 +23,19 @@ import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/core/services/presence_manager.dart';
 import 'package:gogo/core/services/typing_manager.dart';
 import 'package:gogo/core/services/media_service.dart';
+import 'package:gogo/core/services/app_config_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:gogo/features/chat/screens/chat_settings_screen.dart';
 import 'package:gogo/features/chat/screens/media_preview_screen.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/features/chat/widgets/chat_widgets.dart';
+import 'package:gogo/features/premium/repositories/premium_repository.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
+import 'package:gogo/shared/screens/offer_screen.dart';
 import 'package:gogo/features/reviews/widgets/review_modal.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
+import 'package:gogo/core/services/ad_service.dart';
+import 'dart:math';
 import 'package:video_player/video_player.dart';
 
 class ChatPage extends StatefulWidget {
@@ -102,11 +107,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Timer? _typingTimer;
   bool _isMeTyping = false;
   int _messageCount = 0;
+  int _adMessageCounter = 0;
+  late int _targetAdCount;
   bool _hasShownReview = false;
 
   @override
   void initState() {
     super.initState();
+    final min = AppConfigService().rewardMinMsg;
+    final max = AppConfigService().rewardMaxMsg;
+    _targetAdCount = min + Random().nextInt(max - min + 1);
     _normalizedReceiverPhone = PhoneUtils.normalize(widget.receiverPhone) ?? widget.receiverPhone;
     WidgetsBinding.instance.addObserver(this);
     
@@ -123,18 +133,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Centralized Block Listening
     ModerationRepository().blockStatusNotifier.addListener(_syncBlockFromGlobal);
 
-    // Listen for Access Loss (1-Message Trial Kick-out)
-    PremiumService().accessNotifier.addListener(_handleAccessChange);
-
     _initChat();
     _setupSocketListeners();
-  }
-
-  void _handleAccessChange() {
-    if (!PremiumService().hasAccess && mounted) {
-      debugPrint("📢 [CHAT] Access Lost. Popping Chat Screen.");
-      Navigator.of(context).pop();
-    }
   }
 
   void _syncBlockFromGlobal() {
@@ -280,6 +280,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     setState(() {
       _messageCount++;
+      _adMessageCounter++;
       // DEDUP & UPDATE: Check if message already exists (either by real ID or localId)
       final int index = _messages.indexWhere((m) => 
         (m.id != null && m.id == newMessage.id) || 
@@ -478,6 +479,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _sendMessage({String type = 'text', String? text, String? imageUrl, String? audioUrl, bool isViewOnce = false, String? customLocalId}) {
     if (_myPhone == null || _myName == null || _normalizedReceiverPhone == null) return;
+
+    // Check message limit access
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'chat')) {
+      return;
+    }
     
     final String msgText = text ?? _messageController.text.trim();
     if (msgText.isEmpty && type == 'text') return;
@@ -506,6 +512,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ack: (res) {
         if (res != null && res['success'] == true) {
           _updateMessageWithRealId(localId, res['messageId']);
+          // NEW: Increment message count for trial limit
+          PremiumService().incrementMessageCount();
         } else {
           // Show red error status if sending failed (e.g. blocked or server error)
           _updateMessageStatus(localId, MessageStatus.error);
@@ -533,10 +541,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
       setState(() {
         _messageCount++;
+        _adMessageCounter++;
         _messages.insert(0, optimisticMsg);
         _messageController.clear();
         _replyingTo = null;
       });
+      _checkAndShowAdPopup();
       _checkAndShowReviewPopup();
       ChatRepository().updateCacheWithNewMessage(_myPhone!, widget.receiverPhone, optimisticMsg);
       _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
@@ -544,11 +554,87 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       // For media, just clear input as it was already added optimistically
       setState(() {
         _messageCount++;
+        _adMessageCounter++;
         _messageController.clear();
         _replyingTo = null;
       });
+      _checkAndShowAdPopup();
       _checkAndShowReviewPopup();
     }
+  }
+
+  void _checkAndShowAdPopup() {
+    if (AdService().shouldShowAds && _adMessageCounter >= _targetAdCount) {
+      // Don't show if ad is not ready to avoid frustration, or show only if we haven't shown recently
+      _adMessageCounter = 0;
+      _targetAdCount = AppConfigService().rewardMinMsg + Random().nextInt(AppConfigService().rewardMaxMsg - AppConfigService().rewardMinMsg + 1);
+      
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _showRewardAdPopup();
+      });
+    }
+  }
+
+  void _showRewardAdPopup() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: Colors.white10)),
+        title: const Row(
+          children: [
+            Icon(Icons.card_giftcard_rounded, color: Colors.orangeAccent),
+            SizedBox(width: 12),
+            Text("Special Reward!", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          "Watch a short video to keep chatting for free or remove all ads forever.",
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Column(
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  // Show loading indicator since Rewarded ads might take time
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Loading Reward Ad...'), duration: Duration(seconds: 1))
+                  );
+                  
+                  AdService().showRewardedAd(
+                    onRewardEarned: (reward) {
+                      Navigator.pop(context); // Close popup only after reward earned or ad closed
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reward Granted! Ads paused.')));
+                    },
+                    onAdClosed: () {
+                      if (Navigator.canPop(context)) Navigator.pop(context);
+                    }
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orangeAccent,
+                  foregroundColor: Colors.black,
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text("WATCH AD TO CONTINUE", style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const TrialOnboardingScreen(forceShow: true)));
+                },
+                child: const Text("REMOVE ADS & GO PREMIUM", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   void _updateMessageWithRealId(String localId, String realId) {
@@ -589,7 +675,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _statusSyncTimer?.cancel();
-    PremiumService().accessNotifier.removeListener(_handleAccessChange);
     ModerationRepository().blockStatusNotifier.removeListener(_syncBlockFromGlobal);
     _typingTimer?.cancel();
     _micHoldTimer?.cancel();
@@ -605,35 +690,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: PremiumService().accessNotifier,
-      builder: (context, hasAccess, _) {
-        // REAL-TIME CHAT KICK-OUT
-        // If access is lost (Toggle OFF + No Paid Premium), show the Paywall
-        if (!hasAccess) {
-          return Container(
-            color: Colors.black,
-            child: const TrialOnboardingScreen(),
-          );
-        }
-
-        return Scaffold(
-          resizeToAvoidBottomInset: true, // Keep this true for chat, but optimized elsewhere
-          backgroundColor: const Color(0xFF121212),
-          appBar: _buildAppBar(),
-          body: Column(
-            children: [
-              Expanded(
-                child: _isLoading 
-                  ? const Center(child: CircularProgressIndicator(color: Colors.orangeAccent))
-                  : _buildMessageList(),
-              ),
-              if (_isPartnerDeactivated) _buildDeactivatedIndicator()
-              else _buildInputArea(),
-            ],
+    return Scaffold(
+      resizeToAvoidBottomInset: true, // Keep this true for chat, but optimized elsewhere
+      backgroundColor: const Color(0xFF121212),
+      appBar: _buildAppBar(),
+      body: Column(
+        children: [
+          Expanded(
+            child: _isLoading 
+              ? const Center(child: CircularProgressIndicator(color: Colors.orangeAccent))
+              : _buildMessageList(),
           ),
-        );
-      }
+          if (_isPartnerDeactivated) _buildDeactivatedIndicator()
+          else _buildInputArea(),
+        ],
+      ),
     );
   }
 
@@ -721,8 +792,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   void _handleCall(bool isVideo) async {
-    if (!PremiumService().hasAccess) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Calling is a Premium Feature 🚀')));
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call')) {
       return;
     }
 
@@ -1037,6 +1107,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // --- RECORDING LOGIC ---
   void _startRecording() async {
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'audio_msg')) {
+      return;
+    }
     final hasPermission = await _audioRecorder.hasPermission();
     if (!hasPermission) return;
 
@@ -1777,92 +1850,118 @@ class ChatMessageTile extends StatelessWidget {
   }
 
   Widget _buildViewOnceBubble(BuildContext context, ChatMessage m) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: m.openedNotifier,
-      builder: (context, isOpened, _) {
-        if (isOpened) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(25),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.done_all_rounded, size: 18, color: Colors.white24),
-                SizedBox(width: 10),
-                Text("Opened", style: TextStyle(color: Colors.white24, fontSize: 14, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          );
-        }
+    return ValueListenableBuilder<String>(
+      valueListenable: PremiumService().statusNotifier,
+      builder: (context, status, _) {
+        final bool isPremium = status == "PREMIUM";
+        final bool showLocked = !isPremium && !m.isMe;
 
-        if (m.isMe) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.orangeAccent.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.looks_one_rounded, size: 18, color: Colors.orangeAccent),
-                SizedBox(width: 10),
-                Text("1 Image", style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          );
-        } else {
-          // Receiver sees blurred image container
-          return InkWell(
-            onTap: onViewOnceTap,
-            child: Container(
-              width: 200,
-              height: 120,
-              decoration: BoxDecoration(
-                color: const Color(0xFF262626),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
+        return ValueListenableBuilder<bool>(
+          valueListenable: m.openedNotifier,
+          builder: (context, isOpened, _) {
+            if (isOpened) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.done_all_rounded, size: 18, color: Colors.white24),
+                    SizedBox(width: 10),
+                    Text("Opened", style: TextStyle(color: Colors.white24, fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              );
+            }
+
+            if (m.isMe) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.orangeAccent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(25),
+                  border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.looks_one_rounded, size: 18, color: Colors.orangeAccent),
+                    SizedBox(width: 10),
+                    Text("1 Image", style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              );
+            } else {
+              if (showLocked) {
+                return InkWell(
+                  onTap: () => _showOfferPage(context),
+                  child: Container(
+                    width: 200,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF262626),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: _buildLockedMediaPlaceholder(m),
+                    ),
+                  ),
+                );
+              }
+              // Receiver sees blurred image container
+              return InkWell(
+                onTap: onViewOnceTap,
+                child: Container(
+                  width: 200,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF262626),
                     borderRadius: BorderRadius.circular(20),
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                      child: ColorFiltered(
-                        colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.5), BlendMode.darken),
-                        child: m.type == 'video' 
-                          ? Container(color: Colors.black54)
-                          : (m.imageUrl != null ? CachedNetworkImage(
-                              imageUrl: ApiService.getSecureUrl(m.imageUrl),
-                              fit: BoxFit.cover,
-                              memCacheWidth: 200,
-                            ) : Container(color: Colors.black54)),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          child: ColorFiltered(
+                            colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.5), BlendMode.darken),
+                            child: m.type == 'video' 
+                              ? Container(color: Colors.black54)
+                              : (m.imageUrl != null ? CachedNetworkImage(
+                                  imageUrl: ApiService.getSecureUrl(m.imageUrl),
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 200,
+                                ) : Container(color: Colors.black54)),
+                          ),
+                        ),
                       ),
-                    ),
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(m.type == 'video' ? Icons.play_circle_outline_rounded : Icons.visibility_off_rounded, color: Colors.orangeAccent, size: 32),
+                            const SizedBox(height: 8),
+                            Text(m.type == 'video' ? "One View Video" : "One View Image", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text("Tap to view", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(m.type == 'video' ? Icons.play_circle_outline_rounded : Icons.visibility_off_rounded, color: Colors.orangeAccent, size: 32),
-                        const SizedBox(height: 8),
-                        Text(m.type == 'video' ? "One View Video" : "One View Image", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                        Text("Tap to view", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-      }
+                ),
+              );
+            }
+          },
+        );
+      },
     );
   }
 
@@ -1917,66 +2016,128 @@ class ChatMessageTile extends StatelessWidget {
   Widget _buildImageMessage(BuildContext context, ChatMessage m) {
     final bool isVideo = m.type == 'video';
     
-    return InkWell(
-      onTap: () {
-        if (m.isViewOnce && !m.isMe && !m.isOpened) {
-          onViewOnceTap();
-        } else if (isVideo) {
-          onVideoTap(m.imageUrl);
-        } else {
-          onImageTap(m.imageUrl);
-        }
-      },
-      child: Container(
-        width: 220,
-        height: 280,
-        decoration: BoxDecoration(
-          color: const Color(0xFF262626),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: m.isViewOnce && !m.isMe && !m.isOpened 
-            ? _buildViewOncePlaceholder(m)
-            : Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (isVideo)
-                    Container(
-                      color: Colors.black54,
-                      child: Stack(
+    return ValueListenableBuilder<String>(
+      valueListenable: PremiumService().statusNotifier,
+      builder: (context, status, _) {
+        final bool isPremium = status == "PREMIUM";
+        final bool showLocked = !isPremium && !m.isMe;
+
+        return InkWell(
+          onTap: () {
+            if (showLocked) {
+              _showOfferPage(context);
+              return;
+            }
+            if (m.isViewOnce && !m.isMe && !m.isOpened) {
+              onViewOnceTap();
+            } else if (isVideo) {
+              onVideoTap(m.imageUrl);
+            } else {
+              onImageTap(m.imageUrl);
+            }
+          },
+          child: Container(
+            width: 220,
+            height: 280,
+            decoration: BoxDecoration(
+              color: const Color(0xFF262626),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: showLocked 
+                ? _buildLockedMediaPlaceholder(m)
+                : (m.isViewOnce && !m.isMe && !m.isOpened 
+                    ? _buildViewOncePlaceholder(m)
+                    : Stack(
                         fit: StackFit.expand,
                         children: [
-                          if (m.localFilePath != null)
-                             Opacity(opacity: 0.3, child: Image.file(File(m.localFilePath!), fit: BoxFit.cover)),
-                          const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.play_circle_fill_rounded, color: Colors.orangeAccent, size: 50),
-                                SizedBox(height: 8),
-                                Text("Video Message", style: TextStyle(color: Colors.white54, fontSize: 12)),
-                              ],
+                          if (isVideo)
+                            Container(
+                              color: Colors.black54,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  if (m.localFilePath != null)
+                                     Opacity(opacity: 0.3, child: Image.file(File(m.localFilePath!), fit: BoxFit.cover)),
+                                  const Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.play_circle_fill_rounded, color: Colors.orangeAccent, size: 50),
+                                        SizedBox(height: 8),
+                                        Text("Video Message", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (m.localFilePath != null)
+                            Image.file(File(m.localFilePath!), fit: BoxFit.cover, cacheWidth: 440)
+                          else
+                            CachedNetworkImage(
+                              imageUrl: ApiService.getSecureUrl(m.imageUrl),
+                              fit: BoxFit.cover,
+                              memCacheWidth: 440,
+                              placeholder: (context, url) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.white24),
                             ),
-                          ),
                         ],
-                      ),
-                    )
-                  else if (m.localFilePath != null)
-                    Image.file(File(m.localFilePath!), fit: BoxFit.cover, cacheWidth: 440)
-                  else
-                    CachedNetworkImage(
-                      imageUrl: ApiService.getSecureUrl(m.imageUrl),
-                      fit: BoxFit.cover,
-                      memCacheWidth: 440,
-                      placeholder: (_, _) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      errorWidget: (_, _, _) => const Icon(Icons.broken_image, color: Colors.white24),
-                    ),
-                ],
-              ),
+                      )),
+            ),
+          ),
+        );
+      }
+    );
+  }
+
+  Widget _buildLockedMediaPlaceholder(ChatMessage m) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (m.imageUrl != null)
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+            child: CachedNetworkImage(
+              imageUrl: ApiService.getSecureUrl(m.imageUrl),
+              fit: BoxFit.cover,
+            ),
+          ),
+        Container(color: Colors.black.withValues(alpha: 0.5)),
+        const Positioned(
+          top: 12,
+          right: 12,
+          child: Icon(Icons.lock_rounded, color: Colors.orangeAccent, size: 18),
         ),
-      ),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orangeAccent.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.orangeAccent, size: 24),
+              ),
+              const SizedBox(height: 12),
+              const Text("Unlock Media", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              Text("Premium Only", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 9)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showOfferPage(BuildContext context) {
+    // We will navigate to the new OfferScreen
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const OfferScreen()),
     );
   }
 

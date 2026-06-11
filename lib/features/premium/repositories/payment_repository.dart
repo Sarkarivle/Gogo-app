@@ -8,7 +8,7 @@ class PaymentRepository {
   PaymentRepository._internal();
 
   // Payment Configuration State
-  String _activeGateway = 'razorpay';
+  String _activeGateway = 'google_play';
   bool _isUpiEnabled = true;
   bool _isGooglePlayEnabled = true;
   int _trialPrice = 1;
@@ -36,7 +36,7 @@ class PaymentRepository {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          _activeGateway = data['activeGateway'] ?? 'razorpay';
+          _activeGateway = data['activeGateway'] ?? 'google_play';
           
           if (data['config'] != null) {
             _trialPrice = data['config']['trialPrice'] ?? 1;

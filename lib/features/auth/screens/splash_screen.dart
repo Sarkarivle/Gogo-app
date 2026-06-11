@@ -11,7 +11,6 @@ import 'package:gogo/features/auth/screens/login_screen.dart';
 import 'package:gogo/features/home/screens/home_screen.dart';
 import 'package:gogo/features/news/screens/news_home_screen.dart';
 import 'package:gogo/features/auth/screens/location_permission_screen.dart';
-import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
 import 'package:gogo/features/auth/screens/profile_setup_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -62,14 +61,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           nextScreen = const HomeScreen();
         } else {
           bool hasLocation = await LocationService().checkAndRequestPermission();
-          bool hasAccess = PremiumService().hasAccess;
-
+          
           if (!hasLocation) {
             nextScreen = const LocationPermissionScreen();
-          } else if (hasAccess) {
-            nextScreen = const ProfileSetupScreen();
           } else {
-            nextScreen = const TrialOnboardingScreen();
+            nextScreen = const ProfileSetupScreen();
           }
         }
       }

@@ -671,7 +671,7 @@ exports.updateConfig = async (req, res) => {
         await Config.findOneAndUpdate({ key }, { value, updatedAt: new Date() }, { upsert: true });
 
         // Auto-broadcast for critical configs
-        if (key === 'review_mode_config' || key === 'payment_settings' || key === 'google_play_settings') {
+        if (key === 'review_mode_config' || key === 'payment_settings' || key === 'google_play_settings' || key === 'ads_settings') {
             const io = req.app.get('socketio');
             if (io) {
                 io.emit('premium_status_refresh', { key, timestamp: new Date() });

@@ -230,8 +230,8 @@ class ChatRepository {
     String? replyType,
     Function(dynamic)? ack,
   }) {
-    // 1-Message Trial Logic: Use up trial on ANY outgoing message
-    PremiumService().useOneMessageTrial();
+    // Trial Logic: Use up trial on ANY outgoing message
+    PremiumService().incrementMessageCount();
 
     SocketService().emit('send_message', {
       'localId': localId,

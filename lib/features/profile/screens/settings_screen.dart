@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:gogo/core/guards/access_guard.dart';
@@ -15,7 +16,6 @@ import 'package:gogo/features/verification/screens/verification_screen.dart';
 
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
-import 'package:gogo/core/services/app_config_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
 
@@ -103,49 +103,44 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ValueListenableBuilder<Map<String, dynamic>?>(
         valueListenable: UserRepository().userNotifier,
         builder: (context, userData, _) {
-          return ValueListenableBuilder<bool>(
-            valueListenable: AppConfigService().isStandardModeNotifier,
-            builder: (context, isStandardMode, _) {
-              return SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      color: const Color(0xFF1C1421), // Baingani Black
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                      child: SettingsHeaderCard(userData: userData),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                      child: Column(
-                        children: [
-                          // Unified Premium Card
-                          PremiumMembershipCard(userData: userData),
-                          const SizedBox(height: 32),
-
-                          _buildAccountSection(isStandardMode),
-                          const SizedBox(height: 32),
-                          _buildPrivacySection(),
-                          const SizedBox(height: 32),
-                          _buildAppControlSection(),
-                          const SizedBox(height: 40),
-                          _buildFooter(),
-                          const SizedBox(height: 40),
-                        ],
-                      ),
-                    ),
-                  ],
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  color: const Color(0xFF1C1421), // Baingani Black
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  child: SettingsHeaderCard(userData: userData),
                 ),
-              );
-            }
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  child: Column(
+                    children: [
+                      // Unified Premium Card
+                      PremiumMembershipCard(userData: userData),
+                      const SizedBox(height: 32),
+
+                      _buildAccountSection(),
+                      const SizedBox(height: 32),
+                      _buildPrivacySection(),
+                      const SizedBox(height: 32),
+                      _buildAppControlSection(),
+                      const SizedBox(height: 40),
+                      _buildFooter(),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           );
         }
       ),
     );
   }
 
-  Widget _buildAccountSection(bool isStandardMode) {
+  Widget _buildAccountSection() {
     return SettingsSectionCard(
       title: "ACCOUNT",
       children: [
@@ -155,33 +150,31 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: 'Verify your identity',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const VerificationPage())),
         ),
-        if (!isStandardMode)
-          SettingsRowItem(
-            icon: Icons.receipt_long_outlined,
-            title: 'Invoice',
-            subtitle: 'Billing & payment history',
-            onTap: () {},
-          ),
+        SettingsRowItem(
+          icon: Icons.receipt_long_outlined,
+          title: 'Invoice',
+          subtitle: 'Billing & payment history',
+          onTap: () {},
+        ),
         SettingsRowItem(
           icon: Icons.block_flipped,
           title: 'Blocked Users',
           subtitle: 'Manage restricted contacts',
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const BlockedUsersScreen())),
         ),
-        if (!isStandardMode)
-          SettingsRowItem(
-            icon: Icons.star_outline_rounded,
-            title: 'Premium Settings',
-            subtitle: 'Manage your subscription',
-            isLast: true,
-            onTap: () {
-              if (!PremiumService().hasAccess) {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const TrialOnboardingScreen()));
-              } else {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumSettingsPage()));
-              }
-            },
-          ),
+        SettingsRowItem(
+          icon: Icons.star_outline_rounded,
+          title: 'Premium Settings',
+          subtitle: 'Manage your subscription',
+          isLast: true,
+          onTap: () {
+            if (!PremiumService().hasAccess) {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const TrialOnboardingScreen()));
+            } else {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumSettingsPage()));
+            }
+          },
+        ),
       ],
     );
   }
@@ -521,7 +514,7 @@ class SettingsHeaderCard extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
-                    if (isPremium && !AppConfigService().isStandardMode) ...[
+                    if (isPremium) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -557,9 +550,15 @@ class PremiumMembershipCard extends StatelessWidget {
         final bool isPaidPremium = userData?['isPremium'] ?? false;
         final bool showAsPremium = hasAccess;
         
-        final String expiryDate = AppConfigService().isStandardMode 
-          ? (AppConfigService().isOneMessageTrialEnabled ? 'Limited Access' : 'Semi Unlimited') 
-          : (userData?['premiumExpiry'] ?? 'Never');
+        String expiryDate = 'Never';
+        if (userData?['premiumExpiry'] != null) {
+          try {
+            final date = DateTime.parse(userData!['premiumExpiry'].toString());
+            expiryDate = DateFormat('dd MMM yyyy').format(date);
+          } catch (e) {
+            expiryDate = userData!['premiumExpiry'].toString();
+          }
+        }
 
         // Logic for Button Text and Action
         String buttonText = 'Premium Settings';
@@ -631,7 +630,7 @@ class PremiumMembershipCard extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 showAsPremium 
-                  ? (isPaidPremium ? (userData?['premiumPlanName'] ?? "आपका प्रीमियम सक्रिय है") : (AppConfigService().isStandardMode ? "Trial Membership" : "Free Community Access"))
+                  ? (isPaidPremium ? (userData?['premiumPlanName'] ?? "आपका प्रीमियम सक्रिय है") : "Free Community Access")
                   : "प्रीमियम में अपग्रेड करें",
                 style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               ),

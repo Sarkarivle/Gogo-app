@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/features/premium/repositories/premium_repository.dart';
 
 class AudioPlayerWidget extends StatefulWidget {
   final String url;
@@ -23,6 +25,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   StreamSubscription? _durationSub;
   StreamSubscription? _positionSub;
   StreamSubscription? _completeSub;
+  int _playCount = 0;
 
   void stop() async {
     if (_player != null && _isPlaying) {
@@ -89,6 +92,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         children: [
           GestureDetector(
             onTap: () async {
+              final isPremium = PremiumService().isPremium;
+              if (!isPremium && !widget.isMe) {
+                if (_playCount >= 1) {
+                  PremiumRepository().checkAccessAndShowOffer(context, feature: 'audio_msg');
+                  return;
+                }
+              }
+
               // If another audio is playing, stop it first
               if (AudioPlayerWidget._currentlyPlaying != null && 
                   AudioPlayerWidget._currentlyPlaying != this) {
@@ -117,6 +128,24 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   if (mounted) {
                     setState(() => _isPlaying = true);
                     AudioPlayerWidget._currentlyPlaying = this;
+                  }
+
+                  // 1 Second Logic for Free Users
+                  if (!isPremium && !widget.isMe) {
+                    _playCount++;
+                    Future.delayed(const Duration(seconds: 1), () {
+                      if (mounted && _isPlaying) {
+                        stop();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Upgrade to Premium to hear full voice message"),
+                              backgroundColor: Colors.orangeAccent,
+                            )
+                          );
+                        }
+                      }
+                    });
                   }
                 } catch (e) {
                   debugPrint("Audio Play Error: $e");

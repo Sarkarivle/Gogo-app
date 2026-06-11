@@ -9,12 +9,13 @@ async function loadMonetization() {
     mainContent.innerHTML = UI.skeleton(4);
 
     try {
-        const [configData, gpConfigData, reviewData, statsData, adsData] = await Promise.all([
+        const [configData, gpConfigData, reviewData, statsData, adsData, offersData] = await Promise.all([
             API.getConfig('payment_settings').catch(e => ({ success: false, config: {} })),
             API.getConfig('google_play_settings').catch(e => ({ success: false, config: {} })),
-            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isReviewMode: false, isGradualEnabled: false } })),
+            API.getConfig('review_mode_config').catch(e => ({ success: false, config: { isOneMessageTrialEnabled: false } })),
             API.getMonetizationStats().catch(e => ({ success: false, stats: {} })),
-            API.getConfig('ads_settings').catch(e => ({ success: false, config: {} }))
+            API.getConfig('ads_settings').catch(e => ({ success: false, config: {} })),
+            API.getConfig('special_offers').catch(e => ({ success: false, config: { offers: [] } }))
         ]);
 
         window.monetizationState = {
@@ -28,6 +29,13 @@ async function loadMonetization() {
                 google: {},
                 facebook: {},
                 mediation: {}
+            },
+            offersData: (offersData.config && offersData.config.offers && offersData.config.offers.length > 0) ? offersData.config : {
+                offers: [
+                    { id: 'daily', name: '1 Day Free', price: 19, duration: 1, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' },
+                    { id: 'weekly', name: '7 Days Access', price: 100, duration: 7, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' },
+                    { id: 'monthly', name: '1 Month Premium', price: 199, duration: 30, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' }
+                ]
             }
         };
 
@@ -56,10 +64,13 @@ function renderMonetizationUI() {
                 <button onclick="switchMonetizationTab('ads')" class="px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMonetizationTab === 'ads' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/5 text-slate-500 hover:bg-white/10'}">
                     <i class="fas fa-ad mr-2"></i> Ads
                 </button>
+                <button onclick="switchMonetizationTab('offers')" class="px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMonetizationTab === 'offers' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/5 text-slate-500 hover:bg-white/10'}">
+                    <i class="fas fa-gift mr-2"></i> Offers
+                </button>
             </div>
 
             <div id="monetizationContent">
-                ${activeMonetizationTab === 'premium' ? renderPremiumContent(settings, gpSettings, reviewData, stats) : renderAdsContent(adsSettings)}
+                ${activeMonetizationTab === 'premium' ? renderPremiumContent(settings, gpSettings, reviewData, stats) : (activeMonetizationTab === 'ads' ? renderAdsContent(adsSettings) : renderOffersContent())}
             </div>
         </div>
     `;
@@ -75,9 +86,6 @@ function switchMonetizationTab(tab) {
 }
 
 function renderPremiumContent(settings, gpSettings, reviewData, statsRaw) {
-    let isReviewMode = reviewData?.isReviewMode || false;
-    let isGradualEnabled = reviewData?.isGradualEnabled || false;
-
     if (!settings.activeGateway) settings.activeGateway = 'razorpay';
 
     const stats = {
@@ -95,66 +103,22 @@ function renderPremiumContent(settings, gpSettings, reviewData, statsRaw) {
         <div class="space-y-10 animate-fade">
             <!-- Advanced Monetization Logic -->
             <div class="glass p-8 rounded-[2rem] border border-white/5 bg-gradient-to-br from-white/5 to-transparent">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-1 gap-8">
 
-                    <!-- Google Compliance Switch -->
-                    <div class="space-y-4">
-                        <div class="flex items-center space-x-3">
-                            <div class="p-2 bg-red-500/10 rounded-xl">
-                                <i class="fas fa-shield-check text-red-500"></i>
-                            </div>
-                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Google Compliance</h3>
-                        </div>
-                        <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                            <div>
-                                <p id="reviewModeStatus" class="text-[9px] font-bold ${isReviewMode ? 'text-emerald-500' : 'text-slate-500'}">
-                                    ${isReviewMode ? 'REVIEW MODE ON' : 'LIVE MODE ACTIVE'}
-                                </p>
-                                <p class="text-[7px] text-slate-500 uppercase mt-0.5">Global Override (All Users Free)</p>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer scale-110">
-                                <input type="checkbox" id="review_mode_toggle" ${isReviewMode ? 'checked' : ''} onchange="toggleReviewMode(this)" class="sr-only peer">
-                                <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Gradual Monetization (Split Logic) -->
-                    <div class="space-y-4">
-                        <div class="flex items-center space-x-3">
-                            <div class="p-2 bg-blue-500/10 rounded-xl">
-                                <i class="fas fa-users-medical text-blue-500"></i>
-                            </div>
-                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Gradual Monetization</h3>
-                        </div>
-                        <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                            <div>
-                                <p class="text-[9px] font-bold ${isGradualEnabled ? 'text-blue-500' : 'text-slate-500'}">
-                                    ${isGradualEnabled ? 'HYBRID MODE ON' : 'HYBRID MODE OFF'}
-                                </p>
-                                <p class="text-[7px] text-slate-500 uppercase mt-0.5">Old Users Free | New Users Pay</p>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer scale-110">
-                                <input type="checkbox" id="gradual_mode_toggle" ${isGradualEnabled ? 'checked' : ''} onchange="toggleGradualMode(this)" class="sr-only peer">
-                                <div class="w-12 h-6 bg-white/10 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-6"></div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- 1 Message Trial -->
+                    <!-- Message Trial Limit -->
                     <div class="space-y-4">
                         <div class="flex items-center space-x-3">
                             <div class="p-2 bg-orange-500/10 rounded-xl">
                                 <i class="fas fa-comment-alt-dots text-orange-500"></i>
                             </div>
-                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">1-Message Trial</h3>
+                            <h3 class="text-[10px] font-black text-white uppercase tracking-widest">Freemium Message Limit</h3>
                         </div>
                         <div class="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
                             <div>
                                 <p class="text-[9px] font-bold ${reviewData?.isOneMessageTrialEnabled ? 'text-orange-500' : 'text-slate-500'}">
-                                    ${reviewData?.isOneMessageTrialEnabled ? 'TRIAL ENABLED' : 'TRIAL DISABLED'}
+                                    ${reviewData?.isOneMessageTrialEnabled ? 'LIMIT ENABLED' : 'LIMIT DISABLED'}
                                 </p>
-                                <p class="text-[7px] text-slate-500 uppercase mt-0.5">For Users in Standard/Free Mode</p>
+                                <input type="number" id="free_message_limit" value="${reviewData?.freeMessageLimit || 1}" class="w-12 bg-transparent text-[10px] text-white font-bold outline-none border-b border-white/20 focus:border-orange-500 mt-1">
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer scale-110">
                                 <input type="checkbox" id="one_message_trial_toggle" ${reviewData?.isOneMessageTrialEnabled ? 'checked' : ''} onchange="toggleOneMessageTrial(this)" class="sr-only peer">
@@ -168,9 +132,8 @@ function renderPremiumContent(settings, gpSettings, reviewData, statsRaw) {
                 <div class="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
                     <div class="flex items-center space-x-2 text-[8px] text-slate-500 font-bold uppercase italic">
                         <i class="fas fa-info-circle text-blue-500"></i>
-                        <span>Status: ${isReviewMode ? 'Review Mode Overrides everything (Everyone Free)' : (isGradualEnabled ? 'Hybrid Active (New users created after setup will be prompted to pay)' : 'Global Live (Everyone will be prompted to pay)')}</span>
+                        <span>Status: Global Live (Everyone will be prompted to pay after trial)</span>
                     </div>
-                    ${isGradualEnabled && reviewData?.monetizationStartDate ? `<span class="text-[8px] text-slate-600 font-black uppercase tracking-widest">Monetization Start: ${new Date(reviewData.monetizationStartDate).toLocaleDateString()}</span>` : ''}
                 </div>
             </div>
 
@@ -203,6 +166,17 @@ function renderPremiumContent(settings, gpSettings, reviewData, statsRaw) {
                                 <label class="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Main Price (INR)</label>
                                 <input type="number" id="monthlyPrice" value="${settings.monthlyPrice || 199}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white font-bold mt-2 focus:border-orange-500/50 transition">
                                 <p class="text-[7px] text-slate-500 mt-2 uppercase italic">Display Price on App</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                             <div>
+                                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Standard Plan ID (RZP)</label>
+                                <input type="text" id="rzp_plan_id" value="${settings.razorpay?.planId || settings.planId || ''}" placeholder="plan_Nxxxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-[10px] text-white mt-2">
+                            </div>
+                             <div>
+                                <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Standard Plan ID (GP)</label>
+                                <input type="text" id="gp_standard_plan_id" value="${gpSettings.productId || ''}" placeholder="premium_subscription" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-[10px] text-white mt-2">
                             </div>
                         </div>
 
@@ -419,6 +393,20 @@ function renderAdsContent(ads) {
                                 </div>
                                 <input type="number" id="ads_frequency" value="${ads.frequencyMinutes || 5}" class="w-16 bg-black/40 border border-white/10 rounded-lg p-2 text-xs text-white text-center outline-none focus:border-orange-500">
                             </div>
+
+                            <div class="pt-6 border-t border-white/5 space-y-6">
+                                <h4 class="text-[10px] font-black text-orange-500 uppercase tracking-widest">Rewarded Ad Triggers</h4>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-[7px] text-slate-500 mb-1">MIN MESSAGES (FOR POPUP)</p>
+                                        <input type="number" id="reward_min_msg" value="${ads.rewardMinMsg || 4}" class="w-full bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
+                                    </div>
+                                    <div>
+                                        <p class="text-[7px] text-slate-500 mb-1">MAX MESSAGES (FOR POPUP)</p>
+                                        <input type="number" id="reward_max_msg" value="${ads.rewardMaxMsg || 7}" class="w-full bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -464,9 +452,15 @@ function renderAdProviderFields(provider, allAds) {
                     <input type="text" id="ad_google_banner" value="${data.bannerId || ''}" placeholder="ca-app-pub-xxx/xxx" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
                 </div>
             </div>
-            <div>
-                <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Native Ad Unit ID</label>
-                <input type="text" id="ad_google_native" value="${data.nativeId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-sm text-white mt-2">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Native Ad Unit ID</label>
+                    <input type="text" id="ad_google_native" value="${data.nativeId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Rewarded Ad Unit ID</label>
+                    <input type="text" id="ad_google_rewarded" value="${data.rewardedId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
             </div>
         `;
     } else if (provider === 'facebook') {
@@ -483,6 +477,16 @@ function renderAdProviderFields(provider, allAds) {
                 <div>
                     <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Placement: Banner</label>
                     <input type="text" id="ad_fb_banner" value="${data.bannerId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Placement: Native</label>
+                    <input type="text" id="ad_fb_native" value="${data.nativeId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Placement: Rewarded</label>
+                    <input type="text" id="ad_fb_rewarded" value="${data.rewardedId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
                 </div>
             </div>
         `;
@@ -508,6 +512,16 @@ function renderAdProviderFields(provider, allAds) {
                     <input type="text" id="ad_med_banner" value="${data.bannerId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
                 </div>
             </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Mediation: Native</label>
+                    <input type="text" id="ad_med_native" value="${data.nativeId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Mediation: Rewarded</label>
+                    <input type="text" id="ad_med_rewarded" value="${data.rewardedId || ''}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-xs text-white mt-2">
+                </div>
+            </div>
         `;
     }
 }
@@ -525,6 +539,8 @@ async function saveAdsSettings() {
         ads.freeUsersOnly = document.getElementById('ads_free_users_only').checked;
         ads.showOnStart = document.getElementById('ads_on_start').checked;
         ads.frequencyMinutes = parseInt(document.getElementById('ads_frequency').value) || 5;
+        ads.rewardMinMsg = parseInt(document.getElementById('reward_min_msg').value) || 4;
+        ads.rewardMaxMsg = parseInt(document.getElementById('reward_max_msg').value) || 7;
         ads.activeProvider = activeAdProvider;
 
         if (activeAdProvider === 'google') {
@@ -532,19 +548,24 @@ async function saveAdsSettings() {
                 appId: document.getElementById('ad_google_app_id').value,
                 interstitialId: document.getElementById('ad_google_interstitial').value,
                 bannerId: document.getElementById('ad_google_banner').value,
-                nativeId: document.getElementById('ad_google_native').value
+                nativeId: document.getElementById('ad_google_native').value,
+                rewardedId: document.getElementById('ad_google_rewarded').value
             };
         } else if (activeAdProvider === 'facebook') {
             ads.facebook = {
                 appId: document.getElementById('ad_fb_app_id').value,
                 interstitialId: document.getElementById('ad_fb_interstitial').value,
-                bannerId: document.getElementById('ad_fb_banner').value
+                bannerId: document.getElementById('ad_fb_banner').value,
+                nativeId: document.getElementById('ad_fb_native').value,
+                rewardedId: document.getElementById('ad_fb_rewarded').value
             };
         } else if (activeAdProvider === 'mediation') {
             ads.mediation = {
                 appId: document.getElementById('ad_med_app_id').value,
                 interstitialId: document.getElementById('ad_med_interstitial').value,
-                bannerId: document.getElementById('ad_med_banner').value
+                bannerId: document.getElementById('ad_med_banner').value,
+                nativeId: document.getElementById('ad_med_native').value,
+                rewardedId: document.getElementById('ad_med_rewarded').value
             };
         }
 
@@ -580,14 +601,28 @@ async function savePricingStrategy() {
     try {
         const trialVal = document.getElementById('trialPrice').value;
         const monthlyVal = document.getElementById('monthlyPrice').value;
+        const rzpPlanId = document.getElementById('rzp_plan_id').value;
+        const gpPlanId = document.getElementById('gp_standard_plan_id').value;
 
-        const data = await API.getConfig('payment_settings');
-        const settings = data.config || {};
+        const [payRes, gpRes] = await Promise.all([
+            API.getConfig('payment_settings'),
+            API.getConfig('google_play_settings')
+        ]);
+
+        const settings = payRes.config || {};
+        const gpSettings = gpRes.config || {};
 
         settings.trialPrice = parseInt(trialVal) || 1;
         settings.monthlyPrice = parseInt(monthlyVal) || 199;
+        settings.planId = rzpPlanId;
+        if (settings.razorpay) settings.razorpay.planId = rzpPlanId;
 
-        await API.updateConfig('payment_settings', settings);
+        gpSettings.productId = gpPlanId;
+
+        await Promise.all([
+            API.updateConfig('payment_settings', settings),
+            API.updateConfig('google_play_settings', gpSettings)
+        ]);
 
         // BROADCAST CHANGE TO ALL USERS
         await API.post('/payment/broadcast-status-change', {}).catch(e => {});
@@ -661,43 +696,94 @@ async function saveGooglePlaySettings() {
     }
 }
 
-async function toggleGradualMode(el) {
-    try {
-        const reviewData = await API.getConfig('review_mode_config').catch(e => ({ success: false, config: {} }));
-        const config = reviewData.config || {};
-        config.isGradualEnabled = el.checked;
+function renderOffersContent() {
+    const { offersData } = window.monetizationState;
+    const offers = offersData.offers || [];
 
-        // If enabling for the first time, set the start date to now
-        if (el.checked && !config.monetizationStartDate) {
-            config.monetizationStartDate = new Date();
-        }
+    return `
+        <div class="animate-fade space-y-10">
+            <div class="glass p-8 rounded-[2rem] border border-pink-500/20 bg-gradient-to-br from-pink-500/5 to-transparent">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-pink-500 rounded-2xl flex items-center justify-center shadow-lg shadow-pink-500/20">
+                            <i class="fas fa-gift text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-black text-white uppercase tracking-widest">Special Offers & Bundles</h3>
+                            <p class="text-[10px] text-slate-500 uppercase font-bold mt-1">Configure retention and trial offers</p>
+                        </div>
+                    </div>
+                    <button onclick="saveOffersSettings()" class="px-8 py-3 bg-pink-500 text-white rounded-xl text-[10px] font-black uppercase hover:scale-[1.02] transition shadow-lg shadow-pink-500/30">
+                        <i class="fas fa-save mr-2"></i> Sync All Offers
+                    </button>
+                </div>
+            </div>
 
-        await API.updateConfig('review_mode_config', config);
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                ${offers.map((offer, idx) => `
+                    <div class="glass p-8 rounded-[2.5rem] border border-white/5 space-y-6">
+                        <div class="flex justify-between items-center">
+                             <span class="px-3 py-1 bg-white/5 rounded-full text-[8px] font-black text-slate-500 uppercase tracking-widest">Offer #${idx + 1}</span>
+                             <i class="fas fa-bolt text-pink-500"></i>
+                        </div>
 
-        showSystemToast("Gradual Monetization", `Hybrid Mode: ${el.checked ? 'ENABLED' : 'DISABLED'}`, 'bg-blue-500');
-        loadMonetization();
-    } catch (e) {
-        el.checked = !el.checked;
-        showSystemToast("Sync Error", "Server not responding", 'bg-red-500');
-    }
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Offer Name</label>
+                                <input type="text" id="offer_name_${idx}" value="${offer.name}" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[11px] text-white mt-1">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Price (₹)</label>
+                                    <input type="number" id="offer_price_${idx}" value="${offer.price}" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[11px] text-emerald-500 font-bold mt-1">
+                                </div>
+                                <div>
+                                    <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Days</label>
+                                    <input type="number" id="offer_days_${idx}" value="${offer.duration}" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[11px] text-white mt-1">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Razorpay Plan ID</label>
+                                    <input type="text" id="offer_rzp_id_${idx}" value="${offer.rzpPlanId || ''}" placeholder="plan_xxx" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[10px] text-orange-400 mt-1">
+                                </div>
+                                <div>
+                                    <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Google Play Sub ID (Product)</label>
+                                    <input type="text" id="offer_gp_sub_id_${idx}" value="${offer.googlePlaySubId || 'gogo_monthly_199'}" placeholder="gogo_monthly_199" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[10px] text-blue-400 mt-1">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Google Play Base/Offer ID</label>
+                                <input type="text" id="offer_gp_id_${idx}" value="${offer.googlePlayId || ''}" placeholder="gogo-19-rs-offer" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[10px] text-emerald-400 mt-1">
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
 }
 
-async function toggleReviewMode(el) {
+async function saveOffersSettings() {
     try {
-        const reviewData = await API.getConfig('review_mode_config').catch(e => ({ success: false, config: {} }));
-        const config = reviewData.config || {};
-        config.isReviewMode = el.checked;
+        const offers = [];
+        for (let i = 0; i < 3; i++) {
+            offers.push({
+                id: i === 0 ? 'daily' : (i === 1 ? 'weekly' : 'monthly'),
+                name: document.getElementById(`offer_name_${i}`).value,
+                price: parseInt(document.getElementById(`offer_price_${i}`).value) || 0,
+                duration: parseInt(document.getElementById(`offer_days_${i}`).value) || 0,
+                rzpPlanId: document.getElementById(`offer_rzp_id_${i}`).value,
+                googlePlaySubId: document.getElementById(`offer_gp_sub_id_${i}`).value,
+                googlePlayId: document.getElementById(`offer_gp_id_${i}`).value
+            });
+        }
 
-        // Auto-disable 1-message trial if Google Switch is turned OFF
-        if (!el.checked) config.isOneMessageTrialEnabled = false;
-
-        await API.updateConfig('review_mode_config', config);
-
-        showSystemToast("Compliance Changed", `Mode: ${el.checked ? 'REVIEW' : 'LIVE'}`, el.checked ? 'bg-red-500' : 'bg-emerald-500');
+        await API.updateConfig('special_offers', { offers });
+        showSystemToast("Offers Updated", "Special plans broadcasted to app", 'bg-pink-500');
         loadMonetization();
-    } catch (e) {
-        el.checked = !el.checked;
-        showSystemToast("Sync Error", "Server not responding", 'bg-red-500');
+    } catch (err) {
+        showSystemToast("Save Failed", "API communication error", 'bg-red-500');
     }
 }
 
@@ -706,9 +792,11 @@ async function toggleOneMessageTrial(el) {
         const reviewData = await API.getConfig('review_mode_config').catch(e => ({ success: false, config: {} }));
         const config = reviewData.config || {};
         config.isOneMessageTrialEnabled = el.checked;
+        config.freeMessageLimit = parseInt(document.getElementById('free_message_limit').value) || 1;
+
         await API.updateConfig('review_mode_config', config);
 
-        showSystemToast("Trial Config Updated", `1-Message Trial: ${el.checked ? 'ENABLED' : 'DISABLED'}`, 'bg-orange-500');
+        showSystemToast("Trial Config Updated", `Message Limit: ${config.freeMessageLimit} (${el.checked ? 'ENABLED' : 'DISABLED'})`, 'bg-orange-500');
         loadMonetization();
     } catch (e) {
         el.checked = !el.checked;

@@ -9,14 +9,15 @@ class GooglePlayProvider extends PaymentProvider {
         this.packageName = 'com.gogo.dating'; // Default package name
     }
 
-    async createOrder({ phone, amount }) {
-        // Use configured product ID from monetization settings if available
-        const productId = this.config.productId || 'gogo_monthy_199';
+    async createOrder({ phone, amount, productId: overrideProductId, googlePlaySubId }) {
+        // Use overrideProductId if passed from Offer Page, otherwise fallback to global config
+        const productId = overrideProductId || this.config.productId || 'gogo_monthy_199';
 
         return {
             success: true,
             orderId: `gp_${Date.now()}`,
             productId: productId,
+            googlePlaySubId: googlePlaySubId,
             gateway: 'google_play'
         };
     }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:gogo/core/guards/access_guard.dart';
 import 'package:gogo/core/services/presence_manager.dart';
+import 'package:gogo/core/services/ad_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/features/chat/screens/chat_screen.dart';
@@ -326,7 +326,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
             physics: const BouncingScrollPhysics(),
             slivers: [
               SliverAppBar(
-                expandedHeight: 280,
+                expandedHeight: AdService().shouldShowAds ? 120 : 280,
                 pinned: true,
                 stretch: true,
                 backgroundColor: const Color(0xFF1C1421), // Baingani Black
@@ -355,8 +355,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                           ),
                         ),
                       ),
-                      // Background pattern/icon
-                      Center(child: Icon(Icons.person_rounded, size: 120, color: Colors.white.withValues(alpha: 0.03))),
+                      // Background pattern/icon area (Only show if NO ads are being displayed)
+                      if (!AdService().shouldShowAds)
+                        Center(
+                          child: Icon(Icons.person_rounded, size: 120, color: Colors.white.withValues(alpha: 0.03)),
+                        ),
                       // Top Overlay for better visibility of back button
                       Container(
                         decoration: BoxDecoration(
@@ -384,6 +387,10 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (AdService().shouldShowAds) ...[
+                          Center(child: AdService().getMediumRectangleAdWidget()),
+                          const SizedBox(height: 32), // Clear gap between Ad and User Profile info
+                        ],
                         // Name and Status
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -539,19 +546,28 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        AccessGuard().runWithAccessCheck(
-                          context, 
-                          onAllowed: () async {
-                            ChatPage.navigate(
-                              context,
-                              name: _name,
-                              receiverPhone: widget.phone,
-                              distance: _distance,
-                              position: _position,
-                            );
-                          }
-                        );
+                    onTap: () {
+                        if (AdService().shouldShowAds) {
+                          AdService().showInterstitialAd(
+                            onAdClosed: () {
+                              ChatPage.navigate(
+                                context,
+                                name: _name,
+                                receiverPhone: widget.phone,
+                                distance: _distance,
+                                position: _position,
+                              );
+                            }
+                          );
+                        } else {
+                          ChatPage.navigate(
+                            context,
+                            name: _name,
+                            receiverPhone: widget.phone,
+                            distance: _distance,
+                            position: _position,
+                          );
+                        }
                       },
                       child: const Center(
                         child: Row(

@@ -1,12 +1,9 @@
 import 'dart:convert';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/notification_service.dart';
-import 'package:gogo/core/services/app_config_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 
 class AuthRepository {
@@ -14,63 +11,43 @@ class AuthRepository {
   factory AuthRepository() => _instance;
   AuthRepository._internal();
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  
-  User? get currentFirebaseUser => _auth.currentUser;
-
-  Future<void> logout() async {
+  Future<Map<String, dynamic>> sendOTP(String phone) async {
     try {
-      await _auth.signOut();
-      await UserRepository().updateLocalUser({}); // Clear user data
+      final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
+      final response = await ApiService.post('/api/user/send-otp', {'phone': normalizedPhone});
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': data['success'] == true, 'message': data['message'], 'reqId': data['reqId']};
+      }
+      return {'success': false, 'message': 'Server error'};
     } catch (e) {
-      debugPrint('Logout error: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 
-  Future<Map<String, dynamic>> handleBackendLogin(String phone) async {
+  Future<Map<String, dynamic>> handleBackendLogin(String phone, {required String otp, required String? reqId}) async {
     try {
       final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
-      
-      // Re-fetch App Config on login
-      await AppConfigService().fetchReviewMode();
-      
-      final String? firebaseToken = await _auth.currentUser?.getIdToken();
-
-      final response = await ApiService.post('/api/user/login', {
-        'phone': normalizedPhone,
-        'firebaseToken': firebaseToken,
-      });
-      
-      final data = jsonDecode(response.body);
-      
-      if (data['success'] == true) {
-        return {
-          'success': true,
-          'user': data['user'],
-          'token': data['token'],
-        };
-      } else {
-        // Try Registration if login fails (New User)
-        final regResponse = await ApiService.post('/api/user/register', {
-          'phone': normalizedPhone,
-          'name': 'User ${normalizedPhone.substring(normalizedPhone.length - 4)}',
-          'age': 18,
-          'isPremium': false,
-          'hasCompletedOnboarding': false,
-          'firebaseToken': firebaseToken,
-        });
-        
-        final regData = jsonDecode(regResponse.body);
-        if (regData['success'] == true) {
-          return {
-            'success': true,
-            'user': regData['user'],
-            'token': regData['token'],
-          };
-        } else {
-          return {'success': false, 'message': regData['message'] ?? 'Registration failed'};
-        }
+      final response = await ApiService.post('/api/user/login', {'phone': normalizedPhone, 'otp': otp, 'reqId': reqId});
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': data['success'] == true, 'user': data['user'], 'token': data['token'], 'needsRegistration': data['needsRegistration']};
       }
+      return {'success': false, 'message': 'Login failed'};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> registerUser({required String phone, required String otp, required String? reqId, required String name, required String gender}) async {
+    try {
+      final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
+      final response = await ApiService.post('/api/user/register', {'phone': normalizedPhone, 'otp': otp, 'reqId': reqId, 'name': name, 'gender': gender});
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': data['success'] == true, 'user': data['user'], 'token': data['token']};
+      }
+      return {'success': false, 'message': 'Registration failed'};
     } catch (e) {
       return {'success': false, 'message': e.toString()};
     }
@@ -78,12 +55,10 @@ class AuthRepository {
 
   Future<void> saveSession(dynamic userData, String? token) async {
     await UserRepository().updateLocalUser(userData);
-    
     if (token != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', token);
     }
-    
     await NotificationService.updateTokenToServer();
   }
 }

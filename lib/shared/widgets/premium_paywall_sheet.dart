@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
+import 'package:gogo/shared/screens/offer_screen.dart';
 
 class PremiumPaywall {
   static void show(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const TrialOnboardingScreen(), // Using your existing screen as a sheet
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const OfferScreen()),
     );
   }
 

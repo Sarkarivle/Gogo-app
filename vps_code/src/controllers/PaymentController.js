@@ -5,22 +5,6 @@ const { normalize } = require('../utils/phoneUtils');
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'GOGO_ADMIN_SUPER_SECRET_2024';
 
-/**
- * Shared Logic to determine if user should be in Standard Mode
- * (Duplicate from UserController for reliability)
- */
-function determineStandardMode(user, config) {
-    if (!config) return false;
-    if (config.isReviewMode === true) return true;
-    if (config.isGradualEnabled === true && user) {
-        if (!config.monetizationStartDate) return false;
-        const userCreated = new Date(user.createdAt).getTime();
-        const monetizationStart = new Date(config.monetizationStartDate).getTime();
-        return userCreated < monetizationStart;
-    }
-    return false;
-}
-
 exports.getPublicSettings = async (req, res) => {
     try {
         const [payConfig, gpConfig, reviewConfig] = await Promise.all([
@@ -48,26 +32,18 @@ exports.getPublicSettings = async (req, res) => {
         }
 
         const config = reviewConfig?.value || {};
-        const isStandardMode = determineStandardMode(user, config);
 
         // Trial logic: Trial is only allowed if global trial is enabled
-        // AND user is either a Reviewer (Global ON) OR a New User (Standard OFF)
-        // OLD USERS (Standard ON) should NOT be restricted by 1-msg trial if Gradual is ON
         let isOneMessageTrialEnabled = config.isOneMessageTrialEnabled === true;
 
-        if (isStandardMode && config.isReviewMode === false && config.isGradualEnabled === true) {
-            // This is an OLD USER in Hybrid mode -> Force trial OFF (Unlimited Access)
-            isOneMessageTrialEnabled = false;
-        }
-
-        console.log(`🛡️ Compliance: User=${user?.phone || 'Guest'}, Mode=${isStandardMode ? 'STANDARD' : 'LIVE'}, Trial=${isOneMessageTrialEnabled}`);
+        console.log(`🛡️ Compliance: User=${user?.phone || 'Guest'}, Trial=${isOneMessageTrialEnabled}`);
 
         res.json({
             success: true,
-            isStandardMode: isStandardMode,
             isOneMessageTrialEnabled: isOneMessageTrialEnabled,
             isScreenshotDisabled: config.isScreenshotDisabled !== false,
             activeGateway: settings.activeGateway || 'razorpay',
+            buildVersion: "1.0.2-multi-id-fix", // Added to verify deployment
             config: {
                 isUpiEnabled: settings.isUpiEnabled !== false,
                 isGooglePlayEnabled: gpSettings.isEnabled === true || settings.isGooglePlayEnabled === true,
@@ -77,19 +53,90 @@ exports.getPublicSettings = async (req, res) => {
         });
     } catch (e) {
         console.error("getPublicSettings Error:", e);
-        res.json({ success: true, isStandardMode: false, activeGateway: 'razorpay', config: { isUpiEnabled: true, isGooglePlayEnabled: false } });
+        res.json({ success: true, activeGateway: 'razorpay', config: { isUpiEnabled: true, isGooglePlayEnabled: false } });
+    }
+};
+
+exports.getReviewModeConfig = async (req, res) => {
+    try {
+        const config = await Config.findOne({ key: 'review_mode_config' });
+        res.json({
+            success: true,
+            config: config?.value || {
+                isOneMessageTrialEnabled: false,
+                isScreenshotDisabled: true
+            }
+        });
+    } catch (e) {
+        res.json({ success: false, message: e.message });
+    }
+};
+
+exports.getAdsSettings = async (req, res) => {
+    try {
+        const config = await Config.findOne({ key: 'ads_settings' });
+        res.json({
+            success: true,
+            config: config?.value || {
+                isEnabled: false,
+                freeUsersOnly: true,
+                activeProvider: 'google',
+                frequencyMinutes: 5,
+                google: {
+                    bannerId: '',
+                    interstitialId: '',
+                    rewardedId: '',
+                    nativeId: ''
+                }
+            }
+        });
+    } catch (e) {
+        res.json({ success: false, message: e.message });
+    }
+};
+
+exports.getSpecialOffers = async (req, res) => {
+    try {
+        const config = await Config.findOne({ key: 'special_offers' });
+
+        const defaultOffers = [
+            { id: 'daily', name: '1 Day Free', price: 19, duration: 1, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' },
+            { id: 'weekly', name: '7 Days Access', price: 100, duration: 7, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' },
+            { id: 'monthly', name: '1 Month Premium', price: 199, duration: 30, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' }
+        ];
+
+        let resultConfig = config?.value || { offers: defaultOffers };
+
+        // Migration logic: Ensure existing DB records get the new field structure
+        if (resultConfig.offers && Array.isArray(resultConfig.offers)) {
+            resultConfig.offers = resultConfig.offers.map(offer => ({
+                googlePlaySubId: '', // Default if missing
+                ...offer
+            }));
+        } else {
+            resultConfig.offers = defaultOffers;
+        }
+
+        res.json({
+            success: true,
+            buildVersion: "1.0.2-multi-id-fix", // For verification
+            config: resultConfig
+        });
+    } catch (e) {
+        console.error("getSpecialOffers Error:", e);
+        res.json({ success: false, message: e.message });
     }
 };
 
 exports.createOrder = async (req, res) => {
     try {
-        let { phone, preferredGateway } = req.body;
+        let { phone, preferredGateway, amount, offerId, googlePlayId, googlePlaySubId, duration } = req.body;
         if (req.user && !req.user.role) phone = req.user.phone;
 
         if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
         const normalizedPhone = normalize(phone);
 
-        const orderData = await PaymentService.createOrder(normalizedPhone, preferredGateway);
+        const orderData = await PaymentService.createOrder(normalizedPhone, preferredGateway, { amount, offerId, googlePlayId, googlePlaySubId, duration });
         res.json(orderData);
     } catch (error) {
         console.error("Create Order Error:", error);
@@ -120,11 +167,21 @@ exports.syncUserStatus = async (req, res) => {
         if (!phone) return res.status(401).json({ success: false, message: "Unauthorized" });
 
         const io = req.app.get('socketio');
-        // If it's an admin request (has role), we can explicitly sync with provider
+
+        // Real-time: Sync with provider for EVERYONE when they check status
+        // This ensures Next Bill Date and Auto-Renew status are always accurate from Gateway
         let result;
-        if (req.user?.role || req.admin) {
-            result = await PaymentService.syncWithProvider(phone, io);
-        } else {
+        try {
+            const syncResult = await PaymentService.syncWithProvider(phone, io);
+            const statusResult = await PaymentService.syncUserStatus(phone);
+            result = {
+                ...statusResult,
+                user: syncResult.user,
+                subscription: syncResult.user.subscription,
+                paymentHistory: (syncResult.user.paymentHistory || []).slice(-10)
+            };
+        } catch (syncErr) {
+            console.error("Provider sync failed, falling back to DB:", syncErr.message);
             result = await PaymentService.syncUserStatus(phone);
         }
 

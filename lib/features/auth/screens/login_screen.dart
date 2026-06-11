@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sms_autofill/sms_autofill.dart';
@@ -22,28 +21,24 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   final _phoneController = TextEditingController();
-  final List<TextEditingController> _otpControllers = List.generate(6, (index) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
+  final List<TextEditingController> _otpControllers = List.generate(4, (index) => TextEditingController());
+  final List<FocusNode> _focusNodes = List.generate(4, (index) => FocusNode());
   
   bool _isLoading = false;
-  bool _isOlderThan18 = true;
-  String? _verificationId;
   bool _showOTPView = false;
   int _resendTimerCount = 30;
   Timer? _timer;
+  String? _currentReqId;
   Map<String, String> policyUrls = {};
-
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   static const _channel = MethodChannel('com.gogo.app/phone_hint');
 
   @override
   void codeUpdated() {
-    if (code != null && code!.length == 6) {
-      debugPrint("OTP Auto-Retrieved: $code");
+    if (code != null && code!.length == 4) {
       if (mounted) {
         setState(() {
-          for (int i = 0; i < 6; i++) {
+          for (int i = 0; i < 4; i++) {
             _otpControllers[i].text = code![i];
           }
         });
@@ -56,19 +51,36 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
   void initState() {
     super.initState();
     UserRepository().trackEvent('login_page_open');
-    _listenForSms();
-    // Show phone hint as soon as screen loads
+    listenForCode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showPhoneHint();
     });
     _fetchPolicies();
   }
 
-  void _listenForSms() async {
-    listenForCode();
-    // Get and print app signature for production SMS formatting
-    SmsAutoFill().getAppSignature.then((signature) {
-      debugPrint("App Signature for SMS Retriever API: $signature");
+  @override
+  void dispose() {
+    cancel();
+    _phoneController.dispose();
+    for (var c in _otpControllers) {
+      c.dispose();
+    }
+    for (var f in _focusNodes) {
+      f.dispose();
+    }
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _resendTimerCount = 30;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_resendTimerCount == 0) {
+        timer.cancel();
+      } else if (mounted) {
+        setState(() => _resendTimerCount--);
+      }
     });
   }
 
@@ -95,19 +107,14 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
     final urlString = policyUrls[type];
     if (urlString == null || urlString.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Link not available yet')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link not available yet')));
       }
       return;
     }
-
     final Uri url = Uri.parse(urlString);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch link')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch link')));
       }
     }
   }
@@ -116,96 +123,38 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
     try {
       final String? result = await _channel.invokeMethod('showPhoneHint');
       if (result != null && result.isNotEmpty) {
-        // Step 1: Remove all non-digit characters
         String digits = result.replaceAll(RegExp(r'[^0-9]'), '');
-        
-        // Step 2: Extract last 10 digits if it's an Indian number
-        String finalNumber = digits;
-        if (digits.length >= 10) {
-          finalNumber = digits.substring(digits.length - 10);
-        }
-
-        setState(() {
-          _phoneController.text = finalNumber;
-        });
-
-        // Step 3: Auto-send OTP only if we have exactly 10 digits
+        String finalNumber = digits.length >= 10 ? digits.substring(digits.length - 10) : digits;
+        setState(() => _phoneController.text = finalNumber);
         if (finalNumber.length == 10) {
           _sendOTP();
         }
       }
-    } on PlatformException catch (e) {
-      debugPrint("Phone Hint Error: ${e.message}");
+    } catch (e) {
+      debugPrint("Phone hint error: $e");
     }
-  }
-
-  @override
-  void dispose() {
-    cancel(); // Cancel SMS listener
-    _phoneController.dispose();
-    for (var controller in _otpControllers) {
-      controller.dispose();
-    }
-    for (var node in _focusNodes) {
-      node.dispose();
-    }
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _startTimer() {
-    _resendTimerCount = 30;
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_resendTimerCount == 0) {
-        timer.cancel();
-      } else {
-        setState(() => _resendTimerCount--);
-      }
-    });
   }
 
   Future<void> _sendOTP() async {
     String phone = _phoneController.text.trim();
     if (phone.length < 10) {
-      _showSnackBar('Please enter a valid mobile number');
-      return;
+      return _showSnackBar('Please enter a valid mobile number');
     }
     
-    // Normalize: Add +91 only if no country code is present
-    String fullPhoneNumber = phone.startsWith('+') ? phone : '+91$phone';
-
-    if (!_isOlderThan18) {
-      _showSnackBar('You must be 18+ to use this app');
-      return;
-    }
     setState(() => _isLoading = true);
     try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: fullPhoneNumber,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          await _auth.signInWithCredential(credential);
-          if (mounted) {
-            _showSnackBar('Phone number verified automatically! ⚡');
-            _handleBackendLogin(phone);
-          }
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          setState(() => _isLoading = false);
-          _showSnackBar('Verification Failed: ${e.message}');
-        },
-        codeSent: (String verId, int? resendToken) {
-          setState(() {
-            _verificationId = verId;
-            _isLoading = false;
-            _showOTPView = true;
-          });
-          _listenForSms(); // Start listening again when code is sent
-          _startTimer();
-        },
-        codeAutoRetrievalTimeout: (String verId) => _verificationId = verId,
-        timeout: const Duration(seconds: 60),
-      );
+      final result = await AuthRepository().sendOTP(phone);
+      if (result['success'] == true) {
+        setState(() {
+          _isLoading = false;
+          _showOTPView = true;
+          _currentReqId = result['reqId'];
+        });
+        _startTimer();
+      } else {
+        setState(() => _isLoading = false);
+        _showSnackBar(result['message'] ?? 'Failed to send OTP');
+      }
     } catch (e) {
       setState(() => _isLoading = false);
       _showSnackBar('Error: $e');
@@ -214,47 +163,41 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
 
   Future<void> _verifyOTP() async {
     String otp = _otpControllers.map((e) => e.text).join();
-    if (otp.length < 6) return;
+    if (otp.length < 4) return;
+    
     setState(() => _isLoading = true);
+    final String phone = _phoneController.text.trim();
+    
     try {
-      PhoneAuthCredential credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: otp,
-      );
-      await _auth.signInWithCredential(credential);
-      final String phone = _phoneController.text.trim();
-      UserRepository().trackEvent('otp_verified', customId: phone);
-      _handleBackendLogin(phone);
-    } catch (e) {
-      setState(() => _isLoading = false);
-      _showSnackBar('Invalid OTP');
-    }
-  }
-
-  Future<void> _handleBackendLogin(String phone) async {
-    try {
-      setState(() => _isLoading = true);
-      final result = await AuthRepository().handleBackendLogin(phone);
-      
+      final result = await AuthRepository().handleBackendLogin(phone, otp: otp, reqId: _currentReqId);
       if (result['success'] == true) {
-        _saveUserAndGoHome(result['user'], result['token']);
+        await AuthRepository().saveSession(result['user'], result['token']);
+        if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LocationPermissionScreen()));
+      } else if (result['needsRegistration'] == true) {
+        _handleAutoRegister(phone, otp);
       } else {
-        _showSnackBar(result['message'] ?? 'Login failed');
+        _showSnackBar(result['message'] ?? 'Invalid OTP');
       }
     } catch (e) {
-      _showSnackBar(e.toString());
+      _showSnackBar('Verification failed');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _saveUserAndGoHome(dynamic userData, String? token) async {
-    await AuthRepository().saveSession(userData, token);
-    if (mounted) {
-      Navigator.pushReplacement(
-        context, 
-        MaterialPageRoute(builder: (context) => const LocationPermissionScreen())
-      );
+  Future<void> _handleAutoRegister(String phone, String otp) async {
+    final regResult = await AuthRepository().registerUser(
+      phone: phone, 
+      otp: otp, 
+      reqId: _currentReqId, 
+      name: 'User ${phone.substring(phone.length - 4)}', 
+      gender: 'Male'
+    );
+    if (regResult['success'] == true) {
+      await AuthRepository().saveSession(regResult['user'], regResult['token']);
+      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LocationPermissionScreen()));
+    } else {
+      _showSnackBar(regResult['message'] ?? 'Registration failed');
     }
   }
 
@@ -264,34 +207,28 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
 
   @override
   Widget build(BuildContext context) {
-    final bool isStandard = AppConfigService().isStandardMode;
-
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       body: Stack(
         children: [
-          // Background Gradient/Image
+          // 1. Background Gradient
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFF2A0D17), // Deep Wine from Onboarding
-                    Color(0xFF0F0F0F),
-                    Color(0xFF0F0F0F),
-                  ],
+                  colors: [Color(0xFF2A0D17), Color(0xFF0F0F0F), Color(0xFF0F0F0F)],
                 ),
               ),
             ),
           ),
           
-          // Subtle Image Overlay
+          // 2. Image Overlay
           Positioned(
             top: 0, left: 0, right: 0,
             child: Opacity(
-              opacity: 0.2, // Reduced from 0.4 to make background less visible
+              opacity: 0.2,
               child: Container(
                 height: MediaQuery.of(context).size.height * 0.4,
                 decoration: BoxDecoration(
@@ -314,7 +251,6 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
                 padding: const EdgeInsets.symmetric(horizontal: 30),
                 child: Column(
                   children: [
-                    // Dynamic Spacer that shrinks when keyboard opens
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       height: MediaQuery.of(context).viewInsets.bottom > 0 
@@ -322,16 +258,15 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
                           : MediaQuery.of(context).size.height * 0.25,
                     ),
                     
-                    // Welcome Header
                     Text(
-                      _showOTPView ? 'Verify Identity' : (isStandard ? 'GoGo' : 'Welcome to GoGo'), 
+                      _showOTPView ? 'Verify Identity' : 'Welcome to GoGo', 
                       style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1)
                     ),
                     const SizedBox(height: 8),
                     Text(
                       _showOTPView 
-                        ? 'Enter the 6-digit code sent to\n+91 ${_phoneController.text}'
-                        : (isStandard ? 'Sign in to continue' : 'Connect with amazing people nearby'),
+                        ? 'Enter code sent to +91 ${_phoneController.text}'
+                        : 'Connect with amazing people nearby',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 15, color: Colors.white.withValues(alpha: 0.6), height: 1.4),
                     ),
@@ -342,7 +277,7 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12), // Increased opacity (less transparent)
+                        color: Colors.white.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(25),
                         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                       ),
@@ -351,20 +286,18 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
                           if (!_showOTPView) _buildPhoneInput() else _buildOTPInput(),
                           const SizedBox(height: 24),
                           
-                          // Action Button
                           SizedBox(
                             width: double.infinity, height: 56,
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : (_showOTPView ? _verifyOTP : _sendOTP),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isStandard ? Colors.orangeAccent : Colors.pinkAccent,
+                                backgroundColor: Colors.pinkAccent,
                                 foregroundColor: Colors.white,
-                                elevation: 0,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               ),
                               child: _isLoading 
                                 ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                                : Text(_showOTPView ? 'VERIFY' : 'GET OTP', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                : Text(_showOTPView ? 'VERIFY' : 'GET OTP', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ],
@@ -407,7 +340,6 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
         TextField(
           controller: _phoneController,
           keyboardType: TextInputType.phone,
-          autofillHints: const [AutofillHints.telephoneNumber, AutofillHints.username],
           style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             hintText: 'Phone Number', 
@@ -427,54 +359,49 @@ class _LoginScreenState extends State<LoginScreen> with CodeAutoFill {
             ),
             filled: true, 
             fillColor: Colors.white.withValues(alpha: 0.05),
-            contentPadding: const EdgeInsets.symmetric(vertical: 20),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide(color: Colors.pinkAccent.withValues(alpha: 0.5))),
           ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            SizedBox(
-              height: 24, width: 24,
-              child: Checkbox(
-                value: _isOlderThan18, 
-                activeColor: Colors.pinkAccent, 
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                onChanged: (val) => setState(() => _isOlderThan18 = val!)
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text('I confirm that I am 18 or older', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
-          ],
         ),
       ],
     );
   }
 
   Widget _buildOTPInput() {
-    return PinFieldAutoFill(
-      decoration: BoxLooseDecoration(
-        strokeColorBuilder: FixedColorBuilder(Colors.pinkAccent.withValues(alpha: 0.5)),
-        bgColorBuilder: FixedColorBuilder(Colors.white.withValues(alpha: 0.05)),
-        strokeWidth: 1.5,
-        radius: const Radius.circular(12),
-        gapSpace: 8,
-        textStyle: const TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
-      ),
-      currentCode: code,
-      onCodeChanged: (val) {
-        if (val != null && val.length == 6) {
-          for (int i = 0; i < 6; i++) {
-            _otpControllers[i].text = val[i];
-          }
-          _verifyOTP();
-        }
-      },
-      codeLength: 6,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(4, (index) {
+        return SizedBox(
+          width: 55,
+          child: TextField(
+            controller: _otpControllers[index],
+            focusNode: _focusNodes[index],
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            maxLength: 1,
+            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              counterText: "",
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.05),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white10)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.pinkAccent.withValues(alpha: 0.5))),
+            ),
+            onChanged: (value) {
+              if (value.isNotEmpty && index < 3) {
+                _focusNodes[index + 1].requestFocus();
+              } else if (value.isEmpty && index > 0) {
+                _focusNodes[index - 1].requestFocus();
+              }
+              if (_otpControllers.every((c) => c.text.isNotEmpty)) {
+                _verifyOTP();
+              }
+            },
+          ),
+        );
+      }),
     );
   }
-
 
   Widget _buildPolicyText() {
     return Center(

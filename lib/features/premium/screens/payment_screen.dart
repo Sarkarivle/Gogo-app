@@ -16,7 +16,25 @@ import 'package:gogo/features/premium/repositories/payment_repository.dart';
 
 class PaymentScreen extends StatefulWidget {
   final bool autoStart;
-  const PaymentScreen({super.key, this.autoStart = false});
+  final String? offerId;
+  final String? offerName;
+  final int? price;
+  final int? duration;
+  final String? googlePlayId;
+  final String? googlePlaySubId;
+  final String? rzpPlanId;
+
+  const PaymentScreen({
+    super.key, 
+    this.autoStart = false,
+    this.offerId,
+    this.offerName,
+    this.price,
+    this.duration,
+    this.googlePlayId,
+    this.googlePlaySubId,
+    this.rzpPlanId,
+  });
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -26,7 +44,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   late ConfettiController _confettiController;
   bool _isLoading = false;
   String? _currentOrderId;
-  String _activeGateway = "razorpay";
+  String _activeGateway = "google_play";
   bool _isTrialAvailable = true;
   int _joinedCount = 51;
   String _userCity = "आस-पास";
@@ -170,7 +188,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       UserRepository().trackEvent('payment_started', customId: phone);
 
-      final orderData = await PaymentService.createOrder(phone, gateway: preferredGateway);
+      final orderData = await PaymentService.createOrder(
+        phone, 
+        gateway: preferredGateway,
+        amount: widget.price,
+        offerId: widget.rzpPlanId ?? widget.offerId,
+        googlePlayId: widget.googlePlayId,
+        googlePlaySubId: widget.googlePlaySubId,
+        duration: widget.duration,
+        isSubscription: true,
+      );
       
       if (orderData['success'] == true) {
         final gateway = orderData['gateway']?.toString().toLowerCase() ?? _activeGateway;
@@ -178,7 +205,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
         final handler = PaymentService.getHandler(gateway);
         await handler.initiatePayment(
-          {...orderData, 'phone': phone},
+          {
+            ...orderData, 
+            'phone': phone, 
+            'googlePlayId': widget.googlePlayId,
+            'googlePlaySubId': widget.googlePlaySubId
+          },
           (data) => _handlePaymentSuccess(data),
           (err) => _showError(err)
         );
@@ -288,8 +320,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    String tomorrowDayMonth = DateFormat('dd MMM').format(DateTime.now().add(const Duration(days: 1)));
-    String validityDate = "$tomorrowDayMonth 2026";
+    String validityDate = DateFormat('dd MMM yyyy').format(DateTime.now().add(Duration(days: widget.duration ?? 30)));
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
@@ -333,7 +364,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             Icon(Icons.timer_outlined, size: 14, color: Colors.red.shade400),
                             const SizedBox(width: 8),
                             RichText(text: TextSpan(style: TextStyle(color: Colors.red.shade400, fontSize: 10, fontWeight: FontWeight.bold), children: [
-                              const TextSpan(text: "₹1 ऑफर सिर्फ "),
+                              TextSpan(text: "₹${widget.price ?? 1} ऑफर सिर्फ "),
                               TextSpan(text: _formatTime(_secondsRemaining), style: const TextStyle(color: Colors.white, backgroundColor: Colors.red)),
                               const TextSpan(text: " मिनट के लिए मान्य"),
                             ])),
@@ -355,7 +386,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_isTrialAvailable ? "Monthly Plan" : "Premium Gold", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(widget.offerName ?? (_isTrialAvailable ? "Monthly Plan" : "Premium Gold"), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                             Text("Valid till $validityDate", style: const TextStyle(color: Colors.grey, fontSize: 9)),
                           ],
                         ),
@@ -533,6 +564,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   const SizedBox(width: 12),
                                   const Text("Google Play", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                                   const Spacer(),
+                                  if (widget.googlePlayId != null && widget.googlePlayId!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 12),
+                                      child: Text(
+                                        widget.googlePlayId!,
+                                        style: const TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
                                   const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                                 ],
                               ),

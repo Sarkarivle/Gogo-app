@@ -48,7 +48,7 @@ class PaymentService {
         }
     }
 
-    static async createOrder(phone, preferredGateway) {
+    static async createOrder(phone, preferredGateway, overrides = {}) {
         try {
             const normalizedPhone = normalize(phone);
             const provider = await this.getProvider(preferredGateway);
@@ -60,11 +60,14 @@ class PaymentService {
             const user = await User.findOne(phoneQuery(normalizedPhone));
             const hasUsedTrial = user?.subscription?.hasUsedTrial || false;
 
-            let amount = hasUsedTrial ? (settings.monthlyPrice || 199) : (settings.trialPrice || 1);
-            let planId = null;
+            let amount = overrides.amount || (hasUsedTrial ? (settings.monthlyPrice || 199) : (settings.trialPrice || 1));
+            let planId = overrides.offerId || null;
+            let googlePlayId = overrides.googlePlayId || null;
+            let googlePlaySubId = overrides.googlePlaySubId || null;
+            let duration = overrides.duration || (amount < 10 ? 1 : 30);
 
-            // OVERRIDE IF WIN-BACK OFFER IS APPLICABLE
-            if (hasUsedTrial && !user.isPremium) {
+            // OVERRIDE IF WIN-BACK OFFER IS APPLICABLE (Only if no explicit amount override)
+            if (!overrides.amount && hasUsedTrial && !user.isPremium) {
                 const now = new Date();
                 const trialEnd = new Date(user.subscription?.trialEndDate || user.subscription?.lastPaymentDate);
                 const daysSinceTrial = Math.floor((now - trialEnd) / (1000 * 60 * 60 * 24));
@@ -81,9 +84,11 @@ class PaymentService {
             const orderData = await provider.createOrder({
                 phone: normalizedPhone,
                 amount,
-                isSubscription: true,
-                isTrial: !hasUsedTrial,
-                overridePlanId: planId // Pass specific plan ID if needed
+                isSubscription: true, // This is now always true for Autopay
+                isTrial: amount < 10,
+                overridePlanId: planId,
+                productId: googlePlayId,
+                googlePlaySubId: googlePlaySubId
             });
 
             if (orderData.success && orderData.orderId) {
@@ -93,7 +98,7 @@ class PaymentService {
                     gateway: orderData.gateway,
                     amount: amount,
                     status: 'PENDING',
-                    metadata: orderData
+                    metadata: { ...orderData, duration, offerId: planId }
                 });
             }
             return orderData;
@@ -111,18 +116,20 @@ class PaymentService {
         // LOGIC: If upfront setup fee is below 10, it's a trial
         const isTrial = transaction.amount < 10;
 
-        // FIX: Stop "Extra Month" stacking.
-        // Use exact expiry from provider if available, otherwise fallback to 'now + duration'
+        // SIMPLE FIX: Trust the Payment Provider's data first
+        // Priority: next_billing_at > current_period_end > start_at > fallback logic
         let newExpiry;
-        if (transaction.current_period_end) {
-            newExpiry = new Date(transaction.current_period_end * 1000);
+        const providerNextBill = transaction.next_billing_at || transaction.current_period_end || transaction.start_at;
+
+        if (providerNextBill) {
+            newExpiry = new Date(providerNextBill * 1000);
         } else if (transaction.metadata?.expiryTimeMillis) {
             // Google Play specific from verification
             newExpiry = new Date(parseInt(transaction.metadata.expiryTimeMillis));
         } else {
-            // FALLBACK: Use 'now' as base to prevent stacking multiple months during testing
-            const durationHours = isTrial ? 24 : (30 * 24);
-            newExpiry = new Date(now.getTime() + (durationHours * 60 * 60 * 1000));
+            // Fallback: If provider gives nothing, use duration
+            const durationDays = transaction.metadata?.duration || (isTrial ? 1 : 30);
+            newExpiry = new Date(now.getTime() + (durationDays * 24 * 60 * 60 * 1000));
         }
 
         const planName = isTrial ? `₹${transaction.amount || 1} Trial Gold` : 'Monthly Gold';
@@ -136,6 +143,22 @@ class PaymentService {
         });
 
         if (alreadyProcessed) {
+            // WEBHOOK UPDATE: If transaction exists but expiry is newer, update it (Handles Razorpay race condition)
+            if (transaction.current_period_end) {
+                const webhookExpiry = new Date(transaction.current_period_end * 1000);
+                const currentExpiry = alreadyProcessed.premiumExpiry;
+
+                if (!currentExpiry || webhookExpiry > currentExpiry) {
+                    console.log(`📡 Updating expiry from Webhook for ${normalizedPhone}: ${webhookExpiry}`);
+                    await User.updateOne(phoneQuery(normalizedPhone), {
+                        $set: {
+                            premiumExpiry: webhookExpiry,
+                            'subscription.nextBillingDate': webhookExpiry,
+                            'subscription.status': isTrial ? 'trial_active' : 'active'
+                        }
+                    });
+                }
+            }
             console.log(`⚠️ Skip: Transaction ${transactionId} already processed for ${phone}`);
             return alreadyProcessed;
         }
@@ -219,10 +242,20 @@ class PaymentService {
                     amount = plan.item.amount / 100;
                 } catch (e) {}
 
+                // Status Mapping for Razorpay
+                let status = 'expired';
+                if (subDetails.status === 'active') status = 'active';
+                else if (subDetails.status === 'authenticated') status = 'trial_active';
+                else if (subDetails.status === 'cancelled') status = 'cancelled';
+
+                // SIMPLE LOGIC: Razorpay provides 'next_billing_at' as the source of truth
+                const nextBillTimestamp = subDetails.next_billing_at || subDetails.current_end || subDetails.start_at;
+                const nextBill = nextBillTimestamp ? new Date(nextBillTimestamp * 1000) : null;
+
                 updatedData = {
-                    status: subDetails.status === 'active' ? 'active' : (subDetails.status === 'cancelled' ? 'cancelled' : 'expired'),
-                    nextBillingDate: subDetails.current_end ? new Date(subDetails.current_end * 1000) : null,
-                    autoRenew: subDetails.status === 'active',
+                    status: status,
+                    nextBillingDate: nextBill,
+                    autoRenew: ['active', 'authenticated', 'pending'].includes(subDetails.status),
                     amount: amount
                 };
             } else if (gateway === 'google_play') {
@@ -299,23 +332,6 @@ class PaymentService {
 
         const config = await Config.findOne({ key: 'payment_settings' });
         const settings = config?.value || {};
-        const reviewConfig = await Config.findOne({ key: 'review_mode_config' });
-
-        let isStandardMode = false;
-        if (reviewConfig && reviewConfig.value) {
-            const rc = reviewConfig.value;
-            if (rc.isReviewMode === true) {
-                isStandardMode = true;
-            } else if (rc.isGradualEnabled === true) {
-                const userCreated = new Date(user.createdAt).getTime();
-                const monetizationStart = rc.monetizationStartDate ? new Date(rc.monetizationStartDate).getTime() : Date.now();
-                if (userCreated < monetizationStart) {
-                    isStandardMode = true;
-                }
-            }
-        }
-
-        if (isStandardMode) return { isPremium: false, status: 'review_mode', isStandardMode: true };
 
         const now = new Date();
         let offerData = null;
@@ -349,8 +365,10 @@ class PaymentService {
             isPremium: user.isPremium,
             status: user.subscription?.status || 'none',
             expiry: user.premiumExpiry,
-            offer: offerData,
-            isStandardMode: false
+            premiumPlan: user.premiumPlan,
+            subscription: user.subscription,
+            paymentHistory: (user.paymentHistory || []).slice(-10), // Include recent history for real-time update
+            offer: offerData
         };
     }
 
@@ -438,8 +456,9 @@ class PaymentService {
                     try {
                         const subId = paymentData.razorpay_subscription_id || orderId;
                         const subDetails = await provider.client.subscriptions.fetch(subId);
-                        if (subDetails && subDetails.current_end) {
-                            currentPeriodEnd = subDetails.current_end; // This is the source of truth
+                        if (subDetails) {
+                            // Priority: next_billing_at > current_end > start_at
+                            currentPeriodEnd = subDetails.next_billing_at || subDetails.current_end || subDetails.start_at;
                         }
                     } catch (err) { console.error("Error fetching sub details:", err); }
                 }
@@ -532,12 +551,13 @@ class PaymentService {
                     userPhone: normalizedPhone, gateway,
                     amount: result.amount || 0, status: 'SUCCESS',
                     gatewayTransactionId: result.paymentId || result.purchaseToken,
-                    current_period_end: result.current_period_end
+                    current_period_end: result.next_billing_at || result.current_period_end || result.start_at
                 });
             } else {
                 transaction.status = 'SUCCESS';
                 if (result.paymentId) transaction.gatewayTransactionId = result.paymentId;
-                if (result.current_period_end) transaction.current_period_end = result.current_period_end;
+                const bestDate = result.next_billing_at || result.current_period_end || result.start_at;
+                if (bestDate) transaction.current_period_end = bestDate;
                 await transaction.save();
             }
 

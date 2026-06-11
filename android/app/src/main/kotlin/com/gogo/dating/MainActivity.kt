@@ -4,14 +4,24 @@ import android.app.Activity
 import android.content.Intent
 import android.content.IntentSender
 import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
 import android.view.WindowManager
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.RatingBar
+import android.widget.TextView
 import androidx.annotation.NonNull
 import com.google.android.gms.auth.api.identity.GetPhoneNumberHintIntentRequest
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.ads.nativead.NativeAd
+import com.google.android.gms.ads.nativead.NativeAdView
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugins.googlemobileads.GoogleMobileAdsPlugin
+import com.gogo.dating.R
 
 class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.gogo.app/phone_hint"
@@ -26,6 +36,12 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
+        // Register Native Ad Factory
+        GoogleMobileAdsPlugin.registerNativeAdFactory(
+            flutterEngine, "listTile", ListTileNativeAdFactory(layoutInflater)
+        )
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "showPhoneHint" -> {
@@ -46,6 +62,11 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        super.cleanUpFlutterEngine(flutterEngine)
+        GoogleMobileAdsPlugin.unregisterNativeAdFactory(flutterEngine, "listTile")
     }
 
     private fun showPhoneHint() {
@@ -89,5 +110,40 @@ class MainActivity : FlutterFragmentActivity() {
             }
             pendingResult = null
         }
+    }
+}
+
+class ListTileNativeAdFactory(private val layoutInflater: LayoutInflater) : GoogleMobileAdsPlugin.NativeAdFactory {
+    override fun createNativeAd(
+        nativeAd: NativeAd,
+        customOptions: MutableMap<String, Any>?
+    ): NativeAdView {
+        val adView = layoutInflater.inflate(R.layout.list_tile_native_ad, null) as NativeAdView
+
+        adView.headlineView = adView.findViewById(R.id.ad_headline)
+        adView.bodyView = adView.findViewById(R.id.ad_body)
+        adView.callToActionView = adView.findViewById(R.id.ad_call_to_action)
+        adView.mediaView = adView.findViewById(R.id.ad_media)
+
+        (adView.headlineView as TextView).text = nativeAd.headline
+        adView.mediaView?.setMediaContent(nativeAd.mediaContent!!)
+
+        if (nativeAd.body == null) {
+            adView.bodyView?.visibility = View.INVISIBLE
+        } else {
+            adView.bodyView?.visibility = View.VISIBLE
+            (adView.bodyView as TextView).text = nativeAd.body
+        }
+
+        if (nativeAd.callToAction == null) {
+            adView.callToActionView?.visibility = View.INVISIBLE
+        } else {
+            adView.callToActionView?.visibility = View.VISIBLE
+            (adView.callToActionView as Button).text = nativeAd.callToAction
+        }
+
+        adView.setNativeAd(nativeAd)
+
+        return adView
     }
 }

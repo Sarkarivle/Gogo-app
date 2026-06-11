@@ -7,7 +7,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
-import 'package:gogo/core/guards/access_guard.dart';
 import 'package:gogo/core/services/presence_manager.dart';
 import 'package:gogo/core/services/typing_manager.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
@@ -619,33 +618,28 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
 
   void _openChat(dynamic chat) async {
     HapticFeedback.lightImpact();
-    AccessGuard().runWithAccessCheck(
-      context, 
-      onAllowed: () async {
-        if (!mounted) return;
+    if (!mounted) return;
 
-        final partnerPhone = chat['phone'];
-        
-        // Optimistic UI: Clear unreads locally for instant feedback
-        _setChatRead(partnerPhone);
+    final partnerPhone = chat['phone'];
+    
+    // Optimistic UI: Clear unreads locally for instant feedback
+    _setChatRead(partnerPhone);
 
-        await ChatPage.navigate(
-          context,
-          name: chat['name'],
-          receiverPhone: partnerPhone,
-          distance: chat['dist_str'] ?? '',
-          position: chat['position'] ?? chat['pos'] ?? '',
-        );
-        
-        // Refresh local cache and UI on return to ensure order is correct 
-        // without necessarily hitting the network if not needed.
-        if (mounted) {
-          setState(() {
-            _updateFilterCache();
-          });
-        }
-      }
+    await ChatPage.navigate(
+      context,
+      name: chat['name'],
+      receiverPhone: partnerPhone,
+      distance: chat['dist_str'] ?? '',
+      position: chat['position'] ?? chat['pos'] ?? '',
     );
+    
+    // Refresh local cache and UI on return to ensure order is correct 
+    // without necessarily hitting the network if not needed.
+    if (mounted) {
+      setState(() {
+        _updateFilterCache();
+      });
+    }
   }
 
   void _setChatRead(String phone) {

@@ -139,6 +139,8 @@ class RazorpayProvider extends PaymentProvider {
             userPhone: (payment && payment.notes) ? payment.notes.phone : (subscription && subscription.notes ? subscription.notes.phone : null),
             status: status,
             current_period_end: subscription ? subscription.current_end : null,
+            next_billing_at: subscription ? subscription.next_billing_at : null,
+            start_at: subscription ? subscription.start_at : null,
             raw: payload
         };
     }

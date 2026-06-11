@@ -427,8 +427,10 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                       flex: 2,
                       child: GestureDetector(
                         onTap: () {
-                          Navigator.pop(sheetContext);
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
+                          if (_isUpiEnabled) {
+                            Navigator.pop(sheetContext);
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
+                          }
                         },
                         behavior: HitTestBehavior.opaque,
                         child: Row(
@@ -439,19 +441,24 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                                 color: Colors.white,
                                 shape: BoxShape.circle,
                               ),
-                              child: Image.asset(
-                                'assets/gpay_logo.png',
-                                height: 20,
-                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 20),
-                              ),
+                              child: _isGooglePlayEnabled && !_isUpiEnabled 
+                                ? const Icon(Icons.shop_rounded, color: Colors.blue, size: 20)
+                                : Image.asset(
+                                    'assets/gpay_logo.png',
+                                    height: 20,
+                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 20),
+                                  ),
                             ),
                             const SizedBox(width: 10),
-                            const Column(
+                            Column(
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
-                                Text("GPay", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
+                                Text(
+                                  _isGooglePlayEnabled && !_isUpiEnabled ? "Play Store" : "GPay / UPI", 
+                                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)
+                                ),
                               ],
                             ),
                           ],
@@ -838,7 +845,9 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                       flex: 2,
                       child: GestureDetector(
                         onTap: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
+                          if (_isUpiEnabled) {
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
+                          }
                         },
                         behavior: HitTestBehavior.opaque,
                         child: Row(
@@ -849,25 +858,31 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                                 color: Colors.white,
                                 shape: BoxShape.circle,
                               ),
-                              child: Image.asset(
-                                'assets/gpay_logo.png',
-                                height: 22,
-                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 22),
-                              ),
+                              child: _isGooglePlayEnabled && !_isUpiEnabled 
+                                ? const Icon(Icons.shop_rounded, color: Colors.blue, size: 22)
+                                : Image.asset(
+                                    'assets/gpay_logo.png',
+                                    height: 22,
+                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 22),
+                                  ),
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500)),
+                                  const Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500)),
                                   Row(
                                     children: [
                                       Flexible(
-                                        child: Text("GPay", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                                        child: Text(
+                                          _isGooglePlayEnabled && !_isUpiEnabled ? "Play Store" : "GPay / UPI", 
+                                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold), 
+                                          overflow: TextOverflow.ellipsis
+                                        ),
                                       ),
-                                      Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
+                                      if (_isUpiEnabled) const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
                                     ],
                                   ),
                                 ],
