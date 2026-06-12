@@ -23,7 +23,44 @@ abstract class PaymentHandler {
 }
 
 class RazorpayHandler implements PaymentHandler {
-  final Razorpay _razorpay = Razorpay();
+  static final Razorpay _razorpay = Razorpay();
+  static bool _listenersSet = false;
+  
+  static void Function(Map<String, dynamic>)? _currentSuccess;
+  static void Function(String)? _currentError;
+  static String? _currentSubId;
+
+  void _setupListeners() {
+    if (_listenersSet) return;
+    
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse res) {
+      if (_currentSuccess != null) {
+        _currentSuccess!({
+          'paymentId': res.paymentId,
+          'orderId': res.orderId ?? _currentSubId,
+          'signature': res.signature,
+          'razorpay_subscription_id': _currentSubId,
+          'gateway': 'razorpay'
+        });
+        _currentSuccess = null;
+        _currentError = null;
+      }
+    });
+    
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse res) {
+      if (_currentError != null) {
+        _currentError!(res.message ?? "Payment Failed");
+        _currentSuccess = null;
+        _currentError = null;
+      }
+    });
+    
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse res) {
+      _currentError?.call("External wallet not supported");
+    });
+    
+    _listenersSet = true;
+  }
 
   @override
   Future<void> initiatePayment(
@@ -31,30 +68,17 @@ class RazorpayHandler implements PaymentHandler {
     void Function(Map<String, dynamic>) onSuccess, 
     void Function(String) onError,
   ) async {
-    final subId = data['subscription']?['id'] ?? data['orderId'];
+    _setupListeners();
+    
+    _currentSuccess = onSuccess;
+    _currentError = onError;
+    _currentSubId = data['subscription']?['id'] ?? data['orderId'];
+    
     final rzpKey = data['keyId'];
-    
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse res) {
-      onSuccess({
-        'paymentId': res.paymentId,
-        'orderId': res.orderId ?? subId,
-        'signature': res.signature,
-        'razorpay_subscription_id': subId,
-        'gateway': 'razorpay'
-      });
-    });
-    
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse res) {
-      onError(res.message ?? "Payment Failed");
-    });
-    
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse res) {
-      onError("External wallet not supported");
-    });
     
     var options = {
       'key': rzpKey,
-      if (data['subscription'] != null) 'subscription_id': subId else 'order_id': subId,
+      if (data['subscription'] != null) 'subscription_id': _currentSubId else 'order_id': _currentSubId,
       'name': 'GoGo Premium',
       'description': 'Premium Subscription Activation',
       'prefill': {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,6 +15,7 @@ class UserRepository {
 
   final ValueNotifier<Map<String, dynamic>?> userNotifier = ValueNotifier<Map<String, dynamic>?>(null);
   SharedPreferences? _prefs;
+  Completer<void>? _initCompleter;
 
   // Profile Cache for performance
   static final Map<String, Map<String, dynamic>> _profileCache = {};
@@ -28,11 +30,21 @@ class UserRepository {
   }
 
   Future<void> initialize() async {
-    _prefs = await SharedPreferences.getInstance();
-    final userDataStr = _prefs?.getString('user_data');
-    if (userDataStr != null) {
-      userNotifier.value = jsonDecode(userDataStr);
+    if (_initCompleter != null) return _initCompleter!.future;
+    _initCompleter = Completer<void>();
+    
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      final userDataStr = _prefs?.getString('user_data');
+      if (userDataStr != null) {
+        userNotifier.value = jsonDecode(userDataStr);
+      }
+      _initCompleter!.complete();
+    } catch (e) {
+      _initCompleter!.completeError(e);
+      _initCompleter = null; // Reset for retry if needed
     }
+    return _initCompleter!.future;
   }
 
   Future<void> updateLocation(String phone, {bool force = false}) async {
@@ -40,32 +52,19 @@ class UserRepository {
     await LocationRepository().updateLocation(normalizedPhone, force: force);
   }
 
-  bool _isInitializing = false;
   Future<Map<String, dynamic>?> getCurrentUser() async {
     if (userNotifier.value != null) return userNotifier.value;
     
-    if (_isInitializing) {
-      // Wait for existing initialization to finish
-      await Future.delayed(const Duration(milliseconds: 100));
-      return userNotifier.value;
-    }
-
-    _isInitializing = true;
-    try {
-      _prefs ??= await SharedPreferences.getInstance();
-      final userDataStr = _prefs?.getString('user_data');
-      if (userDataStr != null) {
-        final Map<String, dynamic> userData = jsonDecode(userDataStr);
-        if (userData['profileImages'] != null) {
-          userData['profileImages'] = (userData['profileImages'] as List)
-            .map((img) => ApiService.getSecureUrl(img))
-            .toList();
-        }
-        userNotifier.value = userData;
-        return userData;
+    await initialize();
+    
+    if (userNotifier.value != null) {
+      final Map<String, dynamic> userData = Map<String, dynamic>.from(userNotifier.value!);
+      if (userData['profileImages'] != null && userData['profileImages'] is List) {
+        userData['profileImages'] = (userData['profileImages'] as List)
+          .map((img) => img is String ? ApiService.getSecureUrl(img) : img)
+          .toList();
       }
-    } finally {
-      _isInitializing = false;
+      return userData;
     }
     return null;
   }
@@ -153,17 +152,23 @@ class UserRepository {
         userData['phone'] = PhoneUtils.normalize(userData['phone']);
       }
       
-      // Ensure we create a NEW instance to trigger ValueListenableBuilder correctly
-      final freshData = Map<String, dynamic>.from(userData);
+      final String newDataStr = jsonEncode(userData);
+      final String? oldDataStr = _prefs?.getString('user_data');
       
-      await _prefs?.setString('user_data', jsonEncode(freshData));
-      userNotifier.value = freshData;
+      // OPTIMIZATION: Only update and trigger listeners if data has actually changed
+      if (newDataStr != oldDataStr) {
+        // Ensure we create a NEW instance to trigger ValueListenableBuilder correctly
+        final freshData = jsonDecode(newDataStr) as Map<String, dynamic>;
+        
+        await _prefs?.setString('user_data', newDataStr);
+        userNotifier.value = freshData;
 
-      // UPDATE CACHE: Prevent stale data overwriting fresh syncs
-      if (freshData['phone'] != null) {
-        final normalized = PhoneUtils.normalize(freshData['phone']) ?? freshData['phone'];
-        _profileCache[normalized] = freshData;
-        _profileCacheTime[normalized] = DateTime.now().millisecondsSinceEpoch;
+        // UPDATE CACHE: Prevent stale data overwriting fresh syncs
+        if (freshData['phone'] != null) {
+          final normalized = PhoneUtils.normalize(freshData['phone']) ?? freshData['phone'];
+          _profileCache[normalized] = freshData;
+          _profileCacheTime[normalized] = DateTime.now().millisecondsSinceEpoch;
+        }
       }
     }
   }

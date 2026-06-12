@@ -110,20 +110,13 @@ class PremiumService {
 
     try {
       // 1. Force fetch fresh config from backend (Bypassing cache for compliance)
-      await AppConfigService().fetchReviewMode(forceRefresh: true);
-      
-      // 2. Sync Subscription & User Data
-      // This hits /api/payment/sync-status with cache busting
-      await syncSubscription();
+      // Parallelize config fetch and subscription sync
+      await Future.wait([
+        AppConfigService().fetchReviewMode(forceRefresh: true),
+        syncSubscription(),
+      ]);
 
-      // 3. Fallback: If for some reason we need even more data, fetch full profile
-      final userData = UserRepository().currentUser;
-      if (userData != null && userData['phone'] != null) {
-        // fetchProfile has cache busting and updates local user if changed
-        await UserRepository().fetchProfile(userData['phone']!, forceRefresh: true);
-      }
-
-      // 4. Final state re-evaluation
+      // 2. Final state re-evaluation
       hasAccess; 
       
       debugPrint('🔔 Real-time Access Updated: ${accessNotifier.value}, Status: ${statusNotifier.value}');

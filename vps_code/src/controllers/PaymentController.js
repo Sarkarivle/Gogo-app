@@ -16,15 +16,15 @@ exports.getPublicSettings = async (req, res) => {
         const settings = payConfig?.value || {};
         const gpSettings = gpConfig?.value || {};
 
-        // HYBRID FIX: Manually check for token to identify user
-        let user = null;
+        // OPTIMIZATION: Extract user info from token without hitting DB (it's only used for logging)
+        let userId = 'Guest';
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             try {
                 const token = authHeader.split(' ')[1];
                 const decoded = jwt.verify(token, JWT_SECRET);
                 if (decoded && decoded.phone) {
-                    user = await User.findOne({ phone: normalize(decoded.phone) });
+                    userId = decoded.phone;
                 }
             } catch (err) {
                 // Ignore invalid tokens
@@ -36,7 +36,7 @@ exports.getPublicSettings = async (req, res) => {
         // Trial logic: Trial is only allowed if global trial is enabled
         let isOneMessageTrialEnabled = config.isOneMessageTrialEnabled === true;
 
-        console.log(`🛡️ Compliance: User=${user?.phone || 'Guest'}, Trial=${isOneMessageTrialEnabled}`);
+        console.log(`🛡️ Compliance: User=${userId}, Trial=${isOneMessageTrialEnabled}`);
 
         res.json({
             success: true,
