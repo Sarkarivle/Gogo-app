@@ -14,24 +14,30 @@ class ForceUpdateCoordinator {
     if (_isModalShowing) return;
 
     final config = await AppConfigService().fetchAppUpdateConfig(forceRefresh: forceRefresh);
-    if (config == null || !config.forceUpdateEnabled) return;
+    if (config == null) return;
 
     final isRequired = await AppConfigService().isUpdateRequired();
     if (isRequired) {
-      _showUpdateModal(config);
+      _showUpdateModal(config, isForce: true);
+      return;
+    }
+
+    final isOptional = await AppConfigService().isOptionalUpdateAvailable();
+    if (isOptional) {
+      _showUpdateModal(config, isForce: false);
     }
   }
 
-  void _showUpdateModal(AppUpdateConfig config) {
+  void _showUpdateModal(AppUpdateConfig config, {required bool isForce}) {
     final context = MyApp.navigatorKey.currentContext;
     if (context == null || _isModalShowing) return;
 
     _isModalShowing = true;
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: !isForce,
       useSafeArea: false,
-      builder: (context) => ForceUpdateDialog(config: config),
+      builder: (context) => ForceUpdateDialog(config: config, isForce: isForce),
     ).then((_) {
       _isModalShowing = false;
     });

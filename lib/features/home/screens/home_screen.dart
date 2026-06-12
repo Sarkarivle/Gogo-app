@@ -567,28 +567,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                     }
 
                     final p = _profiles[profileIndex];
-                    return RepaintBoundary(
-                      child: ValueListenableBuilder<bool>(
-                        valueListenable: PresenceManager().getStatusNotifier(p['phone'], p['isOnline'] ?? false),
-                        builder: (context, isOnline, _) {
-                          return ProfileCard(
-                            distance: p['calculated_dist'] ?? 'Unknown',
-                            fullDistance: p['full_dist'],
-                            city: p['city'] ?? '',
-                            area: p['area'] ?? '',
-                            name: p['name'] ?? 'Unknown',
-                            phone: p['phone'] ?? '',
-                            nameColor: const Color(0xFFC69C55),
-                            age: p['age'] ?? 20,
-                            position: p['position'] ?? 'Top',
-                            havePlace: p['havePlace'] ?? 'NO',
-                            isVerified: p['isVerified'] ?? false,
-                            isOnline: isOnline,
-                            likedBy: (i + 1) * 12,
-                            hideFarDistance: true,
-                          );
-                        },
-                      ),
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: PresenceManager().getStatusNotifier(p['phone'], p['isOnline'] ?? false),
+                      builder: (context, isOnline, _) {
+                        return ProfileCard(
+                          distance: p['calculated_dist'] ?? 'Unknown',
+                          fullDistance: p['full_dist'],
+                          city: p['city'] ?? '',
+                          area: p['area'] ?? '',
+                          name: p['name'] ?? 'Unknown',
+                          phone: p['phone'] ?? '',
+                          nameColor: const Color(0xFFC69C55),
+                          age: p['age'] ?? 20,
+                          position: p['position'] ?? 'Top',
+                          havePlace: p['havePlace'] ?? 'NO',
+                          isVerified: p['isVerified'] ?? false,
+                          isOnline: isOnline,
+                          likedBy: (i + 1) * 12,
+                          hideFarDistance: true,
+                        );
+                      },
                     );
                   },
                 ),

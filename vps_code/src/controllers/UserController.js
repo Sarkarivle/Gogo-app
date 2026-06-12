@@ -384,7 +384,14 @@ exports.updateFcmToken = async (req, res) => {
 };
 exports.submitVerification = async (req, res) => res.json({ success: true });
 exports.markTrialUsed = async (req, res) => res.json({ success: true });
-exports.getPublicConfig = async (req, res) => res.json({ success: true, config: {} });
+exports.getPublicConfig = async (req, res) => {
+    try {
+        const config = await Config.findOne({ key: req.params.key });
+        res.json({ success: true, config: config ? config.value : {} });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+};
 exports.reportUser = async (req, res) => res.json({ success: true });
 exports.updatePremium = async (req, res) => res.json({ success: true });
 exports.deactivateAccount = async (req, res) => res.json({ success: true });

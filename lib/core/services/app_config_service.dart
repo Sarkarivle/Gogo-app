@@ -206,12 +206,37 @@ class AppConfigService {
 
   Future<bool> isUpdateRequired() async {
     final config = await fetchAppUpdateConfig();
-    if (config == null || !config.forceUpdateEnabled) return false;
+    if (config == null) return false;
 
     final packageInfo = await PackageInfo.fromPlatform();
     final currentVersion = packageInfo.version;
 
-    return _compareVersions(currentVersion, config.latestVersion) < 0;
+    // A force update is required if:
+    // 1. Force update policy is enabled in admin
+    // 2. Current version is less than the minimum supported version
+    if (config.forceUpdateEnabled) {
+      if (_compareVersions(currentVersion, config.minimumSupportedVersion) < 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  Future<bool> isOptionalUpdateAvailable() async {
+    final config = await fetchAppUpdateConfig();
+    if (config == null) return false;
+
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentVersion = packageInfo.version;
+
+    // An optional update is available if current version is less than latest version
+    // AND it's not already a required (forced) update
+    if (_compareVersions(currentVersion, config.latestVersion) < 0) {
+      return true;
+    }
+
+    return false;
   }
 
   int _compareVersions(String v1, String v2) {

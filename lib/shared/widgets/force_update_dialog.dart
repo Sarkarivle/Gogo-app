@@ -5,22 +5,25 @@ import 'package:gogo/core/services/app_config_service.dart';
 
 class ForceUpdateDialog extends StatelessWidget {
   final AppUpdateConfig config;
+  final bool isForce;
 
-  const ForceUpdateDialog({super.key, required this.config});
+  const ForceUpdateDialog({
+    super.key,
+    required this.config,
+    this.isForce = true,
+  });
 
   Future<void> _launchUpdate() async {
     final url = Uri.parse(config.playStoreUrl);
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      // Handle error or fallback
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: !isForce,
       child: Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 20),
@@ -113,18 +116,32 @@ class ForceUpdateDialog extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => SystemNavigator.pop(),
-                      child: Text(
-                        'EXIT APP',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1,
+                    if (isForce)
+                      TextButton(
+                        onPressed: () => SystemNavigator.pop(),
+                        child: Text(
+                          'EXIT APP',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      )
+                    else
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(
+                          'MAYBE LATER',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),

@@ -526,13 +526,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             if (forceRefresh) {
               final optimisticOnes = _messages.where((m) => m.status == MessageStatus.sending || m.status == MessageStatus.error).toList();
               
-              // Dispose the ones we are discarding to prevent memory leaks
-              for (var m in _messages) {
-                if (m.status != MessageStatus.sending && m.status != MessageStatus.error) {
-                  m.dispose();
-                }
-              }
-              
               _messages.clear();
               _messageLookup.clear();
 
@@ -550,8 +543,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 }
               }
             } else if (fetched.isNotEmpty) {
-              // Dispose old ones
-              for (var m in _messages) { m.dispose(); }
               _messages.clear();
               _messageLookup.clear();
               for (var m in fetched) {
@@ -855,40 +846,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(displayName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: PresenceManager().getStatusNotifier(widget.receiverPhone, false),
-                    builder: (context, isOnline, _) {
-                      final String status = isOnline ? 'Online Now' : displayPosition;
-                      
-                      // 1. Extract only digits and ensure minimum 0.5 km
-                      String dStr = "";
-                      final match = RegExp(r"(\d+(\.\d+)?)").firstMatch(displayDistance);
-                      if (match != null) {
-                        double? dVal = double.tryParse(match.group(1)!);
-                        if (dVal != null && dVal < 0.5) dVal = 0.5;
-                        dStr = "${dVal?.toStringAsFixed(1) ?? match.group(1)} km";
-                      }
-
-                      return Text.rich(
-                        TextSpan(
-                          style: const TextStyle(fontSize: 11),
-                          children: [
-                            if (dStr.isNotEmpty) ...[
-                              TextSpan(text: dStr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-                              const TextSpan(text: ' • ', style: TextStyle(color: Colors.white54)),
-                            ],
-                            TextSpan(
-                              text: status,
-                              style: TextStyle(color: isOnline ? Colors.greenAccent : Colors.white54),
-                            ),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      );
-                    },
+                  _ChatAppBarTitle(
+                    name: displayName,
+                    distance: displayDistance,
+                    position: displayPosition,
+                    phone: widget.receiverPhone,
                   ),
                 ],
               ),
@@ -1519,6 +1481,63 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         textAlign: TextAlign.center,
         style: TextStyle(color: Colors.white38),
       ),
+    );
+  }
+}
+
+class _ChatAppBarTitle extends StatelessWidget {
+  final String name;
+  final String distance;
+  final String position;
+  final String phone;
+
+  const _ChatAppBarTitle({
+    required this.name,
+    required this.distance,
+    required this.position,
+    required this.phone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        ValueListenableBuilder<bool>(
+          valueListenable: PresenceManager().getStatusNotifier(phone, false),
+          builder: (context, isOnline, _) {
+            final String status = isOnline ? 'Online Now' : position;
+            
+            String dStr = "";
+            final match = RegExp(r"(\d+(\.\d+)?)").firstMatch(distance);
+            if (match != null) {
+              double? dVal = double.tryParse(match.group(1)!);
+              if (dVal != null && dVal < 0.5) dVal = 0.5;
+              dStr = "${dVal?.toStringAsFixed(1) ?? match.group(1)} km";
+            }
+
+            return Text.rich(
+              TextSpan(
+                style: const TextStyle(fontSize: 11),
+                children: [
+                  if (dStr.isNotEmpty) ...[
+                    TextSpan(text: dStr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+                    const TextSpan(text: ' • ', style: TextStyle(color: Colors.white54)),
+                  ],
+                  TextSpan(
+                    text: status,
+                    style: TextStyle(color: isOnline ? Colors.greenAccent : Colors.white54),
+                  ),
+                ],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          },
+        ),
+      ],
     );
   }
 }
