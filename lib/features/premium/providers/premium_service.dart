@@ -205,7 +205,15 @@ class PremiumService {
                 updatedData['paymentHistory'] = data['paymentHistory'];
               }
 
+              if (data['offer'] != null) {
+                AppConfigService().setDynamicOffer(data['offer']);
+              }
+
               await UserRepository().updateLocalUser(updatedData);
+            }
+            
+            if (data['offer'] != null) {
+              AppConfigService().setDynamicOffer(data['offer']);
             }
             
             // Re-evaluate local access logic labels

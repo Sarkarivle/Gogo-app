@@ -86,7 +86,7 @@ exports.getInbox = async (req, res) => {
                 phone: other,
                 msg: conv.lastMessage?.message || '',
                 type: conv.lastMessage?.type || 'text',
-                timestamp: conv.lastMessage?.timestamp || new Date(),
+                timestamp: conv.lastMessage?.timestamp || conv.updatedAt || new Date(),
                 name: u.name || 'User',
                 unread: conv.unreadCount || 0,
                 isOnline: onlineSet.has(other) || u.isOnline || false,

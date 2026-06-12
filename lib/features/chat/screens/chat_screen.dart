@@ -31,7 +31,7 @@ import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/features/chat/widgets/chat_widgets.dart';
 import 'package:gogo/features/premium/repositories/premium_repository.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
-import 'package:gogo/shared/screens/offer_screen.dart';
+import 'package:gogo/shared/screens/offer_trial_screen.dart';
 import 'package:gogo/features/reviews/widgets/review_modal.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/core/services/ad_service.dart';
@@ -112,6 +112,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   late int _targetAdCount;
   bool _hasShownReview = false;
 
+  // Receiver Profile Data
+  String? _receiverName;
+  String? _receiverDistance;
+  String? _receiverPosition;
+  String? _receiverCity;
+  String? _receiverArea;
+  int? _receiverAge;
+  bool? _isReceiverVerified;
+  String? _receiverHavePlace;
+
   @override
   void initState() {
     super.initState();
@@ -161,6 +171,29 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Future<void> _initChat() async {
     try {
+      // 0. Load receiver profile from cache immediately for instant UI
+      final cachedProfile = UserRepository().getCachedProfile(widget.receiverPhone);
+      if (cachedProfile != null) {
+        _receiverName = cachedProfile['name'];
+        _receiverDistance = cachedProfile['distance'] ?? cachedProfile['distanceStr'];
+        _receiverPosition = cachedProfile['position'];
+        _receiverCity = cachedProfile['city'];
+        _receiverArea = cachedProfile['area'];
+        
+        final rawAge = cachedProfile['age'];
+        if (rawAge != null) {
+          _receiverAge = rawAge is int ? rawAge : int.tryParse(rawAge.toString()) ?? 0;
+        } else if (cachedProfile['dobYear'] != null) {
+          final year = int.tryParse(cachedProfile['dobYear'].toString());
+          if (year != null && year > 1900) {
+            _receiverAge = DateTime.now().year - year;
+          }
+        }
+        
+        _isReceiverVerified = cachedProfile['isVerified'] == true;
+        _receiverHavePlace = cachedProfile['havePlace'];
+      }
+
       final userData = UserRepository().currentUser ?? await UserRepository().getCurrentUser();
       if (userData != null) {
         _myPhone = PhoneUtils.normalize(userData['phone']);
@@ -188,10 +221,41 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       // 2. BACKGROUND SYNC: Silent refresh to get latest from server
       if (mounted) {
         _fetchHistory(forceRefresh: true);
+        _fetchReceiverProfile();
       }
     } catch (e) {
       debugPrint("🚨 [CHAT] Init Error: $e");
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchReceiverProfile() async {
+    try {
+      final userData = await UserRepository().fetchProfile(widget.receiverPhone);
+      if (userData != null && mounted) {
+        setState(() {
+          _receiverName = userData['name'];
+          _receiverDistance = userData['distance'] ?? userData['distanceStr'];
+          _receiverPosition = userData['position'];
+          _receiverCity = userData['city'];
+          _receiverArea = userData['area'];
+          
+          final rawAge = userData['age'];
+          if (rawAge != null) {
+            _receiverAge = rawAge is int ? rawAge : int.tryParse(rawAge.toString()) ?? 0;
+          } else if (userData['dobYear'] != null) {
+            final year = int.tryParse(userData['dobYear'].toString());
+            if (year != null && year > 1900) {
+              _receiverAge = DateTime.now().year - year;
+            }
+          }
+
+          _isReceiverVerified = userData['isVerified'] == true;
+          _receiverHavePlace = userData['havePlace'];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching receiver profile: $e");
     }
   }
 
@@ -758,6 +822,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final displayName = _receiverName ?? widget.name;
+    final displayDistance = _receiverDistance ?? widget.distance;
+    final displayPosition = _receiverPosition ?? widget.position;
+
     return AppBar(
       backgroundColor: const Color(0xFF1C1421), // Baingani Black
       elevation: 0,
@@ -766,9 +834,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         onTap: () => ProfileDetailPage.navigate(
           context, 
           phone: widget.receiverPhone, 
-          name: widget.name,
-          distance: widget.distance,
-          position: widget.position,
+          name: displayName,
+          distance: displayDistance,
+          position: displayPosition,
+          city: _receiverCity ?? "Unknown",
+          area: _receiverArea ?? "Unknown",
+          age: _receiverAge ?? 0,
+          havePlace: _receiverHavePlace ?? "Unknown",
+          isVerified: _isReceiverVerified ?? false,
           showMessageButton: false,
         ),
         child: Row(
@@ -782,16 +855,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(displayName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 2),
                   ValueListenableBuilder<bool>(
                     valueListenable: PresenceManager().getStatusNotifier(widget.receiverPhone, false),
                     builder: (context, isOnline, _) {
-                      final String status = isOnline ? 'Online Now' : widget.position;
+                      final String status = isOnline ? 'Online Now' : displayPosition;
                       
                       // 1. Extract only digits and ensure minimum 0.5 km
                       String dStr = "";
-                      final match = RegExp(r"(\d+(\.\d+)?)").firstMatch(widget.distance);
+                      final match = RegExp(r"(\d+(\.\d+)?)").firstMatch(displayDistance);
                       if (match != null) {
                         double? dVal = double.tryParse(match.group(1)!);
                         if (dVal != null && dVal < 0.5) dVal = 0.5;
@@ -834,20 +907,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ),
         IconButton(
           icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: widget.name, phone: widget.receiverPhone))),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: displayName, phone: widget.receiverPhone))),
         ),
       ],
     );
   }
 
   void _handleCall(bool isVideo) async {
+    final displayName = _receiverName ?? widget.name;
     if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call')) {
       return;
     }
 
     final hasPermission = await PermissionManager().checkAndRequestCallPermissions(context, isVideo: isVideo);
     if (hasPermission) {
-      CallService().startCall(widget.receiverPhone, widget.name, isVideo: isVideo);
+      CallService().startCall(widget.receiverPhone, displayName, isVideo: isVideo);
     }
   }
 
@@ -1390,14 +1464,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               children: [
                 Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
                 const SizedBox(height: 16),
-                ListTile(
-                  leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent),
-                  title: const Text('Reply', style: TextStyle(color: Colors.white)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _replyingTo = m);
-                  },
-                ),
+                if (m.type != 'call_log')
+                  ListTile(
+                    leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent),
+                    title: const Text('Reply', style: TextStyle(color: Colors.white)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _replyingTo = m);
+                    },
+                  ),
                 if (m.type == 'text' && m.text != null)
                   ListTile(
                     leading: const Icon(Icons.copy_rounded, color: Colors.orangeAccent),
@@ -1408,7 +1483,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Text copied to clipboard')));
                     },
                   ),
-                if (m.isMe && m.id != null)
+                if (m.isMe && m.id != null && m.type != 'call_log')
                   ListTile(
                     leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
                     title: const Text('Delete for Everyone', style: TextStyle(color: Colors.redAccent)),
@@ -1455,6 +1530,7 @@ class _PulsingDot extends StatefulWidget {
 
 class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+
   @override
   void initState() {
     super.initState();
@@ -1853,6 +1929,7 @@ class ChatMessageTile extends StatelessWidget {
             else if (m.isViewOnce) _buildViewOnceBubble(context, m)
             else if (m.type == 'image' || m.type == 'video') _buildImageMessage(context, m)
             else if (m.type == 'audio') _buildAudioMessage(m)
+            else if (m.type == 'call_log') _buildCallMessage(context, m)
             else _buildTextMessage(context, m),
             
             Padding(
@@ -2184,11 +2261,8 @@ class ChatMessageTile extends StatelessWidget {
   }
 
   void _showOfferPage(BuildContext context) {
-    // We will navigate to the new OfferScreen
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const OfferScreen()),
-    );
+    // We will navigate directly to the OfferTrialScreen
+    OfferTrialScreen.show(context);
   }
 
   Widget _buildViewOncePlaceholder(ChatMessage m) {
@@ -2227,6 +2301,69 @@ class ChatMessageTile extends StatelessWidget {
               child: Text("Audio not available", style: TextStyle(color: Colors.white24, fontSize: 12)),
             ),
     );
+  }
+
+  Widget _buildCallMessage(BuildContext context, ChatMessage m) {
+    final metadata = m.metadata ?? {};
+    final String callType = metadata['callType'] ?? 'audio';
+    final String status = metadata['status'] ?? 'missed';
+    final int duration = (metadata['duration'] as num?)?.toInt() ?? 0;
+    final bool isVideo = callType == 'video';
+
+    IconData icon;
+    String label;
+    Color contentColor = m.isMe ? Colors.black : Colors.white;
+
+    if (status == 'missed' || status == 'no_answer') {
+      icon = isVideo ? Icons.missed_video_call_rounded : Icons.call_missed_rounded;
+      label = m.isMe ? (status == 'no_answer' ? "No Answer" : "Cancelled") : "Missed Call";
+      if (!m.isMe) contentColor = Colors.redAccent;
+    } else if (status == 'rejected') {
+      icon = isVideo ? Icons.videocam_off_rounded : Icons.call_end_rounded;
+      label = "Declined";
+    } else {
+      icon = isVideo ? Icons.videocam_rounded : Icons.call_rounded;
+      label = isVideo ? "Video Call" : "Voice Call";
+      if (duration > 0) {
+        label += " (${_formatDuration(duration)})";
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: m.isMe ? Colors.orangeAccent : const Color(0xFF262626),
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(20),
+          topRight: const Radius.circular(20),
+          bottomLeft: Radius.circular(m.isMe ? 20 : 4),
+          bottomRight: Radius.circular(m.isMe ? 4 : 20),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: contentColor),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: contentColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds < 60) return "${seconds}s";
+    final int minutes = seconds ~/ 60;
+    final int remainingSeconds = seconds % 60;
+    if (remainingSeconds == 0) return "${minutes}m";
+    return "${minutes}m ${remainingSeconds}s";
   }
 
   Widget _buildStatusIcon(MessageStatus status) {

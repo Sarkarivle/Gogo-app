@@ -11,7 +11,7 @@ class GooglePlayProvider extends PaymentProvider {
 
     async createOrder({ phone, amount, productId: overrideProductId, googlePlaySubId }) {
         // Use overrideProductId if passed from Offer Page, otherwise fallback to global config
-        const productId = overrideProductId || this.config.productId || 'gogo_monthy_199';
+        const productId = overrideProductId || this.config.productId || 'gogo_monthly_199';
 
         return {
             success: true,
@@ -70,6 +70,17 @@ class GooglePlayProvider extends PaymentProvider {
 
         let serviceAccount;
         try {
+            // FALLBACK: If DB config is missing, try reading from local file
+            if (!this.config.serviceAccountKey) {
+                const fs = require('fs');
+                const path = require('path');
+                const keyPath = path.join(__dirname, '../../../gp_service_account.json');
+                if (fs.existsSync(keyPath)) {
+                    this.config.serviceAccountKey = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+                    console.log("✅ [Google Play] Service Account Key loaded from local file.");
+                }
+            }
+
             if (!this.config.serviceAccountKey) throw new Error("Service Account Key is missing in config");
 
             serviceAccount = typeof this.config.serviceAccountKey === 'string'
@@ -149,21 +160,48 @@ class GooglePlayProvider extends PaymentProvider {
             const productId = subNote.subscriptionId;
             const notificationType = subNote.notificationType;
 
-            // Mapping Google Notification Types to internal statuses
-            // 2: RENEWED, 3: CANCELED, 12: REVOKED, 13: EXPIRED
+            // Mapping ALL Google Play Notification Types (Professional Mapping)
             let status = 'SUCCESS';
             let event = 'subscription.charged';
 
-            if (notificationType === 3) {
-                status = 'CANCELLED';
-                event = 'subscription.cancelled';
-            } else if (notificationType === 12 || notificationType === 13) {
-                status = 'EXPIRED';
-                event = 'subscription.expired';
-            } else if (notificationType === 2) {
-                status = 'RENEWAL_SUCCESS';
-                event = 'subscription.renewed';
+            switch (notificationType) {
+                case 1: // SUBSCRIPTION_RECOVERED
+                case 2: // SUBSCRIPTION_RENEWED
+                case 7: // SUBSCRIPTION_RESTARTED
+                    status = 'SUCCESS';
+                    event = 'subscription.active';
+                    break;
+                case 3: // SUBSCRIPTION_CANCELED
+                    status = 'CANCELLED';
+                    event = 'subscription.cancelled';
+                    break;
+                case 5: // SUBSCRIPTION_ON_HOLD
+                case 6: // SUBSCRIPTION_IN_GRACE_PERIOD
+                    status = 'PAYMENT_PENDING';
+                    event = 'subscription.on_hold';
+                    break;
+                case 12: // SUBSCRIPTION_REVOKED (Refunded by Google)
+                case 13: // SUBSCRIPTION_EXPIRED
+                    status = 'EXPIRED';
+                    event = 'subscription.expired';
+                    break;
+                case 10: // SUBSCRIPTION_PAUSED
+                    status = 'PAUSED';
+                    event = 'subscription.paused';
+                    break;
+                default:
+                    status = 'SUCCESS';
+                    event = 'subscription.updated';
             }
+
+            return {
+                event: event,
+                purchaseToken: purchaseToken,
+                productId: productId,
+                status: status,
+                notificationType: notificationType,
+                raw: decodedData
+            };
 
             return {
                 event: event,

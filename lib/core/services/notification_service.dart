@@ -88,10 +88,16 @@ class NotificationService {
 
   static void _navigateToChat(Map<String, dynamic> data) {
     final String? phone = data['senderPhone']?.toString() ?? data['callerPhone']?.toString();
-    final String? name = data['senderName']?.toString() ?? data['callerName']?.toString();
+    String? name = data['senderName']?.toString() ?? data['callerName']?.toString();
 
     if (phone != null) {
       _unreadCounts[phone] = 0; // Clear count when navigating
+
+      // Try to get better info from cache if available
+      final cached = UserRepository().getCachedProfile(phone);
+      final String displayName = name ?? cached?['name'] ?? "User";
+      final String displayDistance = cached?['distance'] ?? cached?['distanceStr'] ?? "Nearby";
+      final String displayPosition = data['senderPosition'] ?? cached?['position'] ?? "Member";
 
       final context = MyApp.navigatorKey.currentContext;
       if (context != null) {
@@ -99,16 +105,16 @@ class NotificationService {
           // If it's a call, trigger the incoming call UI immediately
           CallService().handleIncomingCall({
             'callerPhone': phone,
-            'callerName': name ?? "User",
+            'callerName': displayName,
             'isVideo': data['isVideo'] == 'true' || data['isVideo'] == true,
           });
         } else {
           ChatPage.navigate(
             context,
-            name: name ?? "User",
+            name: displayName,
             receiverPhone: phone,
-            distance: "Nearby",
-            position: data['senderPosition'] ?? "Member",
+            distance: displayDistance,
+            position: displayPosition,
           );
         }
       }

@@ -93,6 +93,12 @@ const API = {
     async deleteAccount(phone) {
         return await this.request(`/api/admin/user/${phone}/delete-account`, { method: 'DELETE' });
     },
+    async bulkDeleteUsers(phones) {
+        return await this.request('/api/admin/users/bulk-delete', {
+            method: 'POST',
+            body: JSON.stringify({ phones })
+        });
+    },
     async addAdminUserNote(phone, data) {
         return await this.request(`/api/admin/user/${phone}/note`, {
             method: 'POST',
@@ -226,11 +232,14 @@ const API = {
     async getPaymentHistory(page = 1) {
         return await this.request(`/api/admin/monetization/history?page=${page}`);
     },
-    async broadcastNotification(title, message) {
+    async broadcastNotification(title, message, targets = [], scheduledAt = null) {
         return await this.request('/api/admin/broadcast', {
             method: 'POST',
-            body: JSON.stringify({ title, message })
+            body: JSON.stringify({ title, message, targets, scheduledAt })
         });
+    },
+    async getCampaigns() {
+        return await this.request('/api/admin/campaigns');
     },
     async syncProvider(phone) {
         return await this.request('/api/payment/sync-provider', {

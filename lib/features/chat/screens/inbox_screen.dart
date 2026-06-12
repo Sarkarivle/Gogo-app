@@ -101,6 +101,18 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
   void _prepareChats(List<dynamic> fetchedChats) {
     for (var chat in fetchedChats) {
       chat['nPhone'] = PhoneUtils.normalize(chat['phone'] ?? '') ?? chat['phone'];
+      
+      // Parse timestamp once to avoid repeated parsing during sort
+      if (chat['timestamp'] != null) {
+        try {
+          chat['dt'] = DateTime.parse(chat['timestamp'].toString()).toLocal();
+        } catch (e) {
+          chat['dt'] = DateTime(0);
+        }
+      } else {
+        chat['dt'] = DateTime(0);
+      }
+
       String rawDist = (chat['distance'] ?? '').toString().replaceAll(' away', '').trim();
       if (rawDist.isEmpty && chat['calculated_dist'] != null) {
         rawDist = "${chat['calculated_dist']}km";
@@ -171,8 +183,9 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
           break;
         case 'receive_message':
         case 'conversation_update':
-          final type = data['type'] ?? data['lastMessage']?['type'];
-          final msg = data['message'] ?? data['lastMessage']?['message'];
+          final lm = data['lastMessage'] ?? data;
+          final type = lm['type'];
+          final msg = lm['message'] ?? lm['msg'] ?? data['message'];
           
           if (type == 'audio') {
             chatData['msg'] = '🎵 Voice Message';
@@ -184,7 +197,13 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
             chatData['msg'] = msg;
           }
           
-          chatData['timestamp'] = data['timestamp'] ?? data['lastMessage']?['timestamp'] ?? DateTime.now().toIso8601String();
+          final ts = lm['timestamp'] ?? data['timestamp'] ?? DateTime.now().toIso8601String();
+          chatData['timestamp'] = ts;
+          try {
+            chatData['dt'] = DateTime.parse(ts.toString()).toLocal();
+          } catch (e) {
+            chatData['dt'] = DateTime.now();
+          }
 
           if (data['unreadCount'] != null) {
             chatData['unread'] = data['unreadCount'];
@@ -270,15 +289,18 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
             _chats.addAll(fetchedChats);
             _currentPage++;
           } else {
-            _chats.clear();
-            _chats.addAll(fetchedChats);
+            // Optimization: Only clear if we actually got new chats or it's a fresh load
+            if (fetchedChats.isNotEmpty || _chats.isEmpty) {
+              _chats.clear();
+              _chats.addAll(fetchedChats);
+            }
             _currentPage = 1;
           }
           _hasMore = fetchedChats.length >= 20;
           _updateFilterCache();
         });
         
-        _prefetchTopChats();
+        if (!loadMore) _prefetchTopChats();
       }
     } catch (e) {
       debugPrint("Inbox Fetch Error: $e");
@@ -293,10 +315,10 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
   }
 
   void _updateFilterCache() {
-    // 1. Force sort the main list by timestamp to ensure "Newest First"
+    // 1. Force sort the main list by cached DateTime to ensure "Newest First"
     _chats.sort((a, b) {
-      final t1 = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime(0);
-      final t2 = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime(0);
+      final t1 = a['dt'] as DateTime? ?? DateTime(0);
+      final t2 = b['dt'] as DateTime? ?? DateTime(0);
       return t2.compareTo(t1);
     });
 
@@ -310,11 +332,17 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
       if (_isOnlineOnly) {
         if (!PresenceManager().isOnline(chat['phone'])) return false;
       }
-      if (_selectedDistance != 'Any') {
+
+      // Lenient filtering for missing metadata to prevent "disappearing chats"
+      if (_selectedDistance != 'Any' && chat['calculated_dist'] != null) {
         double maxDist = double.tryParse(_selectedDistance.replaceAll('km', '')) ?? 999.0;
         if ((chat['calculated_dist'] ?? 0.0) > maxDist) return false;
       }
-      if (_selectedPosition != 'Any' && chat['pos'] != _selectedPosition) return false;
+      
+      if (_selectedPosition != 'Any' && chat['pos'] != null && chat['pos'] != _selectedPosition) {
+        return false;
+      }
+
       return true;
     }).toList();
   }
@@ -779,41 +807,16 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
       key: key,
       valueListenable: PresenceManager().getStatusNotifier(nPhone, chat['isOnline'] ?? false),
       builder: (context, isOnline, _) {
-        return TweenAnimationBuilder<double>(
-          key: ValueKey("${chat['phone']}_${chat['timestamp']}"),
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.easeOutCubic,
-          tween: Tween(begin: 0.0, end: 1.0),
-          builder: (context, value, child) {
-            return Transform.translate(
-              offset: Offset(0, 20 * (1 - value)), 
-              child: Opacity(
-                opacity: value.clamp(0.0, 1.0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    // Spotlight Effect: Halka glow jo animation ke saath fade hota hai
-                    color: Colors.orangeAccent.withValues(alpha: 0.08 * (1 - value)),
-                    border: Border.all(
-                      color: Colors.orangeAccent.withValues(alpha: 0.2 * (1 - value)),
-                      width: 1,
-                    ),
-                  ),
-                  child: child,
-                ),
-              ),
-            );
+        return InkWell(
+          onTap: () => _openChat(chat),
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            _showChatActions(chat);
           },
-          child: InkWell(
-            onTap: () => _openChat(chat),
-            onLongPress: () {
-              HapticFeedback.mediumImpact();
-              _showChatActions(chat);
-            },
-            borderRadius: BorderRadius.circular(20),
-            child: ValueListenableBuilder<bool>(
-              valueListenable: TypingManager().getTypingNotifier(nPhone),
-              builder: (context, isTyping, _) {
+          borderRadius: BorderRadius.circular(20),
+          child: ValueListenableBuilder<bool>(
+            valueListenable: TypingManager().getTypingNotifier(nPhone),
+            builder: (context, isTyping, _) {
                 final bool isDeactivated = chat['accountStatus'] == 'Deactivated' || chat['isDeactivated'] == true;
                 final int unreadCount = chat['unread'] ?? 0;
 
@@ -946,7 +949,6 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                 );
               },
             ),
-          ),
         );
       },
     );

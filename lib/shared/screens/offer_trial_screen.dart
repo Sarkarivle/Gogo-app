@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:confetti/confetti.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/core/services/analytics_service.dart';
 import 'package:gogo/features/premium/providers/payment_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
@@ -35,6 +36,42 @@ class OfferTrialScreen extends StatefulWidget {
     this.rzpPlanId,
   });
 
+  static void show(BuildContext context) {
+    final offersConfig = AppConfigService().offersConfig;
+    final List<dynamic> offers = offersConfig?['offers'] ?? [];
+    
+    if (offers.isNotEmpty) {
+      final offer = offers[0];
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OfferTrialScreen(
+            offerId: offer['id'] ?? 'monthly',
+            name: offer['name'] ?? 'Premium Access',
+            price: (offer['price'] as num?)?.toInt() ?? 199,
+            duration: (offer['duration'] as num?)?.toInt() ?? 30,
+            googlePlayId: offer['googlePlayId'],
+            googlePlaySubId: offer['googlePlaySubId'],
+            rzpPlanId: offer['rzpPlanId'],
+          ),
+        ),
+      );
+    } else {
+      // Fallback if config is missing
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const OfferTrialScreen(
+            offerId: 'monthly',
+            name: '1 Month Premium',
+            price: 199,
+            duration: 30,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   State<OfferTrialScreen> createState() => _OfferTrialScreenState();
 }
@@ -48,7 +85,6 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
   bool _hasShownExitOffer = false;
   String currentArea = "आस-पास";
   Map<String, String> policyUrls = {};
-  Map<String, dynamic>? _winBackOffer;
   
   late ConfettiController _confettiController;
   YoutubePlayerController? _youtubeController;
@@ -128,7 +164,6 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
         _activeGateway = paymentRepo.activeGateway;
         _isUpiEnabled = paymentRepo.isUpiEnabled;
         _isGooglePlayEnabled = paymentRepo.isGooglePlayEnabled;
-        _winBackOffer = configService.trackingConfig?['offer'];
       });
     }
   }
@@ -269,6 +304,13 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
       if (verifyRes['success'] == true) {
         await UserRepository().updateLocalUser(verifyRes['user']);
         await PremiumService().updatePremiumStatus(true);
+        
+        await AnalyticsService.logPurchase(
+          widget.price.toDouble(),
+          'INR',
+          widget.rzpPlanId ?? widget.offerId,
+        );
+
         _confettiController.play();
         _showSuccessDialog();
       } else {
@@ -573,7 +615,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             text: TextSpan(
                               style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                               children: [
-                                const TextSpan(text: "Start Trial for "),
+                                TextSpan(text: "${widget.name} for "),
                                 TextSpan(
                                   text: "₹",
                                   style: TextStyle(
@@ -585,7 +627,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                   )
                                 ),
                                 TextSpan(
-                                  text: "${widget.price * 3}", 
+                                  text: "499",
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.4), 
                                     decoration: TextDecoration.lineThrough, 
@@ -596,20 +638,6 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             ),
                           ),
                           const SizedBox(height: 5),
-                          if (_winBackOffer != null)
-                            Container(
-                              margin: const EdgeInsets.symmetric(vertical: 10),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.pink.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.3)),
-                              ),
-                              child: Text(
-                                _winBackOffer!['title'] ?? "Special Offer",
-                                style: const TextStyle(color: Colors.pinkAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                              ),
-                            ),
                           RichText(
                             text: TextSpan(
                               children: [
@@ -619,12 +647,12 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                 ),
                                 TextSpan(
                                   text: "${widget.price}",
-                                  style: const TextStyle(color: Colors.white, fontSize: 100, fontWeight: FontWeight.w600, letterSpacing: -2),
+                                  style: const TextStyle(color: Colors.white, fontSize: 115, fontWeight: FontWeight.w600, letterSpacing: -2),
                                 ),
                               ],
                             ),
                           ),
-                          Text("Pure ${widget.duration} dino ke liye • Phir ₹199/month", style: const TextStyle(color: Colors.white38, fontSize: 13)),
+                          Text("After trial ₹199/month", style: const TextStyle(color: Colors.white38, fontSize: 13)),
                           const SizedBox(height: 15),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -641,10 +669,22 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(height: 20),
-                                _buildSmallBenefit(Icons.lock_open, "Exclusive Photos unlock karein"),
-                                _buildSmallBenefit(Icons.bolt, "Unlimited Messages bhejien"),
-                                _buildSmallBenefit(Icons.star, "Exclusive Premium Badge"),
+                                const SizedBox(height: 25),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.03),
+                                    borderRadius: BorderRadius.circular(25),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      _buildSmallBenefit(Icons.photo_library_outlined, "Photo Unlock kare"),
+                                      _buildSmallBenefit(Icons.chat_bubble_outline, "Unlimited Message bheje"),
+                                      _buildSmallBenefit(Icons.videocam_outlined, "Unlimited Video Call"),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -752,13 +792,13 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
 
   Widget _buildSmallBenefit(IconData icon, String text) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.pinkAccent, size: 16),
-          const SizedBox(width: 8),
-          Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          Icon(icon, color: Colors.pinkAccent, size: 18),
+          const SizedBox(width: 12),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
         ],
       ),
     );

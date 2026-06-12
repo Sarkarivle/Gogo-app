@@ -202,7 +202,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         }
       } else if (event['event'] == 'premium_status_refresh') {
         final data = event['data'];
-        if (mounted) {
+        // FIX: Only show toast if a specific message is provided by the server
+        if (mounted && data != null && data['message'] != null && data['message'].toString().isNotEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
@@ -212,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                     color: Colors.white
                   ),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(data['message'] ?? 'Subscription Status Updated', style: const TextStyle(fontWeight: FontWeight.bold))),
+                  Expanded(child: Text(data['message'], style: const TextStyle(fontWeight: FontWeight.bold))),
                 ],
               ),
               backgroundColor: data['type'] == 'warning' ? Colors.deepOrangeAccent : Colors.green,
@@ -392,7 +393,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           
             // Using IndexedStack for Instant & Smooth Tab Switching
             IndexedStack(
-              index: _selectedIndex,
+              index: _selectedIndex == 1 ? 2 : (_selectedIndex == 2 ? 1 : _selectedIndex),
               children: [
                 _buildHomeContent(),
                 const RandomLiveIntroScreen(),
@@ -584,6 +585,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                             isVerified: p['isVerified'] ?? false,
                             isOnline: isOnline,
                             likedBy: (i + 1) * 12,
+                            hideFarDistance: true,
                           );
                         },
                       ),
@@ -631,7 +633,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
         onTap: (i) { 
-          if (i == 1) { // Live Tab
+          if (i == 2) { // Live Tab (Now at index 2)
             AccessGuard().runWithAccessCheck(
               context, 
               onAllowed: () {
@@ -645,8 +647,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             // Already on this tab - Refresh it
             if (i == 0) {
               _resetAndFetch(); // Match Tab Refresh
-            } else if (i == 2) {
-              _inboxKey.currentState?.refresh(); // Inbox Tab Refresh
+            } else if (i == 1) { // Inbox Tab
+              _inboxKey.currentState?.refresh(); 
             }
           } else {
             // Switching to a new tab
@@ -654,17 +656,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
             _fetchUnreadCount();
             
             // If switching TO Inbox, we also want it to refresh immediately
-            if (i == 2) {
+            if (i == 1) {
               Future.delayed(const Duration(milliseconds: 100), () {
-                _inboxKey.currentState?.refresh();
+                if (mounted && _selectedIndex == 1) {
+                  _inboxKey.currentState?.refresh();
+                }
               });
             }
           }
         },
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.explore_outlined, size: 28), activeIcon: Icon(Icons.explore, size: 28), label: 'Match'),
-          const BottomNavigationBarItem(icon: Icon(Icons.videocam_outlined, size: 28), activeIcon: Icon(Icons.videocam, size: 28), label: 'Live'),
           BottomNavigationBarItem(icon: _totalUnreadCount > 0 ? Badge(backgroundColor: Colors.redAccent, label: Text(_totalUnreadCount.toString()), child: const Icon(Icons.chat_bubble_outline_rounded, size: 26)) : const Icon(Icons.chat_bubble_outline_rounded, size: 26), activeIcon: const Icon(Icons.chat_bubble_rounded, size: 26), label: 'Inbox'),
+          const BottomNavigationBarItem(icon: Icon(Icons.videocam_outlined, size: 28), activeIcon: Icon(Icons.videocam, size: 28), label: 'Live'),
           const BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded, size: 28), activeIcon: Icon(Icons.person_rounded, size: 28), label: 'Profile'),
         ],
       ),

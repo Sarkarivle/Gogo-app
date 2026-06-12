@@ -22,6 +22,11 @@ class UserRepository {
 
   Map<String, dynamic>? get currentUser => userNotifier.value;
 
+  Map<String, dynamic>? getCachedProfile(String phone) {
+    final normalizedPhone = PhoneUtils.normalize(phone) ?? phone;
+    return _profileCache[normalizedPhone];
+  }
+
   Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
     final userDataStr = _prefs?.getString('user_data');

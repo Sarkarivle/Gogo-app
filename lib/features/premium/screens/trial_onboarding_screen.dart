@@ -639,56 +639,26 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        RichText(
-                          text: TextSpan(
-                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                            children: [
-                              const TextSpan(text: "Start Trial for "),
-                              TextSpan(
-                                text: "₹499",
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  decoration: TextDecoration.lineThrough,
-                                  decorationThickness: 2,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        if (_winBackOffer != null)
-                          Container(
-                            margin: const EdgeInsets.symmetric(vertical: 10),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.pink.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.3)),
-                            ),
-                            child: Text(
-                              _winBackOffer!['title'] ?? "Special Offer",
-                              style: const TextStyle(color: Colors.pinkAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                          ),
+                        const SizedBox(height: 20),
                         Text(
                           hasUsedTrial 
                             ? "₹${_winBackOffer != null ? _winBackOffer!['price'] : PaymentRepository().monthlyPrice}"
                             : "₹${PaymentRepository().trialPrice}",
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 100,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -2,
+                            fontSize: 180,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -6,
+                            height: 1.1,
                           ),
                         ),
                         if (!hasUsedTrial)
-                          Text(
-                            "₹${PaymentRepository().monthlyPrice} after trial",
-                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          const Text(
+                            "after trial",
+                            style: TextStyle(color: Colors.white38, fontSize: 14, fontWeight: FontWeight.w500),
                           ),
-                        const SizedBox(height: 15),
-                        // Attraction Text (Moved up)
+                        const SizedBox(height: 20),
+                        // Attraction Text
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: RichText(
@@ -750,34 +720,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                           ),
                     ),
 
-                    const SizedBox(height: 5),
-                    const Text(
-                      "Cancel the plan anytime",
-                      style: TextStyle(color: Colors.white38, fontSize: 13),
-                    ),
-
-                    const SizedBox(height: 50),
-                    
-                    // Added Info Text Bullet Points
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "• Your GoGo Premium subscription auto-renews at the end of the cycle. You can cancel anytime, and your access will continue until the current period expires.",
-                            style: TextStyle(color: Colors.white38, fontSize: 11),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "• Premium features like high-quality video calling and verified profile access depend on your internet connectivity and device compatibility.",
-                            style: TextStyle(color: Colors.white38, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 80),
 
                     // Bottom Links
                     Row(

@@ -825,8 +825,8 @@ async function loadPaymentHistory(page = 1, search = '') {
         const rows = filtered.map(t => `
             <tr class="hover:bg-white/[0.01]">
                 <td class="p-6">
-                    <p class="text-white text-xs font-bold">${t.userPhone}</p>
-                    <p class="text-[8px] text-slate-500 uppercase">${t.orderId}</p>
+                    <p onclick="openUserControl('${t.userPhone}')" class="text-white text-xs font-bold cursor-pointer hover:text-orange-500 transition-all underline decoration-white/10 underline-offset-4">${t.userPhone}</p>
+                    <p class="text-[8px] text-slate-500 uppercase mt-1">${t.orderId}</p>
                 </td>
                 <td class="p-6 text-xs font-black text-white">₹${t.amount}</td>
                 <td class="p-6">${UI.badge(t.status, t.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}</td>

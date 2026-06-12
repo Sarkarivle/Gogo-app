@@ -129,10 +129,9 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                         child: Divider(color: Colors.white10),
                       ),
                       
-                      _buildBillingRow('Subscription ID', sub['id'] ?? 'N/A'),
                       _buildBillingRow('Purchase Date', _formatDate(sub['startDate'])),
                       _buildBillingRow('Next Bill', _formatDate(sub['nextBillingDate'])),
-                      _buildBillingRow('Total Amount Paid', '₹ ${sub['totalAmountPaid'] ?? 0}', isBold: true),
+                      _buildBillingRow('Amount Paid', '₹ ${sub['lastAmountPaid'] ?? 0}', isBold: true),
                       _buildBillingRow('Auto-Renew', (sub['autoRenew'] ?? true) ? 'Enabled' : 'Disabled'),
                       
                       if (sub['paymentMethod'] != null)
@@ -161,15 +160,6 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                 
                 const SizedBox(height: 30),
                 
-                // Payment History Section
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: Text('Payment History', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 15),
-                _buildPaymentHistory(userData),
-
-                const SizedBox(height: 30),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 24),
                   child: Text('Frequently Asked Questions', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
@@ -197,46 +187,6 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
           Text(value, style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
         ],
       ),
-    );
-  }
-
-  Widget _buildPaymentHistory(Map<String, dynamic> userData) {
-    final history = (userData['paymentHistory'] as List?)?.reversed.toList() ?? [];
-    if (history.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 24),
-        child: Text('No transactions found.', style: TextStyle(color: Colors.white38, fontSize: 13)),
-      );
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: history.length > 5 ? 5 : history.length,
-      itemBuilder: (context, index) {
-        final item = history[index];
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item['status'] ?? 'Success', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  Text(_formatDate(item['timestamp']), style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                ],
-              ),
-              Text('₹ ${item['amount']}', style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
-        );
-      },
     );
   }
 

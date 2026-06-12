@@ -23,15 +23,29 @@ class CallService {
 
   String? _remotePhone;
   String? _remoteName;
+  String? get remoteName => _remoteName;
   bool _isVideo = false;
+  bool get isVideo => _isVideo;
   bool _isOutgoing = false;
   bool _remoteIsVideoOff = false;
   bool get remoteIsVideoOff => _remoteIsVideoOff;
+  
+  final ValueNotifier<bool> isMutedNotifier = ValueNotifier(false);
+  bool get isMuted => isMutedNotifier.value;
+
   DateTime? _startTime;
+  DateTime? get startTime => _startTime;
   Timer? _callTimeoutTimer;
 
   final _webrtc = WebRTCManager();
   
+  bool _isCallScreenActive = false;
+  bool get isCallScreenActive => _isCallScreenActive;
+  void setCallScreenActive(bool active) {
+    _isCallScreenActive = active;
+    _stateController.add(_state); // Trigger UI update
+  }
+
   final _stateController = StreamController<CallState>.broadcast();
   Stream<CallState> get stateStream => _stateController.stream;
 
@@ -103,7 +117,7 @@ class CallService {
     });
 
     _startTimeoutTimer();
-    _showCallScreen();
+    showCallScreen();
   }
 
   void handleIncomingCall(dynamic data) async {
@@ -133,7 +147,7 @@ class CallService {
     SocketService().emit('call_ringing', {'targetPhone': _remotePhone});
 
     _startTimeoutTimer();
-    _showCallScreen();
+    showCallScreen();
   }
 
   void _handleCallRinging() {
@@ -157,7 +171,7 @@ class CallService {
     _callTimeoutTimer = null;
   }
 
-  void _showCallScreen() async {
+  void showCallScreen() async {
     BuildContext? context = MyApp.navigatorKey.currentContext;
     
     // Retry logic: If app is just launching from terminated state, context might take a moment
@@ -168,8 +182,8 @@ class CallService {
       retryCount++;
     }
 
-    if (context == null) {
-      debugPrint("🚨 [CallService] Cannot show call screen: Navigator context is null");
+    if (context == null || !context.mounted) {
+      debugPrint("🚨 [CallService] Cannot show call screen: Navigator context is null or unmounted");
       return;
     }
 
@@ -306,9 +320,16 @@ class CallService {
     _stateController.add(_state);
   }
 
+  void toggleMute() {
+    isMutedNotifier.value = !isMutedNotifier.value;
+    WebRTCManager().setMuted(isMutedNotifier.value);
+    syncState(isMuted: isMutedNotifier.value, isVideoOff: false); // Simplified for overlay
+  }
+
   void _cleanup() {
     debugPrint("[CallService] Cleaning up call session...");
     _stopTimeoutTimer();
+    isMutedNotifier.value = false;
     final endState = _state;
     _updateState(CallState.ended);
     
@@ -321,17 +342,31 @@ class CallService {
       }
       
       String status = 'missed';
-      if (endState == CallState.connected) status = 'completed';
-      if (endState == CallState.ringing && !_isOutgoing) status = 'missed';
-      if (endState == CallState.ringing && _isOutgoing) status = 'no_answer';
+      bool shouldLog = false;
 
-      ChatRepository().logCall(
-        senderPhone: _isOutgoing ? myPhone : _remotePhone!,
-        receiverPhone: _isOutgoing ? _remotePhone! : myPhone,
-        callType: _isVideo ? 'video' : 'audio',
-        duration: duration,
-        status: status,
-      );
+      if (endState == CallState.connected) {
+        status = 'completed';
+        // Only caller logs completed calls to avoid duplicates
+        if (_isOutgoing) shouldLog = true;
+      } else if (endState == CallState.ringing || endState == CallState.connecting) {
+        if (!_isOutgoing) {
+          status = 'missed';
+          shouldLog = true; // Receiver logs missed calls
+        } else {
+          status = 'no_answer';
+          shouldLog = true; // Caller logs "no answer" or cancelled calls
+        }
+      }
+
+      if (shouldLog) {
+        ChatRepository().logCall(
+          senderPhone: _isOutgoing ? myPhone : _remotePhone!,
+          receiverPhone: _isOutgoing ? _remotePhone! : myPhone,
+          callType: _isVideo ? 'video' : 'audio',
+          duration: duration,
+          status: status,
+        );
+      }
     }
 
     _webrtc.dispose();

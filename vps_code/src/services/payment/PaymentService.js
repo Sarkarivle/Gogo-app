@@ -53,38 +53,31 @@ class PaymentService {
             const normalizedPhone = normalize(phone);
             const provider = await this.getProvider(preferredGateway);
 
-            // Fetch Plan Details & Offers from Config
-            const config = await Config.findOne({ key: 'payment_settings' });
-            const settings = config?.value || {};
+            const offerConfig = await Config.findOne({ key: 'special_offers' });
+            const offers = offerConfig?.value?.offers || [];
 
             const user = await User.findOne(phoneQuery(normalizedPhone));
             const hasUsedTrial = user?.subscription?.hasUsedTrial || false;
 
-            let amount = overrides.amount || (hasUsedTrial ? (settings.monthlyPrice || 199) : (settings.trialPrice || 1));
-            let planId = overrides.offerId || null;
-            let googlePlayId = overrides.googlePlayId || null;
-            let googlePlaySubId = overrides.googlePlaySubId || null;
-            let duration = overrides.duration || (amount < 10 ? 1 : 30);
-
-            // OVERRIDE IF WIN-BACK OFFER IS APPLICABLE (Only if no explicit amount override)
-            if (!overrides.amount && hasUsedTrial && !user.isPremium) {
-                const now = new Date();
-                const trialEnd = new Date(user.subscription?.trialEndDate || user.subscription?.lastPaymentDate);
-                const daysSinceTrial = Math.floor((now - trialEnd) / (1000 * 60 * 60 * 24));
-
-                if (daysSinceTrial >= (settings.offerStartDay || 1) &&
-                    daysSinceTrial <= (settings.offerEndDay || 7) &&
-                    settings.isOfferEnabled) {
-
-                    amount = settings.offerPrice || 99;
-                    planId = settings.offerPlanId;
-                }
+            // NEW LOGIC: New User -> 1st Offer (Trial/Welcome), Old User -> 3rd Offer (Standard/Premium)
+            let selectedOffer;
+            if (!hasUsedTrial) {
+                selectedOffer = offers[0]; // First Offer
+            } else {
+                selectedOffer = offers[2] || offers[0]; // Third Offer (fallback to first if not exists)
             }
+
+            let amount = overrides.amount || selectedOffer?.price || 199;
+            let planId = overrides.offerId || selectedOffer?.id || selectedOffer?.rzpPlanId;
+            let duration = overrides.duration || selectedOffer?.duration || 30;
+
+            let googlePlayId = overrides.googlePlayId || (amount < 10 ? null : selectedOffer?.googlePlayId);
+            let googlePlaySubId = overrides.googlePlaySubId || (amount < 10 ? null : selectedOffer?.googlePlaySubId);
 
             const orderData = await provider.createOrder({
                 phone: normalizedPhone,
                 amount,
-                isSubscription: true, // This is now always true for Autopay
+                isSubscription: true,
                 isTrial: amount < 10,
                 overridePlanId: planId,
                 productId: googlePlayId,
@@ -98,7 +91,7 @@ class PaymentService {
                     gateway: orderData.gateway,
                     amount: amount,
                     status: 'PENDING',
-                    metadata: { ...orderData, duration, offerId: planId }
+                    metadata: { ...orderData, duration, offerId: planId, isFirstTime: !hasUsedTrial }
                 });
             }
             return orderData;
@@ -116,23 +109,34 @@ class PaymentService {
         // LOGIC: If upfront setup fee is below 10, it's a trial
         const isTrial = transaction.amount < 10;
 
-        // SIMPLE FIX: Trust the Payment Provider's data first
-        // Priority: next_billing_at > current_period_end > start_at > fallback logic
+        // DYNAMIC PLAN NAME: Fetch from Special Offers config
+        let planName = isTrial ? `Trial Gold` : 'Premium Gold';
+        try {
+            const offerConfig = await Config.findOne({ key: 'special_offers' });
+            const offers = offerConfig?.value?.offers || [];
+            const productId = transaction.metadata?.productId || transaction.metadata?.offerId;
+            // Match by ProductId, SubId, ID or Price
+            const matchedOffer = offers.find(o =>
+                (productId && (o.googlePlayId === productId || o.googlePlaySubId === productId || o.id === productId)) ||
+                (o.price == transaction.amount)
+            );
+            if (matchedOffer) planName = matchedOffer.name;
+        } catch (e) { console.error("Plan name fetch error:", e); }
+
+        // GATEWAY PRIORITY LOGIC: Expiry MUST come from the gateway
         let newExpiry;
-        const providerNextBill = transaction.next_billing_at || transaction.current_period_end || transaction.start_at;
+        const providerNextBill = transaction.current_period_end || transaction.next_billing_at || transaction.start_at;
 
         if (providerNextBill) {
             newExpiry = new Date(providerNextBill * 1000);
         } else if (transaction.metadata?.expiryTimeMillis) {
-            // Google Play specific from verification
             newExpiry = new Date(parseInt(transaction.metadata.expiryTimeMillis));
         } else {
-            // Fallback: If provider gives nothing, use duration
+            // FALLBACK: Gateway delay scenario
+            console.warn(`📡 Gateway expiry missing for ${normalizedPhone}, using provider metadata.`);
             const durationDays = transaction.metadata?.duration || (isTrial ? 1 : 30);
             newExpiry = new Date(now.getTime() + (durationDays * 24 * 60 * 60 * 1000));
         }
-
-        const planName = isTrial ? `₹${transaction.amount || 1} Trial Gold` : 'Monthly Gold';
 
         const transactionId = transaction.gatewayTransactionId || transaction.paymentId || transaction.orderId;
 
@@ -153,6 +157,7 @@ class PaymentService {
                     await User.updateOne(phoneQuery(normalizedPhone), {
                         $set: {
                             premiumExpiry: webhookExpiry,
+                            premiumPlan: planName, // Update plan name too in case it changed
                             'subscription.nextBillingDate': webhookExpiry,
                             'subscription.status': isTrial ? 'trial_active' : 'active'
                         }
@@ -174,14 +179,19 @@ class PaymentService {
             'subscription.lastPaymentDate': now,
             'subscription.paymentMethod': method || 'UPI',
             'subscription.autoRenew': true,
-            'subscription.lastAmountPaid': transaction.amount || 0
+            'subscription.lastAmountPaid': transaction.amount || 0,
+            'subscription.planId': transaction.metadata?.productId || transaction.metadata?.offerId
         };
 
         if (transaction.orderId && (transaction.orderId.startsWith('sub_') || transaction.orderId.startsWith('S_'))) {
             updateFields['subscription.id'] = transaction.orderId;
         } else if (transaction.gateway === 'google_play') {
-            // For Google Play, use the actual order ID (GPA.xxx) if available in metadata
-            updateFields['subscription.id'] = transaction.metadata?.orderId || transaction.orderId;
+            // CRITICAL FIX: For Google Play, 'subscription.id' MUST be the purchaseToken for syncing
+            // We store the GPA.xxx orderId in metadata
+            updateFields['subscription.id'] = transaction.gatewayTransactionId || transaction.metadata?.purchaseToken;
+            if (transaction.metadata?.orderId) {
+                updateFields['subscription.googleOrderId'] = transaction.metadata.orderId;
+            }
         }
 
         const updatedUser = await User.findOneAndUpdate(
@@ -206,7 +216,7 @@ class PaymentService {
             io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', {
                 isPremium: true,
                 status: isTrial ? 'trial_active' : 'active',
-                message: isTrial ? "Trial Activated! 🎁" : "Premium Activated! ✨"
+                // Removed toast message
             });
             // Notify admin dashboard
             io.to('admin').emit('admin_live_event', {
@@ -217,7 +227,11 @@ class PaymentService {
             });
         }
 
-        analyticsService.trackPremiumUpgrade(normalizedPhone);
+        analyticsService.trackPremiumUpgrade(normalizedPhone, {
+            amount: transaction.amount || 0,
+            currency: 'INR',
+            planId: transaction.metadata?.productId || transaction.metadata?.offerId
+        });
         revenueService.trackPaymentEvent('PAYMENT_SUCCESS', { userPhone: normalizedPhone, amount: transaction.amount || 0, gateway: transaction.gateway || 'razorpay' });
         return updatedUser;
     }
@@ -228,79 +242,99 @@ class PaymentService {
             const user = await User.findOne(phoneQuery(normalizedPhone));
             if (!user) throw new Error("User not found");
 
-            const gateway = user.subscription?.paymentMethod?.toLowerCase().includes('google') ? 'google_play' : 'razorpay';
-            const provider = await this.getProvider(gateway);
             const subId = user.subscription?.id;
+            // CRITICAL: If no subscription ID, nothing to sync with Gateway
+            if (!subId) {
+                return { success: true, user, message: "No active subscription ID to sync." };
+            }
+
+            // SOURCE OF TRUTH: Detect Gateway
+            const gateway = (user.subscription?.paymentMethod?.toLowerCase().includes('google') || subId.startsWith('GPA.')) ? 'google_play' : 'razorpay';
+            const provider = await this.getProvider(gateway);
 
             let updatedData = {};
 
-            if (gateway === 'razorpay' && subId) {
-                const subDetails = await provider.client.subscriptions.fetch(subId);
-                let amount = 0;
-                try {
-                    const plan = await provider.client.plans.fetch(subDetails.plan_id);
-                    amount = plan.item.amount / 100;
-                } catch (e) {}
+            if (gateway === 'razorpay') {
+                // Razorpay Subscriptions start with 'sub_'
+                if (subId.startsWith('sub_')) {
+                    const subDetails = await provider.client.subscriptions.fetch(subId);
 
-                // Status Mapping for Razorpay
-                let status = 'expired';
-                if (subDetails.status === 'active') status = 'active';
-                else if (subDetails.status === 'authenticated') status = 'trial_active';
-                else if (subDetails.status === 'cancelled') status = 'cancelled';
+                    let status = 'expired';
+                    if (['active', 'authenticated'].includes(subDetails.status)) status = 'active';
+                    if (subDetails.status === 'cancelled') status = 'cancelled';
 
-                // SIMPLE LOGIC: Razorpay provides 'next_billing_at' as the source of truth
-                const nextBillTimestamp = subDetails.next_billing_at || subDetails.current_end || subDetails.start_at;
-                const nextBill = nextBillTimestamp ? new Date(nextBillTimestamp * 1000) : null;
-
-                updatedData = {
-                    status: status,
-                    nextBillingDate: nextBill,
-                    autoRenew: ['active', 'authenticated', 'pending'].includes(subDetails.status),
-                    amount: amount
-                };
+                    const nextBillTimestamp = subDetails.next_billing_at || subDetails.current_end || subDetails.start_at;
+                    updatedData = {
+                        status,
+                        nextBillingDate: nextBillTimestamp ? new Date(nextBillTimestamp * 1000) : null,
+                        autoRenew: !['cancelled', 'expired'].includes(subDetails.status)
+                    };
+                }
             } else if (gateway === 'google_play') {
-                const purchaseToken = user.subscription?.id || user.paymentHistory?.find(p => p.method === 'Google Play')?.gatewayTransactionId || user.paymentHistory?.find(p => p.method === 'Google Play')?.orderId;
-                const productId = user.subscription?.planId || 'gogo_monthy_199';
+                let purchaseToken = subId;
+                let productId = user.subscription?.planId || 'gogo_monthly_199';
 
-                if (purchaseToken) {
+                // If subId is an Order ID (GPA.), try to find the real purchaseToken from transactions
+                if (purchaseToken.startsWith('GPA.')) {
+                    const tx = await PaymentTransaction.findOne({
+                        userPhone: normalizedPhone,
+                        gateway: 'google_play',
+                        status: 'SUCCESS'
+                    }).sort({ createdAt: -1 });
+                    if (tx) purchaseToken = tx.gatewayTransactionId || tx.metadata?.purchaseToken;
+                }
+
+                // Only sync if we have a real token (Google Play tokens don't start with GPA.)
+                if (purchaseToken && !purchaseToken.startsWith('GPA.')) {
                     const verification = await provider.verifyPayment({ purchaseToken, productId });
                     if (verification.success && verification.expiryTimeMillis) {
                         const expiry = parseInt(verification.expiryTimeMillis);
                         updatedData = {
                             status: (expiry > Date.now()) ? 'active' : 'expired',
                             nextBillingDate: new Date(expiry),
-                            autoRenew: verification.autoRenewing !== undefined ? verification.autoRenewing : true,
-                            amount: verification.amount || 0
+                            autoRenew: verification.autoRenewing || false
                         };
                     }
                 }
             }
 
+            // UPDATE DATABASE: Only if we got fresh data from Gateway
             if (Object.keys(updatedData).length > 0) {
-                user.subscription.status = updatedData.status;
-                if (updatedData.nextBillingDate) {
-                    user.subscription.nextBillingDate = updatedData.nextBillingDate;
-                    user.premiumExpiry = updatedData.nextBillingDate;
-                }
-                user.subscription.autoRenew = updatedData.autoRenew;
-                user.subscription.lastAmountPaid = updatedData.amount || 0;
-                user.isPremium = updatedData.status === 'active' || updatedData.status === 'trial_active';
+                const isPremium = updatedData.status === 'active' || (updatedData.nextBillingDate && updatedData.nextBillingDate > new Date());
 
-                await user.save();
+                const updatedUser = await User.findOneAndUpdate(
+                    phoneQuery(normalizedPhone),
+                    {
+                        $set: {
+                            isPremium,
+                            premiumExpiry: updatedData.nextBillingDate,
+                            'subscription.status': updatedData.status,
+                            'subscription.nextBillingDate': updatedData.nextBillingDate,
+                            'subscription.autoRenew': updatedData.autoRenew
+                        }
+                    },
+                    { new: true }
+                );
 
                 if (io) {
+                    // REAL-TIME SOCKET EMIT: Send all critical data to the app instantly
                     io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', {
-                        isPremium: user.isPremium,
-                        status: user.subscription.status,
-                        message: "Subscription Synchronized 🔄"
+                        isPremium,
+                        status: updatedData.status,
+                        expiry: updatedData.nextBillingDate,
+                        autoRenew: updatedData.autoRenew,
+                        subscription: updatedUser.subscription,
+                        message: null // Background sync should be silent
                     });
                 }
+                return { success: true, user: updatedUser };
             }
 
-            return { success: true, user, lastPaidAmount: updatedData.amount };
-        } catch (e) {
-            console.error("SyncWithProvider Error:", e.message);
-            throw e;
+            return { success: true, user: await User.findOne(phoneQuery(normalizedPhone)) };
+        } catch (error) {
+            // Log the specific error but don't crash the whole status check
+            console.error(`📡 Provider Sync Error (${phone}):`, error.message);
+            return { success: false, message: error.message };
         }
     }
 
@@ -333,23 +367,30 @@ class PaymentService {
         const config = await Config.findOne({ key: 'payment_settings' });
         const settings = config?.value || {};
 
+        const offerConfig = await Config.findOne({ key: 'special_offers' });
+        const featuredOffer = offerConfig?.value?.offers?.[0];
+
         const now = new Date();
         let offerData = null;
 
-        // CHECK FOR WIN-BACK OFFER ELIGIBILITY
-        if (!user.isPremium && user.subscription?.hasUsedTrial) {
-            const trialEnd = new Date(user.subscription.trialEndDate || user.subscription.lastPaymentDate);
-            const daysSinceTrial = Math.floor((now - trialEnd) / (1000 * 60 * 60 * 24));
-
-            const offerStart = settings.offerStartDay || 1;
-            const offerEnd = settings.offerEndDay || 7;
-
-            if (daysSinceTrial >= offerStart && daysSinceTrial <= offerEnd && settings.isOfferEnabled) {
+        // SINGLE OFFER SYSTEM: Return either Trial or Featured Offer for non-premium users
+        if (!user.isPremium) {
+            if (!user.subscription?.hasUsedTrial && settings.trialPrice < 10) {
                 offerData = {
-                    price: settings.offerPrice || 99,
-                    planId: settings.offerPlanId,
-                    title: "Special Comeback Offer! 🎁",
-                    message: `Get full access for just ₹${settings.offerPrice}! Limited time only.`
+                    price: settings.trialPrice || 1,
+                    duration: settings.trialDuration || 1,
+                    title: "Special Trial Offer! 🎁",
+                    message: `Get full access for just ₹${settings.trialPrice}! Limited time trial.`,
+                    isTrial: true
+                };
+            } else if (featuredOffer) {
+                offerData = {
+                    price: featuredOffer.price,
+                    planId: featuredOffer.id,
+                    title: featuredOffer.name || "Exclusive Offer! ✨",
+                    message: `Upgrade to Gold for just ₹${featuredOffer.price}. Limited time.`,
+                    isTrial: false,
+                    duration: featuredOffer.duration
                 };
             }
         }
@@ -468,17 +509,21 @@ class PaymentService {
                     currentPeriodEnd = Math.floor(verification.expiryTimeMillis / 1000);
                 }
 
-                transaction = await PaymentTransaction.findOneAndUpdate(
-                    { orderId, status: 'PENDING' },
-                    {
-                        status: 'SUCCESS',
-                        gatewayTransactionId: verification.transactionId,
-                        paymentMethod: paymentData.method || (gateway === 'google_play' ? 'Google Play' : 'UPI'),
-                        current_period_end: currentPeriodEnd,
-                        metadata: verification.raw || {}
-                    },
-                    { new: true }
-                );
+                const existingTransaction = await PaymentTransaction.findOne({ orderId, status: 'PENDING' });
+
+                if (existingTransaction) {
+                    transaction = await PaymentTransaction.findOneAndUpdate(
+                        { _id: existingTransaction._id },
+                        {
+                            status: 'SUCCESS',
+                            gatewayTransactionId: verification.transactionId,
+                            paymentMethod: paymentData.method || (gateway === 'google_play' ? 'Google Play' : 'UPI'),
+                            current_period_end: currentPeriodEnd,
+                            metadata: { ...existingTransaction.metadata, ...verification.raw, productId: paymentData.productId || existingTransaction.metadata?.productId }
+                        },
+                        { new: true }
+                    );
+                }
 
                 if (!transaction && gateway === 'google_play') {
                     // Fallback for direct play store purchases without pre-created order
@@ -516,18 +561,31 @@ class PaymentService {
             let phone = result.userPhone;
             let transaction = null;
 
-            // GOOGLE PLAY SPECIAL HANDLING: Find user by purchaseToken or existing transaction
+            // GOOGLE PLAY SPECIAL HANDLING: Find user by purchaseToken
             if (gateway === 'google_play' && result.purchaseToken) {
+                console.log(`🔍 Webhook: Searching for user with token: ${result.purchaseToken.substring(0, 20)}...`);
+
+                // 1. Try Transactions
                 const existingTx = await PaymentTransaction.findOne({
-                    gatewayTransactionId: result.purchaseToken
+                    $or: [{ orderId: result.purchaseToken }, { gatewayTransactionId: result.purchaseToken }]
                 });
+
                 if (existingTx) {
                     phone = existingTx.userPhone;
                     transaction = existingTx;
+                    console.log(`✅ Found user via Transaction: ${phone}`);
                 } else {
-                    // Try to find user directly from history if token was saved there
-                    const userWithToken = await User.findOne({ 'paymentHistory.orderId': result.purchaseToken });
-                    if (userWithToken) phone = userWithToken.phone;
+                    // 2. Try User Payment History
+                    const userWithToken = await User.findOne({
+                        $or: [
+                            { 'subscription.id': result.purchaseToken },
+                            { 'paymentHistory.orderId': result.purchaseToken }
+                        ]
+                    });
+                    if (userWithToken) {
+                        phone = userWithToken.phone;
+                        console.log(`✅ Found user via Payment History: ${phone}`);
+                    }
                 }
             }
 
@@ -537,6 +595,7 @@ class PaymentService {
             }
 
             const normalizedPhone = normalize(phone);
+            console.log(`📡 Processing ${result.status} for ${normalizedPhone}`);
 
             // ENSURE TRANSACTION OBJECT HAS LATEST DATA FROM WEBHOOK
             const orderId = result.orderId || (gateway === 'google_play' ? result.purchaseToken : null);
@@ -546,62 +605,69 @@ class PaymentService {
             }
 
             if (!transaction) {
+                let amount = result.amount || 0;
+
+                // For Google Play renewals, RTDN doesn't give amount. Try to fetch from config.
+                if (gateway === 'google_play' && amount === 0) {
+                    try {
+                        const offerConfig = await Config.findOne({ key: 'special_offers' });
+                        const offers = offerConfig?.value?.offers || [];
+                        const productId = result.productId || (await User.findOne(phoneQuery(normalizedPhone)))?.subscription?.planId;
+                        const matchedOffer = offers.find(o => o.googlePlayId === productId || o.googlePlaySubId === productId);
+                        if (matchedOffer) {
+                            amount = matchedOffer.price;
+                        } else {
+                            const payConfig = await Config.findOne({ key: 'payment_settings' });
+                            amount = payConfig?.value?.monthlyPrice || 199;
+                        }
+                    } catch (err) { console.error("Error fetching amount for webhook:", err); }
+                }
+
                 transaction = await PaymentTransaction.create({
                     orderId: orderId || `wh_${Date.now()}`,
                     userPhone: normalizedPhone, gateway,
-                    amount: result.amount || 0, status: 'SUCCESS',
+                    amount: amount, status: 'SUCCESS',
                     gatewayTransactionId: result.paymentId || result.purchaseToken,
-                    current_period_end: result.next_billing_at || result.current_period_end || result.start_at
+                    current_period_end: result.next_billing_at || result.current_period_end || result.start_at,
+                    metadata: { productId: result.productId }
                 });
             } else {
                 transaction.status = 'SUCCESS';
                 if (result.paymentId) transaction.gatewayTransactionId = result.paymentId;
                 const bestDate = result.next_billing_at || result.current_period_end || result.start_at;
                 if (bestDate) transaction.current_period_end = bestDate;
+                if (result.productId) {
+                    transaction.metadata = { ...transaction.metadata, productId: result.productId };
+                }
                 await transaction.save();
             }
 
             // USER STATE MACHINE HANDLING
-            switch (result.status) {
-                case 'TRIAL_SUCCESS':
-                case 'RENEWAL_SUCCESS':
-                case 'SUCCESS':
-                    // If it's Google Play, sync once to get exact expiry and amount
-                    if (gateway === 'google_play') {
-                        await this.syncWithProvider(normalizedPhone, io).catch(e => console.error("Webhook Sync Error:", e));
-                    } else {
+            console.log(`🚀 Executing logic for event: ${result.event} on user: ${normalizedPhone}`);
+
+            // UNIVERSAL RULE: For any Google Play event, always do a fresh provider sync to get current truth
+            if (gateway === 'google_play') {
+                await this.syncWithProvider(normalizedPhone, io).catch(e => console.error("Webhook Sync Error:", e));
+            } else {
+                // For Razorpay or others, we can use specific handlers
+                switch (result.status) {
+                    case 'SUCCESS':
                         await this._updateUserSubscription(normalizedPhone, result, 'UPI', io);
-                    }
-                    break;
-
-                case 'CANCELLED':
-                    await User.findOneAndUpdate(phoneQuery(normalizedPhone), {
-                        $set: { 'subscription.autoRenew': false, 'subscription.status': 'cancelled' }
-                    });
-                    if (io) {
-                        io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', { status: 'cancelled', message: "Auto-pay disabled", type: 'warning' });
-                        io.to('admin').emit('admin_live_event', { type: 'SUB_CANCELLED', label: 'Subscription Cancelled', phone: normalizedPhone });
-                    }
-                    break;
-
-                case 'PAYMENT_FAILED':
-                    await User.findOneAndUpdate(phoneQuery(normalizedPhone), {
-                        $set: { 'subscription.status': 'payment_failed' }
-                    });
-                    if (io) {
-                        io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', { status: 'payment_failed', message: "Payment Failed ❌", type: 'warning' });
-                        io.to('admin').emit('admin_live_event', { type: 'PAYMENT_FAILED', label: 'Payment Failed', phone: normalizedPhone });
-                    }
-                    break;
-
-                case 'EXPIRED':
-                    await this.revokeSubscription(normalizedPhone, 'expired');
-                    if (io) {
-                        io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', { isPremium: false, status: 'expired', message: "Membership Expired", type: 'warning' });
-                        io.to('admin').emit('admin_live_event', { type: 'SUB_EXPIRED', label: 'Subscription Expired', phone: normalizedPhone });
-                    }
-                    break;
+                        break;
+                    case 'CANCELLED':
+                        await User.updateOne(phoneQuery(normalizedPhone), {
+                            $set: { 'subscription.autoRenew': false, 'subscription.status': 'cancelled' }
+                        });
+                        if (io) io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', { status: 'cancelled', message: "Auto-pay disabled", type: 'warning' });
+                        break;
+                    case 'EXPIRED':
+                        await this.revokeSubscription(normalizedPhone, 'expired');
+                        if (io) io.to(`user_${normalizedPhone}`).emit('premium_status_refresh', { isPremium: false, status: 'expired', message: "Membership Expired", type: 'warning' });
+                        break;
+                }
             }
+
+            return { success: true };
 
             return { success: true };
         } catch (e) {

@@ -48,6 +48,7 @@ exports.getPublicSettings = async (req, res) => {
                 isUpiEnabled: settings.isUpiEnabled !== false,
                 isGooglePlayEnabled: gpSettings.isEnabled === true || settings.isGooglePlayEnabled === true,
                 trialPrice: settings.trialPrice || 1,
+                trialDuration: settings.trialDuration || 1,
                 monthlyPrice: settings.monthlyPrice || 199
             }
         });
@@ -100,26 +101,21 @@ exports.getSpecialOffers = async (req, res) => {
         const config = await Config.findOne({ key: 'special_offers' });
 
         const defaultOffers = [
-            { id: 'daily', name: '1 Day Free', price: 19, duration: 1, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' },
-            { id: 'weekly', name: '7 Days Access', price: 100, duration: 7, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' },
             { id: 'monthly', name: '1 Month Premium', price: 199, duration: 30, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' }
         ];
 
         let resultConfig = config?.value || { offers: defaultOffers };
 
-        // Migration logic: Ensure existing DB records get the new field structure
-        if (resultConfig.offers && Array.isArray(resultConfig.offers)) {
-            resultConfig.offers = resultConfig.offers.map(offer => ({
-                googlePlaySubId: '', // Default if missing
-                ...offer
-            }));
+        // Logic Change: Only return ONE offer (the first one) to simplify frontend to "Single Offer" mode
+        if (resultConfig.offers && Array.isArray(resultConfig.offers) && resultConfig.offers.length > 0) {
+            resultConfig.offers = [resultConfig.offers[0]]; // Take only the primary offer
         } else {
             resultConfig.offers = defaultOffers;
         }
 
         res.json({
             success: true,
-            buildVersion: "1.0.2-multi-id-fix", // For verification
+            buildVersion: "1.1.0-single-offer-logic",
             config: resultConfig
         });
     } catch (e) {

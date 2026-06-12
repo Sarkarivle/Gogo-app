@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
-import 'package:gogo/shared/screens/offer_screen.dart';
+import 'package:gogo/shared/screens/offer_trial_screen.dart';
 
 class PremiumRepository {
+  // ... (keeping internal code same)
   static final PremiumRepository _instance = PremiumRepository._internal();
   factory PremiumRepository() => _instance;
   PremiumRepository._internal();
@@ -43,9 +44,6 @@ class PremiumRepository {
   }
 
   void _navigateToOffer(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const OfferScreen()),
-    );
+    OfferTrialScreen.show(context);
   }
 }

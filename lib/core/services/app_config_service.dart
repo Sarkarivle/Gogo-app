@@ -85,6 +85,14 @@ class AppConfigService {
 
   Map<String, dynamic>? _trackingConfig;
   Map<String, dynamic>? get trackingConfig => _trackingConfig;
+
+  Map<String, dynamic>? _dynamicOffer;
+  Map<String, dynamic>? get dynamicOffer => _dynamicOffer;
+
+  void setDynamicOffer(Map<String, dynamic>? offer) {
+    _dynamicOffer = offer;
+  }
+
   DateTime? _lastConfigFetchTime;
 
   String? get loginImageUrl => _trackingConfig?['loginImageUrl'];

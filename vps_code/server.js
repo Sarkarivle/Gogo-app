@@ -310,6 +310,37 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('log_call', async (data) => {
+        try {
+            const sender = normalizePhone(data.senderPhone);
+            const receiver = normalizePhone(data.receiverPhone);
+            const roomId = getRoomId(sender, receiver);
+
+            const callLog = new Message({
+                roomId,
+                senderPhone: sender,
+                receiverPhone: receiver,
+                type: 'call_log',
+                message: data.callType === 'video' ? 'Video Call' : 'Voice Call',
+                metadata: {
+                    callType: data.callType,
+                    duration: data.duration,
+                    status: data.status
+                },
+                timestamp: new Date() // Always use server time for consistent sorting
+            });
+
+            await callLog.save();
+            updateConversationSummary(callLog);
+
+            const callLogObj = callLog.toObject();
+            io.to(`user_${sender}`).emit('receive_message', callLogObj);
+            io.to(`user_${receiver}`).emit('receive_message', callLogObj);
+        } catch (e) {
+            console.error("log_call error:", e);
+        }
+    });
+
     socket.on('sdp_offer', (data) => {
         const other = normalizePhone(data.targetPhone || data.otherPhone);
         if (other) io.to(`user_${other}`).emit('sdp_offer', { offer: data.offer, sdp: data.sdp, from: myPhone });
@@ -401,6 +432,9 @@ io.on('connection', (socket) => {
             const roomId = getRoomId(myPhone, otherPhone);
             const msg = await Message.findById(messageId);
             if (msg && normalizePhone(msg.senderPhone) === myPhone) {
+                // Call logs cannot be deleted for everyone
+                if (msg.type === 'call_log') return;
+
                 msg.isDeletedForEveryone = true;
                 msg.message = "This message was deleted";
                 msg.imageUrl = null;

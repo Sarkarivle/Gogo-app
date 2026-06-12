@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:gogo/shared/screens/offer_screen.dart';
+import 'package:gogo/shared/screens/offer_trial_screen.dart';
 
 class PremiumPaywall {
   static void show(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const OfferScreen()),
-    );
+    OfferTrialScreen.show(context);
   }
 
   /// Big App Logic: Check access and show paywall if failed

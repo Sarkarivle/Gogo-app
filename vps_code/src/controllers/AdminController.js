@@ -9,7 +9,10 @@ const AdminLog = require('../models/AdminLog');
 const FeatureFlag = require('../models/FeatureFlag');
 const AnalyticsEvent = require('../models/AnalyticsEvent');
 const Config = require('../models/Config');
+const Campaign = require('../models/Campaign');
 const RecentPhoto = require('../models/RecentPhoto');
+const Conversation = require('../models/Conversation');
+const ConversationMetadata = require('../models/ConversationMetadata');
 const analyticsService = require('../services/analyticsService');
 const revenueService = require('../services/revenueService');
 const notificationService = require('../services/notificationService');
@@ -165,31 +168,31 @@ exports.deleteAdmin = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const { search, status, accountStatus, dateRange, sortBy, sortOrder, onboardingStatus, tab } = req.query;
+        const { search, status, accountStatus, dateRange, sortBy, sortOrder, userType, tab } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const skip = (page - 1) * limit;
+
         console.log(`👥 [${new Date().toISOString()}] Admin API: getAllUsers requested. Filters:`, req.query);
 
         let q = {};
 
-        // TAB LOGIC: Register vs Unregister
-        if (tab === 'unregistered') {
+        // USER TYPE FILTERING (Premium, Free, Unregistered)
+        if (userType === 'premium') {
+            q.isPremium = true;
+            q.$or = [{ hasCompletedOnboarding: true }, { dobYear: { $exists: true, $ne: null } }];
+        } else if (userType === 'free') {
+            q.isPremium = false;
+            q.$or = [{ hasCompletedOnboarding: true }, { dobYear: { $exists: true, $ne: null } }];
+        } else if (userType === 'unregistered') {
             q.hasCompletedOnboarding = false;
             q.dobYear = { $exists: false };
-        } else if (tab === 'registered') {
+        } else {
+            // Default: Show Registered (Premium + Free)
             q.$or = [
                 { hasCompletedOnboarding: true },
                 { dobYear: { $exists: true, $ne: null } }
             ];
-        } else {
-            // Default onboardingStatus filtering if no tab is selected
-            if (onboardingStatus === 'incomplete') {
-                q.hasCompletedOnboarding = false;
-                q.dobYear = { $exists: false };
-            } else if (onboardingStatus === 'complete') {
-                q.$or = [
-                    { hasCompletedOnboarding: true },
-                    { dobYear: { $exists: true, $ne: null } }
-                ];
-            }
         }
 
         if (search) {
@@ -236,12 +239,16 @@ exports.getAllUsers = async (req, res) => {
             sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
         }
 
-        const usersRaw = await User.find(q)
-            .select('name phone city isOnline lastSeen isPremium isVerified isShadowBanned accountStatus isDeactivated gender createdAt hasCompletedOnboarding dobYear')
-            .sort(sort)
-            .limit(100)
-            .lean()
-            .maxTimeMS(5000);
+        const [usersRaw, totalMatching] = await Promise.all([
+            User.find(q)
+                .select('name phone city isOnline lastSeen isPremium isVerified isShadowBanned accountStatus isDeactivated gender createdAt hasCompletedOnboarding dobYear')
+                .sort(sort)
+                .skip(skip)
+                .limit(limit)
+                .lean()
+                .maxTimeMS(5000),
+            User.countDocuments(q)
+        ]);
 
         // Calculate Trust Score for each user
         const users = usersRaw.map(u => {
@@ -259,7 +266,7 @@ exports.getAllUsers = async (req, res) => {
 
             if (!u.hasCompletedOnboarding && !u.dobYear) {
                 displayStatus = 'Unregistered';
-                displayOnline = false; // Dashboard par unregistered users ko offline hi dikhao
+                displayOnline = false;
             }
 
             return {
@@ -271,42 +278,45 @@ exports.getAllUsers = async (req, res) => {
             };
         });
 
-        // Apply Trust Score Filtering if requested
-        let filteredUsers = users;
-        if (req.query.trustLevel) {
-            if (req.query.trustLevel === 'high') filteredUsers = users.filter(u => u.trustScore >= 80);
-            else if (req.query.trustLevel === 'medium') filteredUsers = users.filter(u => u.trustScore >= 40 && u.trustScore < 80);
-            else if (req.query.trustLevel === 'low') filteredUsers = users.filter(u => u.trustScore < 40);
-        }
-
         // Fetch Analytics for User Header
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
-        const [totalUsers, onlineUsers, todayJoined, unregisteredTotal, unregisteredToday] = await Promise.all([
+        const [
+            totalUsers,
+            onlineUsers,
+            todayJoined,
+            totalPremium,
+            todayPremium,
+            unregisteredTotal
+        ] = await Promise.all([
             User.countDocuments(),
             User.countDocuments({
                 isOnline: true,
                 $or: [{ hasCompletedOnboarding: true }, { dobYear: { $exists: true, $ne: null } }]
             }),
             User.countDocuments({ createdAt: { $gte: todayStart } }),
-            User.countDocuments({ hasCompletedOnboarding: false, dobYear: { $exists: false } }),
-            User.countDocuments({
-                createdAt: { $gte: todayStart },
-                hasCompletedOnboarding: false,
-                dobYear: { $exists: false }
-            })
+            User.countDocuments({ isPremium: true }),
+            User.countDocuments({ isPremium: true, createdAt: { $gte: todayStart } }),
+            User.countDocuments({ hasCompletedOnboarding: false, dobYear: { $exists: false } })
         ]);
 
-        console.log(`✅ Found ${filteredUsers.length} users with filters and sort`);
+        console.log(`✅ Found ${users.length} users (Page ${page})`);
         res.json({
-            users: filteredUsers,
+            users: users,
             stats: {
                 totalUsers,
                 onlineUsers,
                 todayJoined,
-                unregisteredTotal,
-                unregisteredToday
+                totalPremium,
+                todayPremium,
+                unregisteredTotal
+            },
+            pagination: {
+                total: totalMatching,
+                page,
+                limit,
+                pages: Math.ceil(totalMatching / limit)
             }
         });
     } catch (e) {
@@ -436,20 +446,60 @@ exports.clearUserChat = async (req, res) => {
 exports.deleteUser = async (req, res) => {
     try {
         const phone = normalize(req.params.phone);
-        const variations = [phone, `+91${phone}`, `91${phone}`];
-        await Promise.all([
-            User.findOneAndDelete(phoneQuery(phone)),
-            Message.deleteMany({ $or: [{ senderPhone: { $in: variations } }, { receiverPhone: { $in: variations } }] }),
-            Report.deleteMany({ $or: [{ reporterPhone: { $in: variations } }, { reportedPhone: { $in: variations } }] }),
-            Block.deleteMany({ $or: [{ blockerPhone: { $in: variations } }, { blockedPhone: { $in: variations } }] }),
-            Subscription.findOneAndDelete({ userPhone: { $in: variations } })
-        ]);
-
-        await logAction(req, "Delete Account", phone, "Permanently wiped user data");
-
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+        await performFullUserWipe(phone);
+        await logAction(req, "Wipe Account Data", phone, "Permanently deleted all user data, media, and chat history");
+        res.json({ success: true, message: "User data wiped successfully" });
+    } catch (e) {
+        console.error("Wipe Account Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
 };
+
+exports.bulkDeleteUsers = async (req, res) => {
+    try {
+        const { phones } = req.body;
+        if (!phones || !Array.isArray(phones)) return res.status(400).json({ success: false, message: "Invalid phone list" });
+
+        console.log(`🧨 Bulk Wipe Triggered for ${phones.length} users`);
+
+        for (const phone of phones) {
+            await performFullUserWipe(normalize(phone));
+        }
+
+        await logAction(req, "Bulk Wipe Data", `${phones.length} Users`, "Permanently deleted multiple user accounts and all related data");
+
+        res.json({ success: true, message: `Successfully wiped ${phones.length} users` });
+    } catch (e) {
+        console.error("Bulk Wipe Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+// Internal Helper for thorough wipe
+async function performFullUserWipe(phone) {
+    const variations = [phone, `+91${phone}`, `91${phone}`];
+    const searchCriteria = { $in: variations };
+
+    await Promise.all([
+        // 1. Core Profile & Subscription
+        User.findOneAndDelete(phoneQuery(phone)),
+        Subscription.deleteMany({ userPhone: searchCriteria }),
+        VerificationRequest.deleteMany({ phone: searchCriteria }),
+
+        // 2. Chat & Communication
+        Message.deleteMany({ $or: [{ senderPhone: searchCriteria }, { receiverPhone: searchCriteria }] }),
+        Conversation.deleteMany({ $or: [{ userPhone: searchCriteria }, { partnerPhone: searchCriteria }] }),
+        ConversationMetadata.deleteMany({ userPhone: searchCriteria }),
+
+        // 3. Social & Moderation
+        Report.deleteMany({ $or: [{ reporterPhone: searchCriteria }, { reportedPhone: searchCriteria }] }),
+        Block.deleteMany({ $or: [{ blockerPhone: searchCriteria }, { blockedPhone: searchCriteria }] }),
+
+        // 4. Media & Logs
+        RecentPhoto.deleteMany({ phone: searchCriteria }),
+        AnalyticsEvent.deleteMany({ userPhone: searchCriteria })
+    ]);
+}
 
 exports.getReports = async (req, res) => {
     try { res.json(await Report.find().sort({ timestamp: -1 })); } catch (e) { res.status(500).json([]); }
@@ -543,48 +593,96 @@ exports.approveVerification = async (req, res) => {
 };
 
 exports.broadcastNotification = async (req, res) => {
-    const { title, message } = req.body;
-    console.log(`📣 [${new Date().toISOString()}] Broadcast triggered: "${title}" - "${message}"`);
+    const { title, message, targets, scheduledAt } = req.body;
+    console.log(`📣 [${new Date().toISOString()}] Targeted Broadcast triggered: "${title}" - "${message}" for targets:`, targets);
 
     try {
         if (!message) return res.status(400).json({ success: false, message: "Message body is required" });
 
+        // If scheduled for future
+        if (scheduledAt && new Date(scheduledAt) > new Date()) {
+            const campaign = await new Campaign({
+                title, message, targetAudience: targets, status: 'Scheduled', scheduledAt: new Date(scheduledAt)
+            }).save();
+            return res.json({ success: true, message: "Campaign scheduled successfully", campaignId: campaign._id });
+        }
+
+        // 1. Identify Target Users
+        let userQuery = { fcmToken: { $exists: true, $ne: null } };
+
+        if (targets && targets.length > 0) {
+            let orConditions = [];
+            if (targets.includes('premium')) orConditions.push({ isPremium: true });
+            if (targets.includes('free')) orConditions.push({ isPremium: false, hasCompletedOnboarding: true });
+            if (targets.includes('unregistered')) orConditions.push({ hasCompletedOnboarding: false });
+
+            if (orConditions.length > 0) userQuery.$or = orConditions;
+        }
+
+        const users = await User.find(userQuery, 'fcmToken phone');
+        console.log(`👥 Targeted Broadcast: Found ${users.length} matching users`);
+
         const io = req.app.get('socketio');
         if (io) {
             io.emit('admin_alert', { title, message, timestamp: new Date() });
-            console.log("📡 Socket broadcast emitted to all online users");
         }
 
-        const users = await User.find({ fcmToken: { $exists: true, $ne: null } }, 'fcmToken phone');
-        console.log(`👥 Found ${users.length} users with FCM tokens in database`);
-
         let successCount = 0;
+        let failCount = 0;
+
+        // Create Campaign Record
+        const campaign = await new Campaign({
+            title, message, targetAudience: targets, totalSent: users.length, status: 'Sending'
+        }).save();
+
+        // Send Notifications
         const sendPromises = users.map(async (u) => {
             if (u.fcmToken) {
                 const result = await notificationService.sendPushNotification(
                     u.fcmToken,
                     title || "Broadcast",
                     message,
-                    { type: 'broadcast' }
+                    { type: 'broadcast', campaignId: campaign._id }
                 );
                 if (result && result.success) {
                     successCount++;
                 } else if (result && result.isInvalidToken) {
+                    failCount++;
                     await User.updateOne({ _id: u._id }, { $unset: { fcmToken: 1 } });
+                } else {
+                    failCount++;
                 }
             }
         });
 
         await Promise.all(sendPromises);
-        console.log(`✅ Broadcast finished. Successful deliveries: ${successCount}/${users.length}`);
 
-        await logAction(req, "Global Broadcast", "All Users", message);
+        // Update Campaign stats
+        campaign.totalDelivered = successCount;
+        campaign.totalFailed = failCount;
+        campaign.status = 'Sent';
+        await campaign.save();
 
-        res.json({ success: true, targetCount: users.length, deliveredCount: successCount });
+        await logAction(req, "Global Broadcast", `Audience: ${targets.join(',')}`, message);
+
+        res.json({
+            success: true,
+            targetCount: users.length,
+            deliveredCount: successCount,
+            failedCount: failCount,
+            campaignId: campaign._id
+        });
     } catch (e) {
         console.error("❌ Broadcast Error:", e);
         res.status(500).json({ success: false, error: e.message });
     }
+};
+
+exports.getCampaigns = async (req, res) => {
+    try {
+        const campaigns = await Campaign.find().sort({ createdAt: -1 }).limit(20);
+        res.json({ success: true, campaigns });
+    } catch (e) { res.status(500).json({ success: false }); }
 };
 
 exports.getUserInboxes = async (req, res) => {

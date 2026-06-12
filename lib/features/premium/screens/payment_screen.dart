@@ -248,9 +248,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         await UserRepository().updateLocalUser(verifyRes['user']);
         await PremiumService().updatePremiumStatus(true);
         await AnalyticsService.logPurchase(
-          199,
+          (widget.price ?? 199).toDouble(),
           'INR',
-          'monthly_plan',
+          widget.rzpPlanId ?? widget.googlePlayId ?? widget.offerId ?? 'premium_plan',
         );
         _confettiController.play();
         _showSuccessDialog();

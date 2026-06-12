@@ -348,8 +348,40 @@ exports.updateLocation = async (req, res) => {
         res.status(500).json({ success: false });
     }
 };
-exports.trackEvent = async (req, res) => res.json({ success: true });
-exports.updateFcmToken = async (req, res) => res.json({ success: true });
+exports.trackEvent = async (req, res) => {
+    try {
+        const { eventType, distinctId, metadata } = req.body;
+        if (eventType && distinctId) {
+            const clientMeta = {
+                ...metadata,
+                ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+                userAgent: req.headers['user-agent']
+            };
+            await analyticsService.trackEvent(eventType, distinctId, clientMeta);
+        }
+        res.json({ success: true });
+    } catch (e) {
+        res.json({ success: true });
+    }
+};
+exports.updateFcmToken = async (req, res) => {
+    try {
+        const { fcmToken } = req.body;
+        if (!fcmToken) return res.status(400).json({ success: false, message: "Token required" });
+
+        await User.findOneAndUpdate(
+            { phone: req.user.phone },
+            { fcmToken: fcmToken },
+            { new: true }
+        );
+
+        console.log(`📲 FCM Token Updated for user: ${req.user.phone}`);
+        res.json({ success: true });
+    } catch (e) {
+        console.error("FCM Update Error:", e);
+        res.status(500).json({ success: false });
+    }
+};
 exports.submitVerification = async (req, res) => res.json({ success: true });
 exports.markTrialUsed = async (req, res) => res.json({ success: true });
 exports.getPublicConfig = async (req, res) => res.json({ success: true, config: {} });

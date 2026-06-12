@@ -20,6 +20,7 @@ import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/core/services/ad_service.dart';
+import 'package:gogo/shared/widgets/call_indicator.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -188,8 +189,8 @@ class _SocketGlobalHandlerState extends State<SocketGlobalHandler> with WidgetsB
              await PremiumService().refreshAccessState();
 
              final navContext = MyApp.navigatorKey.currentContext;
-             if (navContext != null && navContext.mounted) {
-                final String msg = data['message'] ?? "Account Status Updated! 🚀";
+             if (navContext != null && navContext.mounted && data['message'] != null && data['message'].toString().isNotEmpty) {
+                final String msg = data['message'];
                 final String snackType = data['type'] ?? "success";
                 
                 ScaffoldMessenger.of(navContext).showSnackBar(
@@ -329,5 +330,28 @@ else if (type == 'profile_sync_required') {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        widget.child,
+        const CallIndicatorWrapper(),
+      ],
+    );
+  }
+}
+
+class CallIndicatorWrapper extends StatelessWidget {
+  const CallIndicatorWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Only access MediaQuery here to prevent top-level rebuilds
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: bottomPadding + 65,
+      child: const CallIndicator(),
+    );
+  }
 }

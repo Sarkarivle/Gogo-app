@@ -60,10 +60,14 @@ class AnalyticsService {
     if (_canTrack('firebase')) {
       await _analytics.logPurchase(value: amount, currency: currency, items: [AnalyticsEventItem(itemId: planId, itemName: 'Premium Plan')]);
     }
+    final String eventId = "pur_${DateTime.now().millisecondsSinceEpoch}_$planId";
     if (_canTrack('meta')) {
-      await _facebookAppEvents.logPurchase(amount: amount, currency: currency, parameters: {'content_id': planId});
+      await _facebookAppEvents.logPurchase(amount: amount, currency: currency, parameters: {
+        'content_id': planId,
+        'event_id': eventId,
+      });
     }
-    _syncWithBackend('premium_activated', metadata: {'amount': amount, 'currency': currency, 'planId': planId});
+    _syncWithBackend('premium_activated', eventId: eventId, metadata: {'amount': amount, 'currency': currency, 'planId': planId});
   }
 
   /// 3. Track Video/Audio Calls
@@ -104,9 +108,9 @@ class AnalyticsService {
 
   /// Sync Helper for Backend & CAPI
   static void _syncWithBackend(String eventName, {String? eventId, Map<String, dynamic>? metadata}) {
-    // We always sync with backend regardless of Meta status, 
-    // as backend handles its own CAPI logic and needs data for the dashboard.
-    UserRepository().trackEvent(eventName, eventId: eventId, metadata: metadata);
+    final user = UserRepository().currentUser;
+    final String? phone = user?['phone']?.toString();
+    UserRepository().trackEvent(eventName, customId: phone, eventId: eventId, metadata: metadata);
   }
 
   static Future<void> activateMetaIfEnabled() async {

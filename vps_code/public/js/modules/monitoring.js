@@ -159,7 +159,7 @@ function handleLiveMonitorEvent(event) {
     }
 
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const phoneInfo = event.phone ? `<span class="text-slate-600 font-bold ml-2">(${event.phone.slice(-4)})</span>` : '';
+    const phoneInfo = event.phone ? `<span onclick="openUserControl('${event.phone}')" class="text-slate-600 font-bold ml-2 cursor-pointer hover:text-orange-500 hover:underline">(${event.phone.slice(-4)})</span>` : '';
 
     div.innerHTML = `
         <span class="text-[8px] opacity-20 mt-1">${time}</span>

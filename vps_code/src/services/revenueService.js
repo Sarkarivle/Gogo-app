@@ -110,7 +110,7 @@ class RevenueService {
                     status: 'FAILED',
                     createdAt: { $gte: startOfDay }
                 }).catch(() => 0),
-                PaymentTransaction.find({})
+                PaymentTransaction.find({ status: { $ne: 'PENDING' } })
                     .sort({ createdAt: -1 })
                     .limit(5)
                     .select('userPhone amount status gateway createdAt')
@@ -159,10 +159,11 @@ class RevenueService {
     }
 
     async getPaymentHistory(query = {}, page = 1, limit = 20) {
+        const finalQuery = { ...query, status: { $ne: 'PENDING' } };
         const skip = (page - 1) * limit;
         const [transactions, total] = await Promise.all([
-            PaymentTransaction.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
-            PaymentTransaction.countDocuments(query)
+            PaymentTransaction.find(finalQuery).sort({ createdAt: -1 }).skip(skip).limit(limit),
+            PaymentTransaction.countDocuments(finalQuery)
         ]);
         return { transactions, total, page, pages: Math.ceil(total / limit) };
     }

@@ -9,7 +9,7 @@ import 'package:gogo/core/network/webrtc_manager.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/premium/repositories/premium_repository.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
-import 'package:gogo/shared/screens/offer_screen.dart';
+import 'package:gogo/shared/screens/offer_trial_screen.dart';
 
 class CallScreen extends StatefulWidget {
   final String remoteName;
@@ -50,6 +50,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
   @override
   void initState() {
     super.initState();
+    _isMuted = CallService().isMuted;
     _displayId = (1000000 + Random().nextInt(8999999)).toString();
     _pulseController = AnimationController(
       vsync: this,
@@ -58,6 +59,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
 
     _initRenderers();
     WidgetsBinding.instance.addObserver(this);
+    CallService().setCallScreenActive(true);
     
     _stateSubscription = CallService().stateStream.listen((state) {
       if (state == CallState.ended) {
@@ -98,6 +100,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       await _localRenderer.initialize();
       await _remoteRenderer.initialize();
       
+      // Immediately attach existing streams if available (fixes re-entry blank screen)
+      if (WebRTCManager().remoteStream != null) {
+        _remoteRenderer.srcObject = WebRTCManager().remoteStream;
+      }
+      if (WebRTCManager().localStream != null && CallService().state == CallState.connected) {
+        _localRenderer.srcObject = WebRTCManager().localStream;
+      }
+      if (mounted) setState(() {});
+
       _remoteStreamSubscription = WebRTCManager().remoteStreamStream.listen((stream) {
         if (mounted) {
           if (_remoteRenderer.srcObject?.id != stream?.id) {
@@ -131,6 +142,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
 
   @override
   void dispose() {
+    CallService().setCallScreenActive(false);
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _stateSubscription?.cancel();
@@ -138,8 +150,13 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
     _localStreamSubscription?.cancel();
     _pulseController.dispose();
     _callDuration.dispose();
+    
+    // Clear renderers before disposing to avoid native-side hangs during cleanup
+    _localRenderer.srcObject = null;
+    _remoteRenderer.srcObject = null;
     _localRenderer.dispose();
     _remoteRenderer.dispose();
+
     super.dispose();
   }
 
@@ -165,12 +182,18 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           _isManualPop = true;
-          // Fix for "call nahi cut hoti" bug: 
-          // If user backs out (gesture/button), we must end the active call session.
-          if (CallService().state == CallState.ringing && !widget.isOutgoing) {
-            CallService().rejectCall();
-          } else if (CallService().state != CallState.idle && CallService().state != CallState.ended) {
-            CallService().endCall();
+          // If the call is connected, we don't end it. The global CallIndicator will show up.
+          if (CallService().state == CallState.connected) {
+            return;
+          }
+
+          // If user backs out while ringing or connecting, end it.
+          if (CallService().state != CallState.idle && CallService().state != CallState.ended) {
+            if (CallService().state == CallState.ringing && !widget.isOutgoing) {
+              CallService().rejectCall();
+            } else {
+              CallService().endCall();
+            }
           }
         }
       },
@@ -215,32 +238,34 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
     bool isRemoteVideoOff = CallService().remoteIsVideoOff;
     bool isConnected = CallService().state == CallState.connected;
 
-    return Container(
-      color: const Color(0xFF0F0F0F),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Remote Video View
-          if (widget.isVideo && isConnected)
-            Positioned.fill(
-              child: Opacity(
-                opacity: isRemoteVideoOff ? 0 : 1,
-                child: RTCVideoView(
-                  _remoteRenderer,
-                  key: const ValueKey('remoteVideoRenderer'),
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+    return RepaintBoundary(
+      child: Container(
+        color: const Color(0xFF0F0F0F),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Remote Video View
+            if (widget.isVideo && isConnected)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: isRemoteVideoOff ? 0 : 1,
+                  child: RTCVideoView(
+                    _remoteRenderer,
+                    key: const ValueKey('remoteVideoRenderer'),
+                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  ),
                 ),
               ),
-            ),
-          
-          // Placeholder (shown when not connected, not video call, or camera off)
-          if (!isConnected || !widget.isVideo || isRemoteVideoOff)
-            AnimatedOpacity(
-              duration: const Duration(milliseconds: 500),
-              opacity: (!isConnected || !widget.isVideo || isRemoteVideoOff) ? 1 : 0,
-              child: _buildRemotePlaceholder(isRemoteVideoOff && isConnected),
-            ),
-        ],
+            
+            // Placeholder (shown when not connected, not video call, or camera off)
+            if (!isConnected || !widget.isVideo || isRemoteVideoOff)
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 500),
+                opacity: (!isConnected || !widget.isVideo || isRemoteVideoOff) ? 1 : 0,
+                child: _buildRemotePlaceholder(isRemoteVideoOff && isConnected),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -254,18 +279,20 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
             alignment: Alignment.center,
             children: [
               if (CallService().state == CallState.ringing || CallService().state == CallState.connecting)
-                AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    return Container(
-                      width: 120 + (40 * _pulseController.value),
-                      height: 120 + (40 * _pulseController.value),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.orangeAccent.withValues(alpha: 0.2 * (1 - _pulseController.value)),
-                      ),
-                    );
-                  },
+                RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      return Container(
+                        width: 120 + (40 * _pulseController.value),
+                        height: 120 + (40 * _pulseController.value),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.orangeAccent.withValues(alpha: 0.2 * (1 - _pulseController.value)),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               Hero(
                 tag: 'remoteAvatar',
@@ -497,10 +524,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const OfferScreen()),
-              );
+              OfferTrialScreen.show(context);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orangeAccent,
@@ -731,9 +755,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
               _isMuted ? Icons.mic_off : Icons.mic,
               _isMuted,
               () {
-                setState(() => _isMuted = !_isMuted);
-                WebRTCManager().setMuted(_isMuted);
-                CallService().syncState(isMuted: _isMuted, isVideoOff: _isVideoOff);
+                CallService().toggleMute();
+                setState(() => _isMuted = CallService().isMuted);
               },
             ),
             if (widget.isVideo)

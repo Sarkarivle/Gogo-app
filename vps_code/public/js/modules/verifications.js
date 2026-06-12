@@ -12,15 +12,15 @@ async function loadVerifications() {
                     <div class="glass p-8 rounded-[3rem] flex flex-col space-y-6 border border-white/5 hover:border-blue-500/20 transition relative group">
                         <!-- Header -->
                         <div class="flex justify-between items-start">
-                            <div class="flex items-center space-x-4">
-                                <div class="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center text-blue-500 font-black text-xl">
-                                    ${req.userName ? req.userName[0] : '?'}
+                                <div onclick="openUserControl('${req.userPhone}')" class="flex items-center space-x-4 cursor-pointer group/user">
+                                    <div class="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center text-blue-500 font-black text-xl group-hover/user:bg-blue-500 group-hover/user:text-white transition-all">
+                                        ${req.userName ? req.userName[0] : '?'}
+                                    </div>
+                                    <div>
+                                        <h4 class="text-base font-black text-white uppercase group-hover/user:text-blue-500 transition-colors">${req.userName || 'Anonymous'}</h4>
+                                        <p class="text-[10px] text-slate-500 font-bold group-hover/user:text-blue-400 transition-colors underline decoration-white/10 underline-offset-2">${req.userPhone}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h4 class="text-base font-black text-white uppercase">${req.userName || 'Anonymous'}</h4>
-                                    <p class="text-[10px] text-slate-500 font-bold">${req.userPhone}</p>
-                                </div>
-                            </div>
                             <div class="text-right">
                                 ${UI.badge('PENDING REVIEW', 'bg-blue-500/10 text-blue-500')}
                                 <p class="text-[8px] text-slate-500 mt-2 uppercase font-black">${new Date(req.submittedAt).toLocaleString()}</p>

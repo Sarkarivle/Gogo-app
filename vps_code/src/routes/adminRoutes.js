@@ -44,6 +44,7 @@ router.post('/user/:phone/note', s(AdminController.addAdminNote));
 router.post('/user/:phone/notify', s(AdminController.sendDirectNotification));
 router.delete('/user/:phone/clear-chat', s(AdminController.clearUserChat));
 router.delete('/user/:phone/delete-account', s(AdminController.deleteUser));
+router.post('/users/bulk-delete', s(AdminController.bulkDeleteUsers));
 router.get('/reports', s(AdminController.getReports));
 router.post('/reports/handle', s(AdminController.handleReport));
 router.post('/report/status', s(AdminController.handleReport)); // Alias for compatibility
@@ -51,6 +52,7 @@ router.get('/verification/requests', s(AdminController.getVerificationRequests))
 router.post('/verification/approve/:phone', s(AdminController.approveVerification));
 router.post('/verification/reject/:phone', s(AdminController.rejectVerification));
 router.post('/broadcast', s(AdminController.broadcastNotification));
+router.get('/campaigns', s(AdminController.getCampaigns));
 router.get('/inbox/:phone', s(AdminController.getUserInboxes));
 router.get('/monitoring/sockets', s(AdminController.getMonitoringData));
 router.get('/audit-logs', s(AdminController.getAuditLogs));

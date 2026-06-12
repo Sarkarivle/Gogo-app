@@ -8,17 +8,22 @@ async function loadAuditLogs() {
         const logs = await API.getAuditLogs();
         if (!Array.isArray(logs)) throw new Error("Invalid response format");
 
-        const rows = logs.map(l => `
-            <tr class="hover:bg-white/[0.01]">
-                <td class="p-6">
-                    <span class="px-3 py-1 bg-white/5 text-white text-[9px] font-black rounded-full uppercase border border-white/5">${l.action || 'Unknown'}</span>
-                </td>
-                <td class="p-6 text-sm font-bold text-orange-500">${l.target || 'System'}</td>
-                <td class="p-6 text-xs text-slate-400 max-w-xs truncate">${l.details || '-'}</td>
-                <td class="p-6 text-[10px] text-slate-500 font-bold uppercase">${new Date(l.timestamp).toLocaleString()}</td>
-                <td class="p-6 text-right"><p class="text-[9px] font-black text-white uppercase">ADMIN: ${l.adminName || 'STAFF'}</p></td>
-            </tr>
-        `);
+        const rows = logs.map(l => {
+            const isPhone = l.target && /^\d{10,}$/.test(l.target.replace(/\+/g, ''));
+            return `
+                <tr class="hover:bg-white/[0.01]">
+                    <td class="p-6">
+                        <span class="px-3 py-1 bg-white/5 text-white text-[9px] font-black rounded-full uppercase border border-white/5">${l.action || 'Unknown'}</span>
+                    </td>
+                    <td class="p-6 text-sm font-bold text-orange-500">
+                        ${isPhone ? `<span onclick="openUserControl('${l.target}')" class="cursor-pointer hover:underline underline-offset-4 decoration-white/20 transition-all">${l.target}</span>` : (l.target || 'System')}
+                    </td>
+                    <td class="p-6 text-xs text-slate-400 max-w-xs truncate">${l.details || '-'}</td>
+                    <td class="p-6 text-[10px] text-slate-500 font-bold uppercase">${new Date(l.timestamp).toLocaleString()}</td>
+                    <td class="p-6 text-right"><p class="text-[9px] font-black text-white uppercase">ADMIN: ${l.adminName || 'STAFF'}</p></td>
+                </tr>
+            `;
+        });
 
         mainContent.innerHTML = UI.table(
             ['Action Type', 'Target Subject', 'Technical Details', 'Timestamp', 'Operator'],

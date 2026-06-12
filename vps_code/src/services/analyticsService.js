@@ -3,6 +3,7 @@ const Message = require('../models/Message');
 const Report = require('../models/Report');
 const AnalyticsEvent = require('../models/AnalyticsEvent');
 const os = require('os');
+const https = require('https');
 
 const normalize = (p) => {
     if (!p) return '';
@@ -201,8 +202,8 @@ class AnalyticsService {
         this.sendToFacebookCAPI(type, dId, metadata);
     }
 
-    async trackPremiumUpgrade(distinctId) {
-        return await this.trackEvent('premium_activated', distinctId);
+    async trackPremiumUpgrade(distinctId, metadata = {}) {
+        return await this.trackEvent('premium_activated', distinctId, metadata);
     }
 
     async sendToFacebookCAPI(type, distinctId, metadata = {}) {
@@ -214,13 +215,24 @@ class AnalyticsService {
             if (!distinctId) return;
 
             const crypto = require('crypto');
-            const hashedPhone = crypto.createHash('sha256').update(distinctId).digest('hex');
+            // Format phone for Facebook: ensure it has 91 if it's 10 digits
+            let phoneToHash = distinctId.replace(/[^0-9]/g, '');
+            if (phoneToHash.length === 10) phoneToHash = '91' + phoneToHash;
+
+            const hashedPhone = crypto.createHash('sha256').update(phoneToHash).digest('hex');
+            const externalId = crypto.createHash('sha256').update(distinctId).digest('hex');
+
+            let clientIp = metadata.ip || "1.1.1.1";
+            if (typeof clientIp === 'string') {
+                if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
+                if (clientIp === '::1' || clientIp === '127.0.0.1' || clientIp.includes('localhost')) clientIp = '1.1.1.1';
+            }
 
             let fbEventName = type;
             if (type === 'app_open') fbEventName = 'ActivateApp';
             else if (type === 'onboarding_completed') fbEventName = 'CompleteRegistration';
             else if (type === 'premium_activated') fbEventName = 'Purchase';
-            else if (type === 'payment_started') fbEventName = 'InitiateCheckout';
+            else if (type === 'payment_started' || type === 'offer_payment_started') fbEventName = 'InitiateCheckout';
             else if (type === 'start_call') fbEventName = 'Contact';
 
             const url = `https://graph.facebook.com/v18.0/${config.fbPixelId}/events?access_token=${config.fbAccessToken}`;
@@ -229,12 +241,15 @@ class AnalyticsService {
                     event_name: fbEventName,
                     event_time: metadata.timestamp || Math.floor(Date.now() / 1000),
                     event_id: metadata.event_id || "",
-                    action_source: "website",
+                    action_source: "app",
+                    app_id: config.fbAppId,
                     user_data: {
                         ph: [hashedPhone],
-                        external_id: [distinctId],
-                        client_ip_address: metadata.ip || "127.0.0.1",
-                        client_user_agent: metadata.userAgent || "Mozilla/5.0"
+                        external_id: externalId,
+                        client_ip_address: clientIp,
+                        client_user_agent: metadata.userAgent || "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
+                        advertiser_tracking_enabled: 1,
+                        application_tracking_enabled: 1
                     },
                     custom_data: {
                         value: metadata.amount || metadata.value || (fbEventName === 'Purchase' ? 199 : 0),
@@ -245,8 +260,41 @@ class AnalyticsService {
             };
 
             if (config.fbTestCode) payload.test_event_code = config.fbTestCode;
-            console.log(`✅ [CAPI] Event "${fbEventName}" processed for ${distinctId}`);
-        } catch (e) {}
+
+            // ACTUAL SENDING LOGIC (Using built-in https)
+            const postData = JSON.stringify(payload);
+            const options = {
+                hostname: 'graph.facebook.com',
+                path: `/v18.0/${config.fbPixelId}/events?access_token=${config.fbAccessToken}`,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': postData.length
+                }
+            };
+
+            const fbReq = https.request(options, (fbRes) => {
+                let resData = '';
+                fbRes.on('data', (chunk) => resData += chunk);
+                fbRes.on('end', () => {
+                    if (fbRes.statusCode === 200) {
+                        console.log(`🚀 [FB CAPI SUCCESS] Event "${fbEventName}" sent for ${distinctId}`);
+                    } else {
+                        console.error(`❌ [FB CAPI FAILED] Status: ${fbRes.statusCode}, Response: ${resData}`);
+                    }
+                });
+            });
+
+            fbReq.on('error', (err) => {
+                console.error(`❌ [FB CAPI NETWORK ERROR]: ${err.message}`);
+            });
+
+            fbReq.write(postData);
+            fbReq.end();
+
+        } catch (e) {
+            console.error("sendToFacebookCAPI Error:", e.message);
+        }
     }
 
     trackMessage() {

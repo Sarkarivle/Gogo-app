@@ -81,9 +81,9 @@ function renderReportsUI(filteredReports = null) {
                         <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs font-bold text-slate-400 group-hover:bg-orange-500/20 group-hover:text-orange-500 transition">
                             <i class="fas fa-user-shield"></i>
                         </div>
-                        <div>
-                            <p class="text-sm font-bold text-white">${rep.reportedPhone}</p>
-                            <p class="text-[9px] text-slate-500 uppercase font-black">Target Subject</p>
+                        <div onclick="openUserControl('${rep.reportedPhone}')" class="cursor-pointer group/target">
+                            <p class="text-sm font-bold text-white group-hover/target:text-orange-500 transition-all underline underline-offset-4 decoration-white/10">${rep.reportedPhone}</p>
+                            <p class="text-[9px] text-slate-500 uppercase font-black mt-1">Target Subject</p>
                         </div>
                     </div>
                 </td>
@@ -97,8 +97,10 @@ function renderReportsUI(filteredReports = null) {
                     </div>
                 </td>
                 <td class="p-6">
-                    <p class="text-xs text-slate-300 font-bold">${rep.reporterPhone}</p>
-                    <p class="text-[9px] text-slate-500 uppercase font-black">Reporter</p>
+                    <div onclick="openUserControl('${rep.reporterPhone}')" class="cursor-pointer group/reporter">
+                        <p class="text-xs text-slate-300 font-bold group-hover/reporter:text-blue-400 transition-all underline underline-offset-4 decoration-white/10">${rep.reporterPhone}</p>
+                        <p class="text-[9px] text-slate-500 uppercase font-black mt-1">Reporter</p>
+                    </div>
                 </td>
                 <td class="p-6">
                     <span class="px-3 py-1 rounded-lg text-[9px] font-black uppercase ${getStatusStyle(rep.status)}">
@@ -159,9 +161,9 @@ function applyReportFilters() {
                         <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs font-bold text-slate-400 group-hover:bg-orange-500/20 group-hover:text-orange-500 transition">
                             <i class="fas fa-user-shield"></i>
                         </div>
-                        <div>
-                            <p class="text-sm font-bold text-white">${rep.reportedPhone}</p>
-                            <p class="text-[9px] text-slate-500 uppercase font-black">Target Subject</p>
+                        <div onclick="openUserControl('${rep.reportedPhone}')" class="cursor-pointer group/target">
+                            <p class="text-sm font-bold text-white group-hover/target:text-orange-500 transition-all underline underline-offset-4 decoration-white/10">${rep.reportedPhone}</p>
+                            <p class="text-[9px] text-slate-500 uppercase font-black mt-1">Target Subject</p>
                         </div>
                     </div>
                 </td>
@@ -175,8 +177,10 @@ function applyReportFilters() {
                     </div>
                 </td>
                 <td class="p-6">
-                    <p class="text-xs text-slate-300 font-bold">${rep.reporterPhone}</p>
-                    <p class="text-[9px] text-slate-500 uppercase font-black">Reporter</p>
+                    <div onclick="openUserControl('${rep.reporterPhone}')" class="cursor-pointer group/reporter">
+                        <p class="text-xs text-slate-300 font-bold group-hover/reporter:text-blue-400 transition-all underline underline-offset-4 decoration-white/10">${rep.reporterPhone}</p>
+                        <p class="text-[9px] text-slate-500 uppercase font-black mt-1">Reporter</p>
+                    </div>
                 </td>
                 <td class="p-6">
                     <span class="px-3 py-1 rounded-lg text-[9px] font-black uppercase ${getStatusStyle(rep.status)}">
@@ -249,13 +253,13 @@ async function viewReportDetails(id) {
                 <div class="glass p-6 rounded-3xl">
                     <p class="text-[10px] font-black text-slate-500 uppercase mb-4 tracking-widest">Subject Information</p>
                     <div class="space-y-4">
-                        <div class="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
+                        <div onclick="openUserControl('${report.reportedPhone}')" class="flex justify-between items-center p-4 bg-white/5 rounded-2xl cursor-pointer hover:bg-orange-500/10 transition group/target">
                             <span class="text-[10px] font-bold text-slate-400">Target Phone</span>
-                            <span class="text-sm font-black text-white">${report.reportedPhone}</span>
+                            <span class="text-sm font-black text-white group-hover/target:text-orange-500 transition-colors underline decoration-white/10">${report.reportedPhone}</span>
                         </div>
-                        <div class="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
+                        <div onclick="openUserControl('${report.reporterPhone}')" class="flex justify-between items-center p-4 bg-white/5 rounded-2xl cursor-pointer hover:bg-blue-500/10 transition group/reporter">
                             <span class="text-[10px] font-bold text-slate-400">Reporter Phone</span>
-                            <span class="text-sm font-black text-white">${report.reporterPhone}</span>
+                            <span class="text-sm font-black text-white group-hover/reporter:text-blue-500 transition-colors underline decoration-white/10">${report.reporterPhone}</span>
                         </div>
                         <div class="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
                             <span class="text-[10px] font-bold text-slate-400">Time Reported</span>

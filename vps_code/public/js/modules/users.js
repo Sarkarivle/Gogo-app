@@ -4,15 +4,25 @@ let currentUserFilters = {
     accountStatus: 'All',
     dateRange: 'all',
     trustLevel: 'all',
+    userType: 'registered',
     sortBy: 'createdAt',
-    sortOrder: 'desc'
+    sortOrder: 'desc',
+    page: 1,
+    limit: 50
 };
+
+let selectedUsers = new Set();
 
 async function loadUsers(filters = {}) {
     // Merge provided filters with current state
     currentUserFilters = { ...currentUserFilters, ...filters };
 
-    const { search, status, accountStatus, dateRange, trustLevel, sortBy, sortOrder } = currentUserFilters;
+    // Clear selection if we are changing page or filters (optional, but safer)
+    if (filters.page || filters.search || filters.userType) {
+        // selectedUsers.clear(); // Uncomment if you want to clear selection on navigation
+    }
+
+    const { search, status, accountStatus, dateRange, trustLevel, userType, sortBy, sortOrder, page, limit } = currentUserFilters;
 
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
@@ -21,24 +31,26 @@ async function loadUsers(filters = {}) {
     mainContent.innerHTML = `
         <div class="space-y-6">
             <!-- Analytics Overview -->
-            <div id="userStatsContainer" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="glass p-6 rounded-[2rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
-                <div class="glass p-6 rounded-[2rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
-                <div class="glass p-6 rounded-[2rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+            <div id="userStatsContainer" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+                <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+                <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+                <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
+                <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
             </div>
 
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div class="relative w-full md:w-96">
+                <div class="relative w-full md:w-80">
                     <i class="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
                     <input type="text" id="userSearch" value="${search}" onkeypress="if(event.key === 'Enter') applyUserFilters()" placeholder="Search Identity (Name or Phone)..." class="w-full bg-white/5 border border-white/5 p-4 pl-14 rounded-2xl outline-none text-sm focus:border-orange-500/50 transition">
                 </div>
 
                 <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                    <select id="trustLevelFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
-                        <option value="all" ${trustLevel === 'all' ? 'selected' : ''}>Integrity: All</option>
-                        <option value="high" ${trustLevel === 'high' ? 'selected' : ''}>High (80%+)</option>
-                        <option value="medium" ${trustLevel === 'medium' ? 'selected' : ''}>Medium (40-80%)</option>
-                        <option value="low" ${trustLevel === 'low' ? 'selected' : ''}>Low (< 40%)</option>
+                    <select id="userTypeFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
+                        <option value="registered" ${userType === 'registered' ? 'selected' : ''}>Premium & Free</option>
+                        <option value="premium" ${userType === 'premium' ? 'selected' : ''}>Premium Only</option>
+                        <option value="free" ${userType === 'free' ? 'selected' : ''}>Free Users Only</option>
+                        <option value="unregistered" ${userType === 'unregistered' ? 'selected' : ''}>Unregistered</option>
                     </select>
 
                     <select id="dateRangeFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
@@ -59,45 +71,59 @@ async function loadUsers(filters = {}) {
                         <option value="Active" ${accountStatus === 'Active' ? 'selected' : ''}>Active</option>
                         <option value="Deactivated" ${accountStatus === 'Deactivated' ? 'selected' : ''}>Deactivated</option>
                         <option value="Suspended" ${accountStatus === 'Suspended' ? 'selected' : ''}>Suspended</option>
-                        <option value="Banned" ${accountStatus === 'Banned' ? 'selected' : ''}>Banned</option>
                     </select>
 
                     <div class="flex space-x-2">
-                        <button onclick="loadUsers({search: '', status: 'all', accountStatus: 'All', dateRange: 'all', trustLevel: 'all', sortBy: 'createdAt', sortOrder: 'desc'})" class="glass p-4 rounded-2xl hover:bg-white/5 transition" title="Reset Filters"><i class="fas fa-sync-alt"></i></button>
+                        <button id="bulkDeleteBtn" onclick="bulkDeleteSelected()" class="hidden glass p-4 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition" title="Delete Selected"><i class="fas fa-trash-alt"></i></button>
+                        <button onclick="loadUsers({search: '', status: 'all', accountStatus: 'All', dateRange: 'all', trustLevel: 'all', userType: 'registered', sortBy: 'createdAt', sortOrder: 'desc', page: 1})" class="glass p-4 rounded-2xl hover:bg-white/5 transition" title="Reset Filters"><i class="fas fa-sync-alt"></i></button>
                     </div>
                 </div>
             </div>
             <div id="userTableContainer">${UI.skeletonTable(10)}</div>
+            <div id="paginationContainer" class="flex justify-center items-center space-x-4 py-6"></div>
         </div>
     `;
 
     try {
         const response = await API.getUsers(currentUserFilters);
         const users = response.users || [];
-        const stats = response.stats || { totalUsers: 0, onlineUsers: 0, todayJoined: 0 };
+        const stats = response.stats || { totalUsers: 0, onlineUsers: 0, todayJoined: 0, totalPremium: 0, todayPremium: 0 };
+        const pagination = response.pagination || { page: 1, pages: 1, total: 0 };
 
         // Update Stats UI
         document.getElementById('userStatsContainer').innerHTML = `
-            <div class="glass p-6 rounded-[2rem] border-b-2 border-orange-500/20">
-                <p class="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Total Registry</p>
-                <h3 class="text-3xl font-black text-white">${stats.totalUsers.toLocaleString()} <span class="text-[10px] text-slate-500 ml-1 font-bold">USERS</span></h3>
+            <div class="glass p-5 rounded-[1.5rem] border-b-2 border-orange-500/20">
+                <p class="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Total Registry</p>
+                <h3 class="text-2xl font-black text-white">${stats.totalUsers.toLocaleString()} <span class="text-[9px] text-slate-500 ml-1 font-bold">USERS</span></h3>
             </div>
-            <div class="glass p-6 rounded-[2rem] border-b-2 border-emerald-500/20">
-                <p class="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Currently Online</p>
-                <h3 class="text-3xl font-black text-emerald-500">${stats.onlineUsers.toLocaleString()} <span class="text-[10px] text-slate-500 ml-1 font-bold">ACTIVE</span></h3>
+            <div class="glass p-5 rounded-[1.5rem] border-b-2 border-orange-400/40">
+                <p class="text-[9px] font-black text-orange-400 uppercase mb-1 tracking-widest">Total Premium</p>
+                <h3 class="text-2xl font-black text-white">${(stats.totalPremium || 0).toLocaleString()} <span class="text-[9px] text-orange-400 ml-1 font-bold">PRO</span></h3>
             </div>
-            <div class="glass p-6 rounded-[2rem] border-b-2 border-blue-500/20">
-                <p class="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">New Today</p>
-                <h3 class="text-3xl font-black text-blue-400">+${stats.todayJoined.toLocaleString()} <span class="text-[10px] text-slate-500 ml-1 font-bold">JOINED</span></h3>
+            <div class="glass p-5 rounded-[1.5rem] border-b-2 border-emerald-500/20">
+                <p class="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Currently Online</p>
+                <h3 class="text-2xl font-black text-emerald-500">${stats.onlineUsers.toLocaleString()} <span class="text-[9px] text-slate-500 ml-1 font-bold">ACTIVE</span></h3>
+            </div>
+            <div class="glass p-5 rounded-[1.5rem] border-b-2 border-blue-500/20">
+                <p class="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">New Today</p>
+                <h3 class="text-2xl font-black text-blue-400">+${stats.todayJoined.toLocaleString()} <span class="text-[9px] text-slate-500 ml-1 font-bold">JOINED</span></h3>
+            </div>
+            <div class="glass p-5 rounded-[1.5rem] border-b-2 border-blue-400/40">
+                <p class="text-[9px] font-black text-blue-400 uppercase mb-1 tracking-widest">Today Premium</p>
+                <h3 class="text-2xl font-black text-white">+${(stats.todayPremium || 0).toLocaleString()} <span class="text-[9px] text-blue-400 ml-1 font-bold">PRO</span></h3>
             </div>
         `;
 
         const rows = users.map(u => {
             const genderColor = u.gender === 'Male' ? 'text-blue-400' : (u.gender === 'Female' ? 'text-pink-400' : 'text-slate-400');
             const genderIcon = u.gender === 'Male' ? 'fa-mars' : (u.gender === 'Female' ? 'fa-venus' : 'fa-genderless');
+            const isSelected = selectedUsers.has(u.phone);
 
             return `
-                <tr class="hover:bg-white/[0.01]">
+                <tr class="hover:bg-white/[0.01] transition-colors">
+                    <td class="p-6">
+                        <input type="checkbox" onchange="toggleUserSelection('${u.phone}')" ${isSelected ? 'checked' : ''} class="user-checkbox w-4 h-4 rounded border-white/10 bg-white/5 checked:bg-orange-500 transition cursor-pointer">
+                    </td>
                     <td class="p-6">
                         <div class="flex items-center space-x-3">
                             <div class="relative">
@@ -180,6 +206,7 @@ async function loadUsers(filters = {}) {
         };
 
         const headers = [
+            `<input type="checkbox" id="selectAllUsers" onchange="toggleSelectAll(this)" class="w-4 h-4 rounded border-white/10 bg-white/5 checked:bg-orange-500 transition cursor-pointer">`,
             `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('name')">User Identity ${getSortIcon('name')}</div>`,
             `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('createdAt')">Joined ${getSortIcon('createdAt')}</div>`,
             `<div class="flex items-center cursor-pointer select-none" onclick="toggleSort('trustScore')">Integrity ${getSortIcon('trustScore')}</div>`,
@@ -193,6 +220,26 @@ async function loadUsers(filters = {}) {
             headers,
             rows
         );
+
+        // Update Bulk Button visibility
+        updateBulkButton();
+
+        // Update Pagination
+        const pagContainer = document.getElementById('paginationContainer');
+        if (pagination.pages > 1) {
+            pagContainer.innerHTML = `
+                <button onclick="loadUsers({page: ${pagination.page - 1}})" ${pagination.page === 1 ? 'disabled' : ''} class="px-6 py-3 glass rounded-xl text-[10px] font-black uppercase disabled:opacity-20 transition hover:bg-white/5">
+                    <i class="fas fa-chevron-left mr-2"></i> Previous
+                </button>
+                <span class="text-[10px] font-black text-slate-500 uppercase">Page ${pagination.page} of ${pagination.pages}</span>
+                <button onclick="loadUsers({page: ${pagination.page + 1}})" ${pagination.page === pagination.pages ? 'disabled' : ''} class="px-6 py-3 glass rounded-xl text-[10px] font-black uppercase disabled:opacity-20 transition hover:bg-white/5">
+                    Next <i class="fas fa-chevron-right ml-2"></i>
+                </button>
+            `;
+        } else {
+            pagContainer.innerHTML = '';
+        }
+
     } catch (err) {
         console.error("loadUsers Error:", err);
         document.getElementById('userTableContainer').innerHTML = `<p class="p-20 text-center text-red-500 uppercase font-black">Error syncing user registry</p>`;
@@ -850,9 +897,9 @@ function applyUserFilters() {
     const status = document.getElementById('statusFilter')?.value || 'all';
     const accountStatus = document.getElementById('accountStatusFilter')?.value || 'All';
     const dateRange = document.getElementById('dateRangeFilter')?.value || 'all';
-    const trustLevel = document.getElementById('trustLevelFilter')?.value || 'all';
+    const userType = document.getElementById('userTypeFilter')?.value || 'registered';
 
-    loadUsers({ search, status, accountStatus, dateRange, trustLevel });
+    loadUsers({ search, status, accountStatus, dateRange, userType, page: 1 });
 }
 
 function toggleSort(field) {
@@ -885,4 +932,63 @@ async function quickBanUser(phone, currentStatus) {
         UI.showToast("Success", `User status changed to ${newStatus}`, newStatus === 'Suspended' ? "bg-red-500" : "bg-emerald-500");
         loadUsers();
     } catch (e) { UI.showToast("Error", "Action failed", "bg-red-500"); }
+}
+
+function toggleUserSelection(phone) {
+    if (selectedUsers.has(phone)) {
+        selectedUsers.delete(phone);
+    } else {
+        selectedUsers.add(phone);
+    }
+    updateBulkButton();
+}
+
+function toggleSelectAll(master) {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = master.checked;
+        const phone = cb.getAttribute('onchange').match(/'([^']+)'/)[1];
+        if (master.checked) {
+            selectedUsers.add(phone);
+        } else {
+            selectedUsers.delete(phone);
+        }
+    });
+    updateBulkButton();
+}
+
+function updateBulkButton() {
+    const btn = document.getElementById('bulkDeleteBtn');
+    if (!btn) return;
+    if (selectedUsers.size > 0) {
+        btn.classList.remove('hidden');
+    } else {
+        btn.classList.add('hidden');
+    }
+}
+
+async function bulkDeleteSelected() {
+    const count = selectedUsers.size;
+    if (count === 0) return;
+
+    if (!confirm(`🧨 DANGER ZONE: Are you sure you want to PERMANENTLY DELETE ${count} selected users? This will wipe all their data including chats, media, and payments. This action cannot be undone.`)) {
+        return;
+    }
+
+    UI.showToast("Wiping Data", `Executing bulk deletion for ${count} users...`, "bg-orange-500");
+
+    try {
+        const phones = Array.from(selectedUsers);
+        const res = await API.bulkDeleteUsers(phones);
+
+        if (res.success) {
+            UI.showToast("Success", res.message, "bg-emerald-500");
+            selectedUsers.clear();
+            loadUsers();
+        } else {
+            UI.showToast("Error", res.message || "Bulk deletion failed", "bg-red-500");
+        }
+    } catch (e) {
+        UI.showToast("Critical Error", e.message, "bg-red-500");
+    }
 }

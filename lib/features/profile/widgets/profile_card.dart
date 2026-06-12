@@ -16,6 +16,7 @@ class ProfileCard extends StatelessWidget {
   final int? likedBy;
   final bool isVerified;
   final bool isOnline;
+  final bool hideFarDistance;
 
   const ProfileCard({
     super.key,
@@ -32,6 +33,7 @@ class ProfileCard extends StatelessWidget {
     this.likedBy,
     this.isVerified = false,
     this.isOnline = false,
+    this.hideFarDistance = false,
   });
 
   @override
@@ -51,6 +53,17 @@ class ProfileCard extends StatelessWidget {
         .replaceAll(' away', '')
         .replaceAll('Within ', '')
         .replaceAll('Under ', '');
+
+    // 30km Privacy Rule for Home Page
+    if (hideFarDistance && cleanDistance.isNotEmpty) {
+      final match = RegExp(r"(\d+(\.\d+)?)").firstMatch(cleanDistance);
+      if (match != null) {
+        double? dVal = double.tryParse(match.group(1)!);
+        if (dVal != null && dVal > 30) {
+          cleanDistance = ""; 
+        }
+      }
+    }
 
     String locationDisplay = cleanDistance;
     
@@ -102,19 +115,21 @@ class ProfileCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
             ],
-            Row(children: [
-              const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  locationDisplay,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )
-            ]),
-            const SizedBox(height: 12),
+            if (locationDisplay.isNotEmpty) ...[
+              Row(children: [
+                const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    locationDisplay,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 11, fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              ]),
+              const SizedBox(height: 12),
+            ],
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [

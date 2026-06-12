@@ -124,14 +124,25 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
           _name = userData['name'] ?? _name;
           _city = userData['city'] ?? _city;
           _area = userData['area'] ?? _area;
-          _age = userData['age'] ?? _age;
+          
+          // Better Age Handling
+          if (userData['age'] != null) {
+            _age = userData['age'] is int ? userData['age'] : int.tryParse(userData['age'].toString()) ?? _age;
+          } else if (userData['dobYear'] != null) {
+            final year = int.tryParse(userData['dobYear'].toString());
+            if (year != null && year > 1900) {
+              _age = DateTime.now().year - year;
+            }
+          }
+
           _position = userData['position'] ?? _position;
           _havePlace = userData['havePlace'] ?? _havePlace;
           _isVerified = userData['isVerified'] ?? _isVerified;
           
           // Update distance if provided by the profile API
-          if (userData['distance'] != null && userData['distance'].toString().isNotEmpty) {
-            _distance = userData['distance'];
+          final remoteDistance = userData['distance'] ?? userData['distanceStr'];
+          if (remoteDistance != null && remoteDistance.toString().isNotEmpty) {
+            _distance = remoteDistance.toString();
           }
         });
       }
