@@ -329,7 +329,7 @@ async function openUserControl(phone, initialTab = 'timeline') {
                             ${u.isDeactivated ? `
                                 <div class="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl">
                                     <p class="text-[9px] font-black text-orange-500 uppercase">Deactivated On</p>
-                                    <p class="text-[10px] text-white font-bold">${new Date(u.deactivatedAt).toLocaleString()}</p>
+                                    <p class="text-[10px] text-white font-bold">${window.formatDateTime(u.deactivatedAt)}</p>
                                     <p class="text-[8px] text-slate-500 mt-1 italic">"${u.deactivationReason || 'User requested'}"</p>
                                 </div>
                             ` : ''}
@@ -356,7 +356,7 @@ async function openUserControl(phone, initialTab = 'timeline') {
                                     <p class="text-[10px] text-slate-300 font-medium">${n.note}</p>
                                     <div class="flex justify-between mt-2 opacity-30">
                                         <span class="text-[7px] font-black uppercase">${n.adminName}</span>
-                                        <span class="text-[7px] font-black uppercase">${new Date(n.timestamp).toLocaleDateString()}</span>
+                                        <span class="text-[7px] font-black uppercase">${window.formatDate(n.timestamp)}</span>
                                     </div>
                                 </div>
                             `).join('') || '<p class="text-center text-[10px] opacity-20 py-10">No private notes</p>'}
@@ -476,7 +476,7 @@ async function loadUserSecurity(phone) {
                                     <p class="text-[10px] font-black text-white uppercase">${d.model || 'Unknown Device'}</p>
                                     <p class="text-[8px] text-slate-500 uppercase font-bold">${d.os || 'Unknown OS'} • ${d.ip}</p>
                                 </div>
-                                <p class="text-[9px] text-slate-500 font-bold uppercase">${new Date(d.lastUsed).toLocaleString()}</p>
+                                <p class="text-[9px] text-slate-500 font-bold uppercase">${window.formatDateTime(d.lastUsed)}</p>
                             </div>
                         `).join('') || '<p class="text-center py-10 opacity-20 uppercase font-black text-[10px]">No login history tracked</p>'}
                     </div>
@@ -489,7 +489,7 @@ async function loadUserSecurity(phone) {
                             <div class="p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl">
                                 <div class="flex justify-between items-start mb-2">
                                     <p class="text-[10px] font-black text-white uppercase">BY: ${b.blockerName || 'Anonymous'}</p>
-                                    <span class="text-[7px] text-slate-500 font-black uppercase">${new Date(b.timestamp).toLocaleString()}</span>
+                                    <span class="text-[7px] text-slate-500 font-black uppercase">${window.formatDateTime(b.timestamp)}</span>
                                 </div>
                                 <p class="text-[10px] text-slate-400 italic">Reason: "${b.reason || 'Manual Block'}"</p>
                             </div>
@@ -584,11 +584,11 @@ async function loadUserFinance(phone, filter = 'all') {
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
                         <div>
                             <p class="text-[8px] font-black text-slate-500 uppercase">Valid Until</p>
-                            <p class="text-xs font-bold text-white">${user.premiumExpiry ? new Date(user.premiumExpiry).toLocaleDateString() : 'N/A'}</p>
+                            <p class="text-xs font-bold text-white">${user.premiumExpiry ? window.formatDate(user.premiumExpiry) : 'N/A'}</p>
                         </div>
                         <div>
                             <p class="text-[8px] font-black text-slate-500 uppercase">Next Billing</p>
-                            <p class="text-xs font-bold text-blue-400">${sub.nextBillingDate ? new Date(sub.nextBillingDate).toLocaleDateString() : 'N/A'}</p>
+                            <p class="text-xs font-bold text-blue-400">${sub.nextBillingDate ? window.formatDate(sub.nextBillingDate) : 'N/A'}</p>
                         </div>
                         <div>
                             <p class="text-[8px] font-black text-slate-500 uppercase">Auto Renew</p>
@@ -635,7 +635,7 @@ async function loadUserFinance(phone, filter = 'all') {
                                     <div class="flex-1">
                                         <p class="text-[10px] font-black text-white uppercase">${p.orderId || 'Direct Payment'}</p>
                                         <div class="flex items-center space-x-2 mt-1">
-                                            <p class="text-[8px] text-slate-500 font-bold uppercase">${new Date(p.createdAt || p.timestamp).toLocaleString()}</p>
+                                            <p class="text-[8px] text-slate-500 font-bold uppercase">${window.formatDateTime(p.createdAt || p.timestamp)}</p>
                                             ${p.method ? `<span class="text-[7px] bg-white/5 px-2 py-0.5 rounded text-slate-400 uppercase font-bold">${p.method}</span>` : ''}
                                         </div>
                                     </div>
@@ -741,7 +741,7 @@ async function loadUserMedia(phone) {
                                 </div>
 
                                 <div class="absolute bottom-0 inset-x-0 p-2 bg-black/40 backdrop-blur-sm transform translate-y-full group-hover:translate-y-0 transition">
-                                    <p class="text-[8px] text-white font-bold uppercase truncate">${new Date(m.timestamp).toLocaleDateString()} • ${new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                    <p class="text-[8px] text-white font-bold uppercase truncate">${window.formatDate(m.timestamp)} • ${window.formatTime(m.timestamp, {hour: '2-digit', minute:'2-digit'})}</p>
                                 </div>
                             </div>
                         `;
@@ -835,7 +835,7 @@ async function loadFullChat(p1, p2) {
                     <div class="flex ${l.senderPhone === p1 ? 'justify-end' : 'justify-start'}">
                         <div class="max-w-[80%] p-4 rounded-2xl text-xs font-semibold ${l.senderPhone === p1 ? 'bg-orange-500 text-black rounded-tr-none' : 'bg-white/5 text-slate-300 rounded-tl-none'}">
                             ${l.message}
-                            <p class="text-[8px] mt-2 opacity-30 font-black uppercase">${new Date(l.timestamp).toLocaleTimeString()}</p>
+                            <p class="text-[8px] mt-2 opacity-30 font-black uppercase">${window.formatTime(l.timestamp)}</p>
                         </div>
                     </div>
                 `).join('')}
@@ -872,7 +872,7 @@ async function loadUserTimeline(phone) {
                                         <i class="fas ${item.icon} ${item.color} text-sm"></i>
                                         <h5 class="text-xs font-black text-white uppercase tracking-tight">${item.title}</h5>
                                     </div>
-                                    <span class="text-[8px] font-bold text-slate-500 uppercase">${new Date(item.timestamp).toLocaleString()}</span>
+                                    <span class="text-[8px] font-bold text-slate-500 uppercase">${window.formatDateTime(item.timestamp)}</span>
                                 </div>
                                 <p class="text-[10px] text-slate-400 font-medium">${item.description}</p>
                             </div>

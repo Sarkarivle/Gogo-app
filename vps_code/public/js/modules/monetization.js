@@ -831,7 +831,7 @@ async function loadPaymentHistory(page = 1, search = '') {
                 <td class="p-6 text-xs font-black text-white">₹${t.amount}</td>
                 <td class="p-6">${UI.badge(t.status, t.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}</td>
                 <td class="p-6 text-[10px] text-slate-500 font-bold uppercase">${t.gateway}</td>
-                <td class="p-6 text-[9px] text-slate-400 font-medium">${new Date(t.createdAt).toLocaleString()}</td>
+                <td class="p-6 text-[9px] text-slate-400 font-medium">${window.formatDateTime(t.createdAt)}</td>
             </tr>
         `);
         container.innerHTML = UI.table(['Customer', 'Amount', 'Status', 'Gateway', 'Timestamp'], rows);

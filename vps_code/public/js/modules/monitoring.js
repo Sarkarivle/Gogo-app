@@ -158,7 +158,7 @@ function handleLiveMonitorEvent(event) {
         case 'ADMIN_JOIN': icon = 'fa-user-shield'; color = 'text-blue-400'; text = `${event.user} logged into Admin`; break;
     }
 
-    const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const time = window.formatTime(new Date(), { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const phoneInfo = event.phone ? `<span onclick="openUserControl('${event.phone}')" class="text-slate-600 font-bold ml-2 cursor-pointer hover:text-orange-500 hover:underline">(${event.phone.slice(-4)})</span>` : '';
 
     div.innerHTML = `

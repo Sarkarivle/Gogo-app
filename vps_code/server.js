@@ -751,4 +751,24 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server on ${PORT}`);
+
+    // --- GHOST USER CLEANUP TASK (Runs every 5 minutes) ---
+    setInterval(async () => {
+        try {
+            const onlineInDB = await User.find({ isOnline: true }, 'phone').lean();
+            for (const user of onlineInDB) {
+                // If user is online in DB but NOT in our local socket map
+                if (!phoneToSockets.has(user.phone)) {
+                    await User.updateOne({ _id: user._id }, { isOnline: false });
+                    await redisClient.sRem('online_users', user.phone);
+                    io.emit('user_status_change', { phone: user.phone, isOnline: false });
+                    console.log(`🧹 Ghost Cleanup: Marked ${user.phone} as Offline`);
+                }
+            }
+        } catch (err) {
+            console.error("❌ Cleanup Error:", err.message);
+        }
+    }, 5 * 60 * 1000); // 5 Minutes
+});

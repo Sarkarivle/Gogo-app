@@ -19,7 +19,7 @@ async function loadAuditLogs() {
                         ${isPhone ? `<span onclick="openUserControl('${l.target}')" class="cursor-pointer hover:underline underline-offset-4 decoration-white/20 transition-all">${l.target}</span>` : (l.target || 'System')}
                     </td>
                     <td class="p-6 text-xs text-slate-400 max-w-xs truncate">${l.details || '-'}</td>
-                    <td class="p-6 text-[10px] text-slate-500 font-bold uppercase">${new Date(l.timestamp).toLocaleString()}</td>
+                    <td class="p-6 text-[10px] text-slate-500 font-bold uppercase">${window.formatDateTime(l.timestamp)}</td>
                     <td class="p-6 text-right"><p class="text-[9px] font-black text-white uppercase">ADMIN: ${l.adminName || 'STAFF'}</p></td>
                 </tr>
             `;

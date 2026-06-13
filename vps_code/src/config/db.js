@@ -4,10 +4,12 @@ const connectDB = async () => {
     try {
         const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/gogo";
         const options = {
-            maxPoolSize: 100, // Maintain up to 100 socket connections
-            minPoolSize: 10,  // Keep at least 10 connections open
-            socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-            family: 4 // Use IPv4, skip trying IPv6
+            maxPoolSize: 500, // Increased for M10 Tier (Screenshot showed 127/100 limit hit)
+            minPoolSize: 20,
+            socketTimeoutMS: 60000,
+            serverSelectionTimeoutMS: 10000,
+            heartbeatFrequencyMS: 10000,
+            family: 4
         };
         const conn = await mongoose.connect(MONGO_URI, options);
         console.log(`🚀 High-Performance DB Connected: ${conn.connection.host}`);

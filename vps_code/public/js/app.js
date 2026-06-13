@@ -1,5 +1,22 @@
 let socket;
 
+// Global Timezone Helper for India (Kolkata)
+window.formatDateTime = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+};
+window.formatTime = (date, options = {}) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        ...options
+    });
+};
+window.formatDate = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+};
+
 async function init() {
     console.log("🚀 GoGo System Initializing...");
     const token = API.getToken();

@@ -393,6 +393,23 @@ exports.updateUserStatus = async (req, res) => {
             if (req.body[key] !== undefined) filteredUpdate[key] = req.body[key];
         });
 
+        // ✅ MANUAL PREMIUM BYPASS LOGIC: Ensure user gets full access fields when toggled by Admin
+        if (req.body.isPremium === true) {
+            filteredUpdate.premiumPlan = 'Premium Gold (Admin)';
+            if (!req.body.premiumExpiry) {
+                const expiry = new Date();
+                expiry.setFullYear(expiry.getFullYear() + 1); // Default to 1 year if not specified
+                filteredUpdate.premiumExpiry = expiry;
+            }
+            filteredUpdate['subscription.status'] = 'active';
+            filteredUpdate['subscription.nextBillingDate'] = filteredUpdate.premiumExpiry;
+            filteredUpdate['subscription.paymentMethod'] = 'Admin Manual';
+            filteredUpdate['subscription.autoRenew'] = false;
+        } else if (req.body.isPremium === false) {
+            filteredUpdate['subscription.status'] = 'expired';
+            filteredUpdate.premiumExpiry = new Date(); // Expire immediately
+        }
+
         const user = await User.findOneAndUpdate(phoneQuery(phone), filteredUpdate, { new: true });
         if (!user) return res.status(404).json({ success: false });
 

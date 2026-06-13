@@ -163,7 +163,7 @@ async function loadDashboard() {
                                         </div>
                                         <div>
                                             <p class="text-[10px] font-black text-white">+91 ${t.userPhone.slice(-10)}</p>
-                                            <p class="text-[8px] text-slate-500 uppercase font-bold">${new Date(t.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} via ${t.gateway}</p>
+                                            <p class="text-[8px] text-slate-500 uppercase font-bold">${window.formatTime(t.createdAt, {hour: '2-digit', minute:'2-digit'})} via ${t.gateway}</p>
                                         </div>
                                     </div>
                                     <div class="text-right">
