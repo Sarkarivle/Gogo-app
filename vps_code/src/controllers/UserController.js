@@ -193,30 +193,37 @@ exports.getDiscover = async (req, res) => {
         let query = {
             phone: { $nin: [myPhone, `+91${myPhone}`, `91${myPhone}`] },
             accountStatus: 'Active',
-            isBanned: { $ne: true },
+            isBanned: { $ne: true }
+        };
+
+        // Quality Filter: By default, show users with onboarding or photos
+        const qualityFilter = {
             $or: [
                 { hasCompletedOnboarding: true },
-                { dobYear: { $exists: true, $ne: null } }
+                { dobYear: { $exists: true, $ne: null } },
+                { profileImages: { $exists: true, $not: { $size: 0 } } }
             ]
         };
 
+        let activeQuery = { ...query, ...qualityFilter };
+
         // 3. Filters
         if (requestedGender && requestedGender !== 'Any') {
-            query.gender = requestedGender;
+            activeQuery.gender = requestedGender;
         }
 
         if (tab === 'Online' || isOnlineOnly === 'true') {
-            query.isOnline = true;
+            activeQuery.isOnline = true;
         }
 
         if (age && age !== 'Any') {
             const ageRange = age.split('-');
             if (ageRange.length === 2) {
-                query.age = { $gte: parseInt(ageRange[0]), $lte: parseInt(ageRange[1]) };
+                activeQuery.age = { $gte: parseInt(ageRange[0]), $lte: parseInt(ageRange[1]) };
             }
         }
-        if (havePlace && havePlace !== 'Any') query.havePlace = havePlace;
-        if (position && position !== 'Any') query.position = position;
+        if (havePlace && havePlace !== 'Any') activeQuery.havePlace = havePlace;
+        if (position && position !== 'Any') activeQuery.position = position;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const limitInt = parseInt(limit);
@@ -224,6 +231,8 @@ exports.getDiscover = async (req, res) => {
         let users = [];
         const userLat = parseFloat(lat) || currentUser?.lat;
         const userLng = parseFloat(lng) || currentUser?.lng;
+
+        console.log(`🔍 [Discover] Phone: ${myPhone}, Tab: ${tab}, Lat: ${userLat}, Lng: ${userLng}, Page: ${page}`);
 
         // 4. Nearby Execution with Fallback
         if (tab === 'Nearby' && userLat && userLng) {
@@ -240,7 +249,7 @@ exports.getDiscover = async (req, res) => {
                             near: { type: "Point", coordinates: [userLng, userLat] },
                             distanceField: "distanceValue",
                             maxDistance: maxDistMeters,
-                            query: query,
+                            query: activeQuery,
                             spherical: true
                         }
                     },
@@ -248,16 +257,28 @@ exports.getDiscover = async (req, res) => {
                     { $skip: skip },
                     { $limit: limitInt }
                 ]);
+                console.log(`📍 [Discover] GeoNear found: ${users.length}`);
             } catch (err) { console.error("GeoNear Error:", err.message); }
         }
 
         // 5. Fallback to Global Find if Nearby is empty or not applicable
         if (users.length === 0) {
-            users = await User.find(query)
+            users = await User.find(activeQuery)
                 .sort({ isPremium: -1, isVerified: -1, isOnline: -1, lastSeen: -1 })
                 .skip(skip)
                 .limit(limitInt)
                 .lean();
+
+            // 6. DEEP FALLBACK: If still 0, remove quality filters (Maybe DB is fresh)
+            if (users.length === 0 && page == 1) {
+                console.log("⚠️ [Discover] Zero results with quality filter, falling back to basic query.");
+                users = await User.find(query)
+                    .sort({ isPremium: -1, lastSeen: -1 })
+                    .limit(limitInt)
+                    .lean();
+            }
+
+            console.log(`🌍 [Discover] Final search found: ${users.length} users`);
         }
 
         // 6. Final Enrichment & Labels

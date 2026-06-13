@@ -154,6 +154,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 app.get('/api/media/:filename', require('./src/controllers/ChatController').serveSecureMedia);
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.send('🚀 GoGo Backend Running!'));
 

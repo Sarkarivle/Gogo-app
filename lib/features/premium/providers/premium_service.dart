@@ -6,6 +6,7 @@ import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/app_config_service.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
 
 import 'package:gogo/features/freemium/providers/freemium_provider.dart';
 
@@ -20,12 +21,21 @@ class PremiumService {
 
   // New: Track message count for trial
   int _messagesSentCount = 0;
+  int _bonusMessages = 0; // Temporary messages earned via Rewards
+
   int get messagesSentCount {
     final user = UserRepository().currentUser;
     if (user != null && user['messagesSentCount'] != null) {
       return user['messagesSentCount'];
     }
     return _messagesSentCount;
+  }
+
+  /// Grant extra messages as a reward for watching ads.
+  void grantRewardMessages(int count) {
+    _bonusMessages += count;
+    hasAccess; // Trigger refresh of access state
+    debugPrint("🎁 [PREMIUM] Reward Granted: +$count messages. Total Bonus: $_bonusMessages");
   }
 
   Future<void> incrementMessageCount() async {
@@ -50,11 +60,11 @@ class PremiumService {
         debugPrint("Error syncing message count: $e");
       });
       
-      debugPrint("🚀 [PREMIUM] Message Sent: $_messagesSentCount/${AppConfigService().freeMessageLimit}");
+      debugPrint("🚀 [PREMIUM] Message Sent: $_messagesSentCount/${AppConfigService().freeMessageLimit + _bonusMessages}");
     }
   }
 
-  bool get _isTrialExceeded => AppConfigService().isOneMessageTrialEnabled && messagesSentCount >= AppConfigService().freeMessageLimit;
+  bool get _isTrialExceeded => AppConfigService().isOneMessageTrialEnabled && messagesSentCount >= (AppConfigService().freeMessageLimit + _bonusMessages);
 
   bool get isPremium => UserRepository().currentUser?['isPremium'] ?? false;
   String? get subscriptionStatus => UserRepository().currentUser?['subscription']?['status'];
@@ -74,9 +84,16 @@ class PremiumService {
       return true;
     }
 
+    // 2. Temporary Gold Access (1-Hour Reward)
+    if (MonetizationOrchestrator().hasTemporaryAccess) {
+      if (accessNotifier.value != true) accessNotifier.value = true;
+      if (statusNotifier.value != "GOLD (TRIAL)") statusNotifier.value = "GOLD (TRIAL)";
+      return true;
+    }
+
     bool access = isFreemiumUser;
 
-    // 2. Trial Logic for Free Users
+    // 3. Trial Logic for Free Users
     if (!access && AppConfigService().isOneMessageTrialEnabled && !_isTrialExceeded) {
       access = true;
     }
@@ -96,6 +113,7 @@ class PremiumService {
 
   String get accountStatusLabel {
     if (isPremium) return "PREMIUM";
+    if (MonetizationOrchestrator().hasTemporaryAccess) return "GOLD (TRIAL)";
     
     if (isFreemiumUser) return "FREEMIUM";
     return "FREE";

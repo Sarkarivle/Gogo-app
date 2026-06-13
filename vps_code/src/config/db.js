@@ -4,8 +4,8 @@ const connectDB = async () => {
     try {
         const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/gogo";
         const options = {
-            maxPoolSize: 500, // Increased for M10 Tier (Screenshot showed 127/100 limit hit)
-            minPoolSize: 20,
+            maxPoolSize: 100, // Reduced from 500 to stay safely below the 131 connection limit
+            minPoolSize: 10,
             socketTimeoutMS: 60000,
             serverSelectionTimeoutMS: 10000,
             heartbeatFrequencyMS: 10000,

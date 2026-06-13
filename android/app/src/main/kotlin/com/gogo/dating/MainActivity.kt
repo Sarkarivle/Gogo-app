@@ -16,6 +16,7 @@ import com.google.android.gms.auth.api.identity.GetPhoneNumberHintIntentRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdView
+import com.facebook.ads.AudienceNetworkAds
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -30,6 +31,9 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Initialize Meta Audience Network SDK for Bidding
+        AudienceNetworkAds.initialize(this)
+
         // Prevent screenshots and hide content in Recent Apps (App Switcher)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }

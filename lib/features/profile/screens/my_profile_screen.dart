@@ -102,7 +102,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: statusLabel == "PREMIUM" 
+                                      color: (statusLabel == "PREMIUM" || statusLabel == "GOLD (TRIAL)")
                                           ? Colors.orangeAccent.withValues(alpha: 0.1) 
                                           : Colors.white.withValues(alpha: 0.05),
                                       borderRadius: BorderRadius.circular(12),
@@ -110,7 +110,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                     child: Text(
                                       statusLabel,
                                       style: TextStyle(
-                                        color: statusLabel == "PREMIUM" ? Colors.orangeAccent : Colors.white60, 
+                                        color: (statusLabel == "PREMIUM" || statusLabel == "GOLD (TRIAL)") ? Colors.orangeAccent : Colors.white60,
                                         fontSize: 11, 
                                         fontWeight: FontWeight.bold
                                       ),

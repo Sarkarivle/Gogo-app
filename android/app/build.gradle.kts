@@ -75,4 +75,6 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("com.google.android.gms:play-services-tagmanager:18.1.1")
+    // Meta (Facebook) Audience Network Mediation Adapter for Bidding
+    implementation("com.google.ads.mediation:facebook:6.18.0.0")
 }

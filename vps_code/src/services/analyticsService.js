@@ -211,7 +211,11 @@ class AnalyticsService {
             const MarketingConfig = require('../models/MarketingConfig');
             const config = await MarketingConfig.findOne({ key: 'global_settings' }).lean();
 
-            if (!config || !config.isMetaEnabled || !config.fbPixelId || !config.fbAccessToken) return;
+            // REQUIRE ALL CRITICAL FIELDS
+            if (!config || !config.isMetaEnabled || !config.fbPixelId || !config.fbAccessToken || !config.fbAppId) {
+                return;
+            }
+
             if (!distinctId) return;
 
             const crypto = require('crypto');
@@ -225,7 +229,10 @@ class AnalyticsService {
             let clientIp = metadata.ip || "1.1.1.1";
             if (typeof clientIp === 'string') {
                 if (clientIp.includes(',')) clientIp = clientIp.split(',')[0].trim();
-                if (clientIp === '::1' || clientIp === '127.0.0.1' || clientIp.includes('localhost')) clientIp = '1.1.1.1';
+                // FB doesn't like localhost or internal IPs
+                if (clientIp === '::1' || clientIp === '127.0.0.1' || clientIp.includes('localhost') || clientIp.startsWith('192.168.') || clientIp.startsWith('10.')) {
+                    clientIp = '1.1.1.1';
+                }
             }
 
             let fbEventName = type;
@@ -235,29 +242,37 @@ class AnalyticsService {
             else if (type === 'payment_started' || type === 'offer_payment_started') fbEventName = 'InitiateCheckout';
             else if (type === 'start_call') fbEventName = 'Contact';
 
-            const url = `https://graph.facebook.com/v18.0/${config.fbPixelId}/events?access_token=${config.fbAccessToken}`;
+            // Check if event name is standard, otherwise FB might reject with 400
+            const standardEvents = ['ActivateApp', 'CompleteRegistration', 'Purchase', 'InitiateCheckout', 'Contact', 'Lead', 'ViewContent', 'AddToCart'];
+            if (!standardEvents.includes(fbEventName)) {
+                // For custom events, we can send them but FB Pixel must be ready.
+                // Let's stick to mapping for now.
+                if (type === 'login_page_open') fbEventName = 'ViewContent';
+                else return; // Don't spam non-standard events that cause 400s
+            }
+
             const payload = {
                 data: [{
                     event_name: fbEventName,
-                    event_time: metadata.timestamp || Math.floor(Date.now() / 1000),
-                    event_id: metadata.event_id || "",
+                    event_time: Math.floor(Date.now() / 1000),
+                    event_id: metadata.event_id || `ev_${Date.now()}_${distinctId.slice(-4)}`,
                     action_source: "app",
-                    app_id: config.fbAppId,
                     user_data: {
                         ph: [hashedPhone],
                         external_id: externalId,
                         client_ip_address: clientIp,
                         client_user_agent: metadata.userAgent || "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-                        advertiser_tracking_enabled: 1,
-                        application_tracking_enabled: 1
                     },
                     custom_data: {
-                        value: metadata.amount || metadata.value || (fbEventName === 'Purchase' ? 199 : 0),
+                        value: parseFloat(metadata.amount || metadata.value || (fbEventName === 'Purchase' ? 199 : 0)),
                         currency: metadata.currency || 'INR',
-                        content_name: metadata.planId || 'Premium Access'
                     }
                 }]
             };
+
+            if (config.fbAppId) {
+                payload.data[0].app_id = config.fbAppId;
+            }
 
             if (config.fbTestCode) payload.test_event_code = config.fbTestCode;
 
@@ -280,7 +295,7 @@ class AnalyticsService {
                     if (fbRes.statusCode === 200) {
                         console.log(`🚀 [FB CAPI SUCCESS] Event "${fbEventName}" sent for ${distinctId}`);
                     } else {
-                        console.error(`❌ [FB CAPI FAILED] Status: ${fbRes.statusCode}, Response: ${resData}`);
+                        console.error(`❌ [FB CAPI FAILED] Status: ${fbRes.statusCode}, Event: ${fbEventName}, Phone: ${distinctId}, Response: ${resData}`);
                     }
                 });
             });
@@ -393,6 +408,24 @@ class AnalyticsService {
     }
 
     async getDashboardStats() {
+        // Use Redis Caching to prevent DB saturation during heavy traffic
+        if (this.redis) {
+            try {
+                const cached = await this.redis.get('admin:dashboard_stats_cache');
+                if (cached) {
+                    const stats = JSON.parse(cached);
+                    // Still sync real-time metrics from Redis while using cached DB counts
+                    await this.syncMetricsFromRedis();
+                    stats.onlineUsers = this.metrics.onlineUsers;
+                    stats.activeCalls = this.metrics.activeCalls;
+                    stats.activeAdmins = this.metrics.activeAdmins;
+                    stats.liveActivity = this.metrics.liveActivity;
+                    stats.serverHealth = this.getServerHealth();
+                    return stats;
+                }
+            } catch (err) {}
+        }
+
         // Sync one last time before returning full stats for a request
         await this.syncMetricsFromRedis();
 
@@ -432,7 +465,7 @@ class AnalyticsService {
 
         const avgMessagesPerUser = total > 0 ? (totalMsgs / total).toFixed(1) : 0;
 
-        return {
+        const stats = {
             totalUsers: total,
             incompleteUsers: incomplete, // This is unregisteredTotal
             unregisteredTotal: incomplete,
@@ -458,6 +491,13 @@ class AnalyticsService {
             serverHealth: this.getServerHealth(),
             systemStatus: 'ONLINE'
         };
+
+        // Cache the result for 2 minutes to reduce heavy aggregate pressure
+        if (this.redis) {
+            await this.redis.set('admin:dashboard_stats_cache', JSON.stringify(stats), { EX: 120 }).catch(() => {});
+        }
+
+        return stats;
     }
 }
 

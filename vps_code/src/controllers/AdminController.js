@@ -168,7 +168,7 @@ exports.deleteAdmin = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const { search, status, accountStatus, dateRange, sortBy, sortOrder, userType, tab } = req.query;
+        const { search, status, accountStatus, dateRange, sortBy, sortOrder, userType, autoPay, tab } = req.query;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
         const skip = (page - 1) * limit;
@@ -187,12 +187,29 @@ exports.getAllUsers = async (req, res) => {
         } else if (userType === 'unregistered') {
             q.hasCompletedOnboarding = false;
             q.dobYear = { $exists: false };
+        } else if (userType === 'payer') {
+            q.monetizationMode = 'payer';
+        } else if (userType === 'admode') {
+            q.monetizationMode = 'adDriven';
         } else {
             // Default: Show Registered (Premium + Free)
             q.$or = [
                 { hasCompletedOnboarding: true },
                 { dobYear: { $exists: true, $ne: null } }
             ];
+        }
+
+        // Auto Pay Filter
+        if (autoPay === 'active') {
+            q['subscription.autoRenew'] = true;
+            q['subscription.status'] = 'active';
+        } else if (autoPay === 'disabled') {
+            q['subscription.autoRenew'] = false;
+            q['subscription.status'] = 'active';
+        } else if (autoPay === 'cancelled') {
+            q['subscription.status'] = 'cancelled';
+        } else if (autoPay === 'expired') {
+            q['subscription.status'] = 'expired';
         }
 
         if (search) {
@@ -241,13 +258,13 @@ exports.getAllUsers = async (req, res) => {
 
         const [usersRaw, totalMatching] = await Promise.all([
             User.find(q)
-                .select('name phone city isOnline lastSeen isPremium isVerified isShadowBanned accountStatus isDeactivated gender createdAt hasCompletedOnboarding dobYear')
+                .select('name phone city isOnline lastSeen isPremium isVerified isShadowBanned accountStatus isDeactivated gender createdAt hasCompletedOnboarding dobYear subscription monetizationMode')
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)
                 .lean()
-                .maxTimeMS(5000),
-            User.countDocuments(q)
+                .maxTimeMS(8000), // Increased timeout for large registry
+            User.countDocuments(q).maxTimeMS(8000)
         ]);
 
         // Calculate Trust Score for each user
@@ -278,40 +295,65 @@ exports.getAllUsers = async (req, res) => {
             };
         });
 
-        // Fetch Analytics for User Header
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        // Fetch Analytics for User Header (with Redis Caching to prevent DB Overload)
+        const redis = req.app.get('redis');
+        let stats;
 
-        const [
-            totalUsers,
-            onlineUsers,
-            todayJoined,
-            totalPremium,
-            todayPremium,
-            unregisteredTotal
-        ] = await Promise.all([
-            User.countDocuments(),
-            User.countDocuments({
-                isOnline: true,
-                $or: [{ hasCompletedOnboarding: true }, { dobYear: { $exists: true, $ne: null } }]
-            }),
-            User.countDocuments({ createdAt: { $gte: todayStart } }),
-            User.countDocuments({ isPremium: true }),
-            User.countDocuments({ isPremium: true, createdAt: { $gte: todayStart } }),
-            User.countDocuments({ hasCompletedOnboarding: false, dobYear: { $exists: false } })
-        ]);
+        if (redis) {
+            try {
+                const cachedStats = await redis.get('admin:user_registry_stats');
+                if (cachedStats) stats = JSON.parse(cachedStats);
+            } catch (err) { console.error("Redis Get Stats Error:", err); }
+        }
 
-        console.log(`✅ Found ${users.length} users (Page ${page})`);
-        res.json({
-            users: users,
-            stats: {
+        if (!stats) {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+
+            const [
                 totalUsers,
                 onlineUsers,
                 todayJoined,
                 totalPremium,
                 todayPremium,
-                unregisteredTotal
-            },
+                unregisteredTotal,
+                totalAutoPayActive,
+                totalAutoPayCancelled,
+                totalAutoPayExpired,
+                totalAdMode
+            ] = await Promise.all([
+                User.estimatedDocumentCount(), // Fast
+                User.countDocuments({
+                    isOnline: true,
+                    $or: [{ hasCompletedOnboarding: true }, { dobYear: { $exists: true, $ne: null } }]
+                }),
+                User.countDocuments({ createdAt: { $gte: todayStart } }),
+                User.countDocuments({ isPremium: true }),
+                User.countDocuments({ isPremium: true, createdAt: { $gte: todayStart } }),
+                User.countDocuments({ hasCompletedOnboarding: false, dobYear: { $exists: false } }),
+                User.countDocuments({ 'subscription.status': 'active', 'subscription.autoRenew': true }),
+                User.countDocuments({ 'subscription.status': 'cancelled' }),
+                User.countDocuments({ 'subscription.status': 'expired' }),
+                User.countDocuments({ monetizationMode: 'adDriven' })
+            ]);
+
+            stats = {
+                totalUsers, onlineUsers, todayJoined, totalPremium, todayPremium,
+                unregisteredTotal, totalAutoPayActive, totalAutoPayCancelled,
+                totalAutoPayExpired, totalAdMode
+            };
+
+            if (redis) {
+                try {
+                    await redis.set('admin:user_registry_stats', JSON.stringify(stats), { EX: 300 }); // Cache for 5 mins
+                } catch (err) { console.error("Redis Set Stats Error:", err); }
+            }
+        }
+
+        console.log(`✅ Found ${users.length} users (Page ${page})`);
+        res.json({
+            users: users,
+            stats,
             pagination: {
                 total: totalMatching,
                 page,
@@ -323,9 +365,14 @@ exports.getAllUsers = async (req, res) => {
         console.error("❌ Admin GetAllUsers Error:", e);
         try {
             const fallbackUsers = await User.find({}).select('name phone').limit(20).lean();
-            res.json(fallbackUsers);
+            res.json({
+                users: fallbackUsers,
+                stats: { totalUsers: 0, onlineUsers: 0, todayJoined: 0, totalPremium: 0, todayPremium: 0, unregisteredTotal: 0, totalAutoPayActive: 0, totalAutoPayCancelled: 0, totalAutoPayExpired: 0, totalAdMode: 0 },
+                pagination: { total: 0, page: 1, limit: 20, pages: 1 },
+                error: e.message
+            });
         } catch (err2) {
-            res.status(500).json([]);
+            res.status(500).json({ users: [], stats: {}, pagination: {}, error: "Critical Server Error" });
         }
     }
 };

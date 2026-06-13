@@ -4,6 +4,7 @@ import 'package:gogo/core/location/location_service.dart';
 
 import 'package:gogo/core/services/app_config_service.dart';
 import 'package:gogo/core/services/app_visibility_coordinator.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/notification_service.dart';
@@ -42,6 +43,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         AppConfigService().fetchReviewMode(forceRefresh: true),
         UserRepository().initialize(),
       ]);
+
+      // Detect Monetization Mode after Config is fetched
+      await MonetizationOrchestrator().initialize();
       
       final user = UserRepository().currentUser;
 
@@ -49,6 +53,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         // Silent background tasks for logged in users
         UserRepository().updateLocation(user['phone']);
         NotificationService.updateTokenToServer();
+        MonetizationOrchestrator().syncWithServer(user['phone']);
         PremiumService().syncSubscription(); // Background sync
       }
 

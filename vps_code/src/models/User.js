@@ -32,6 +32,7 @@ const UserSchema = new mongoose.Schema({
     premiumPlan: { type: String }, // e.g., 'Monthly Gold'
     isVerified: { type: Boolean, default: false }, // Blue tick status
     isShadowBanned: { type: Boolean, default: false }, // Shadow ban status
+    monetizationMode: { type: String, enum: ['payer', 'adDriven'], default: 'payer' },
     adminNotes: [{
         note: String,
         adminName: String,

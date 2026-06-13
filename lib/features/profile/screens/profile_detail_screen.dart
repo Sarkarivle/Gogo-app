@@ -153,6 +153,72 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     }
   }
 
+  void _showMoreOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 10),
+              ListTile(
+                leading: const Icon(Icons.report_gmailerrorred_rounded, color: Colors.white70),
+                title: const Text('Report Profile', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showReportDialog();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.block_rounded, color: Colors.redAccent),
+                title: const Text('Block User', style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showBlockConfirmDialog();
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showBlockConfirmDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Block User?', style: TextStyle(color: Colors.white)),
+        content: const Text('Is user ko block karne ke baad aap ek dusre ko message nahi kar payenge.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: Colors.white38))),
+          TextButton(
+            onPressed: () {
+              final user = UserRepository().currentUser;
+              if (user != null) {
+                ModerationRepository().blockUser(blockerPhone: user['phone'], blockedPhone: widget.phone);
+                Navigator.pop(context);
+                Navigator.pop(context); // Go back from profile
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User blocked successfully')));
+              }
+            }, 
+            child: const Text('BLOCK', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showReportDialog() {
     String? selectedCategory;
     final otherReasonController = TextEditingController();
@@ -344,7 +410,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.more_vert, color: Colors.white),
-                    onPressed: _showReportDialog,
+                    onPressed: _showMoreOptions,
                   )
                 ],
                 leading: Container(

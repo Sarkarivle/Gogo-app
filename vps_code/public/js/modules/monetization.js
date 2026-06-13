@@ -395,7 +395,7 @@ function renderAdsContent(ads) {
                             </div>
 
                             <div class="pt-6 border-t border-white/5 space-y-6">
-                                <h4 class="text-[10px] font-black text-orange-500 uppercase tracking-widest">Rewarded Ad Triggers</h4>
+                                <h4 class="text-[10px] font-black text-orange-500 uppercase tracking-widest">Rewarded Ad Triggers & Limits</h4>
                                 <div class="grid grid-cols-2 gap-4">
                                     <div>
                                         <p class="text-[7px] text-slate-500 mb-1">MIN MESSAGES (FOR POPUP)</p>
@@ -406,28 +406,38 @@ function renderAdsContent(ads) {
                                         <input type="number" id="reward_max_msg" value="${ads.rewardMaxMsg || 7}" class="w-full bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
                                     </div>
                                 </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-[7px] text-slate-500 mb-1">REWARD DURATION (MINUTES)</p>
+                                        <input type="number" id="reward_duration" value="${ads.rewardDurationMinutes || 60}" class="w-full bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
+                                    </div>
+                                    <div>
+                                        <p class="text-[7px] text-slate-500 mb-1">DAILY REWARD LIMIT</p>
+                                        <input type="number" id="reward_daily_limit" value="${ads.rewardDailyLimit || 5}" class="w-full bg-black/20 border border-white/5 p-3 rounded-xl text-xs text-white">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Setup Guide -->
-                    <div class="glass p-8 rounded-[3rem] border border-blue-500/10 bg-blue-500/5">
-                        <div class="flex items-center space-x-3 mb-4">
-                            <i class="fas fa-circle-info text-blue-500 text-sm"></i>
-                            <h4 class="text-[10px] font-black text-white uppercase tracking-widest">Implementation Guide</h4>
-                        </div>
-                        <ul class="space-y-3">
-                            <li class="flex items-start space-x-3">
-                                <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5"><span class="text-[8px] font-bold text-blue-500">1</span></div>
-                                <p class="text-[9px] text-slate-400 font-medium">For **AdX Manager**, use the same fields as AdMob but enter your GAM/AdX Ad Unit paths.</p>
-                            </li>
-                            <li class="flex items-start space-x-3">
-                                <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5"><span class="text-[8px] font-bold text-blue-500">2</span></div>
-                                <p class="text-[9px] text-slate-400 font-medium">**Mediation Mode** expects you to use AdMob/GAM as the primary host with FAN integrated via bidding.</p>
-                            </li>
-                        </ul>
-                    </div>
                 </div>
+            </div>
+
+            <!-- Setup Guide -->
+            <div class="glass p-8 rounded-[3rem] border border-blue-500/10 bg-blue-500/5">
+                <div class="flex items-center space-x-3 mb-4">
+                    <i class="fas fa-circle-info text-blue-500 text-sm"></i>
+                    <h4 class="text-[10px] font-black text-white uppercase tracking-widest">Implementation Guide</h4>
+                </div>
+                <ul class="space-y-3">
+                    <li class="flex items-start space-x-3">
+                        <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5"><span class="text-[8px] font-bold text-blue-500">1</span></div>
+                        <p class="text-[9px] text-slate-400 font-medium">For **AdX Manager**, use the same fields as AdMob but enter your GAM/AdX Ad Unit paths.</p>
+                    </li>
+                    <li class="flex items-start space-x-3">
+                        <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5"><span class="text-[8px] font-bold text-blue-500">2</span></div>
+                        <p class="text-[9px] text-slate-400 font-medium">**Mediation Mode** expects you to use AdMob/GAM as the primary host with FAN integrated via bidding.</p>
+                    </li>
+                </ul>
             </div>
         </div>
     `;
@@ -541,6 +551,8 @@ async function saveAdsSettings() {
         ads.frequencyMinutes = parseInt(document.getElementById('ads_frequency').value) || 5;
         ads.rewardMinMsg = parseInt(document.getElementById('reward_min_msg').value) || 4;
         ads.rewardMaxMsg = parseInt(document.getElementById('reward_max_msg').value) || 7;
+        ads.rewardDurationMinutes = parseInt(document.getElementById('reward_duration').value) || 60;
+        ads.rewardDailyLimit = parseInt(document.getElementById('reward_daily_limit').value) || 5;
         ads.activeProvider = activeAdProvider;
 
         if (activeAdProvider === 'google') {

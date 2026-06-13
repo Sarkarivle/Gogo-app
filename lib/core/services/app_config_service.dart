@@ -79,6 +79,8 @@ class AppConfigService {
 
   int get rewardMinMsg => _adsConfig?['reward_min_msg'] ?? _adsConfig?['rewardMinMsg'] ?? 4;
   int get rewardMaxMsg => _adsConfig?['reward_max_msg'] ?? _adsConfig?['rewardMaxMsg'] ?? 7;
+  int get rewardDurationMinutes => _adsConfig?['reward_duration_minutes'] ?? _adsConfig?['rewardDurationMinutes'] ?? 60;
+  int get rewardDailyLimit => _adsConfig?['reward_daily_limit'] ?? _adsConfig?['rewardDailyLimit'] ?? 5;
 
   int _freemiumDurationDays = 1;
   int get freemiumDurationDays => _freemiumDurationDays;

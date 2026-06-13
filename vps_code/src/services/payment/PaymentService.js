@@ -61,14 +61,23 @@ class PaymentService {
 
             // NEW LOGIC: New User -> 1st Offer (Trial/Welcome), Old User -> 3rd Offer (Standard/Premium)
             let selectedOffer;
-            if (!hasUsedTrial) {
-                selectedOffer = offers[0]; // First Offer
-            } else {
-                selectedOffer = offers[2] || offers[0]; // Third Offer (fallback to first if not exists)
+            if (offers && offers.length > 0) {
+                if (!hasUsedTrial) {
+                    selectedOffer = offers[0]; // First Offer
+                } else {
+                    selectedOffer = offers[2] || offers[0]; // Third Offer (fallback to first if not exists)
+                }
             }
 
             let amount = overrides.amount || selectedOffer?.price || 199;
             let planId = overrides.offerId || selectedOffer?.id || selectedOffer?.rzpPlanId;
+
+            // CRITICAL: Ensure we have a planId before proceeding
+            if (!planId) {
+                console.error("❌ ERROR: No planId found for order creation. Check 'special_offers' config.");
+                throw new Error("Unable to identify payment plan. Please contact support.");
+            }
+
             let duration = overrides.duration || selectedOffer?.duration || 30;
 
             let googlePlayId = overrides.googlePlayId || (amount < 10 ? null : selectedOffer?.googlePlayId);
@@ -96,8 +105,8 @@ class PaymentService {
             }
             return orderData;
         } catch (error) {
-            console.error("Order Creation Failed:", error.message);
-            return { success: false, message: error.message };
+            console.error("Order Creation Failed:", error.message || error);
+            return { success: false, message: error.message || String(error) };
         }
     }
 

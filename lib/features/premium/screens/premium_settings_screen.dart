@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'cancel_membership_screen.dart';
 
 class PremiumSettingsPage extends StatefulWidget {
@@ -12,11 +14,38 @@ class PremiumSettingsPage extends StatefulWidget {
 }
 
 class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
+  Timer? _timer;
+
   @override
   void initState() {
     super.initState();
     // Background sync to ensure data is latest, but don't block UI
     PremiumService().syncSubscription();
+    
+    // Start timer for countdown if temporary access is active
+    if (MonetizationOrchestrator().hasTemporaryAccess) {
+      _startCountdown();
+    }
+  }
+
+  void _startCountdown() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        if (MonetizationOrchestrator().hasTemporaryAccess) {
+          setState(() {});
+        } else {
+          timer.cancel();
+          setState(() {});
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   String _formatDate(String? dateStr) {
@@ -65,7 +94,8 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
 
         final sub = userData['subscription'] ?? {};
         final isPremium = userData['isPremium'] ?? false;
-        final status = sub['status'] ?? (isPremium ? 'active' : 'none');
+        final bool hasTempAccess = MonetizationOrchestrator().hasTemporaryAccess;
+        final status = hasTempAccess ? 'trial_active' : (sub['status'] ?? (isPremium ? 'active' : 'none'));
 
         return Scaffold(
           backgroundColor: const Color(0xFF0F0F0F),
@@ -84,6 +114,33 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
               children: [
                 const SizedBox(height: 20),
                 
+                // Temporary Access Timer Card
+                if (hasTempAccess)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.timer_outlined, color: Colors.orangeAccent, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text("Temporary Access Active", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                              Text("Expires in: ${MonetizationOrchestrator().remainingTime}", style: const TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.w900)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // Premium Status Card
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -116,9 +173,9 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_getStatusText(status), 
+                              Text(hasTempAccess ? "Gold (Trial)" : _getStatusText(status), 
                                 style: TextStyle(color: _getStatusColor(status), fontSize: 20, fontWeight: FontWeight.bold)),
-                              Text('Plan: ${userData['premiumPlan'] ?? 'N/A'}', 
+                              Text('Plan: ${hasTempAccess ? "1 Hour Reward" : (userData['premiumPlan'] ?? 'N/A')}', 
                                 style: const TextStyle(color: Colors.white60, fontSize: 12)),
                             ],
                           ),
@@ -129,13 +186,19 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                         child: Divider(color: Colors.white10),
                       ),
                       
-                      _buildBillingRow('Purchase Date', _formatDate(sub['startDate'])),
-                      _buildBillingRow('Next Bill', _formatDate(sub['nextBillingDate'])),
-                      _buildBillingRow('Amount Paid', '₹ ${sub['lastAmountPaid'] ?? 0}', isBold: true),
-                      _buildBillingRow('Auto-Renew', (sub['autoRenew'] ?? true) ? 'Enabled' : 'Disabled'),
-                      
-                      if (sub['paymentMethod'] != null)
-                        _buildBillingRow('Payment Method', sub['paymentMethod']),
+                      if (hasTempAccess) ...[
+                        _buildBillingRow('Type', 'Rewarded Ad Unlock'),
+                        _buildBillingRow('Status', 'Active', isBold: true),
+                        _buildBillingRow('Duration', '1 Hour'),
+                      ] else ...[
+                        _buildBillingRow('Purchase Date', _formatDate(sub['startDate'])),
+                        _buildBillingRow('Next Bill', _formatDate(sub['nextBillingDate'])),
+                        _buildBillingRow('Amount Paid', '₹ ${sub['lastAmountPaid'] ?? 0}', isBold: true),
+                        _buildBillingRow('Auto-Renew', (sub['autoRenew'] ?? true) ? 'Enabled' : 'Disabled'),
+                        
+                        if (sub['paymentMethod'] != null)
+                          _buildBillingRow('Payment Method', sub['paymentMethod']),
+                      ],
 
                       const SizedBox(height: 10),
 

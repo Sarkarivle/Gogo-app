@@ -31,10 +31,11 @@ import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/features/chat/widgets/chat_widgets.dart';
 import 'package:gogo/features/premium/repositories/premium_repository.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
-import 'package:gogo/shared/screens/offer_trial_screen.dart';
 import 'package:gogo/features/reviews/widgets/review_modal.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/core/services/ad_service.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
+import 'package:gogo/core/guards/access_guard.dart';
 import 'dart:math';
 import 'package:video_player/video_player.dart';
 
@@ -578,7 +579,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _sendMessage({String type = 'text', String? text, String? imageUrl, String? audioUrl, bool isViewOnce = false, String? customLocalId}) {
     if (_myPhone == null || _myName == null || _normalizedReceiverPhone == null) return;
 
-    // Check message limit access
+    // Check message limit access - Centralized Decision
     if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'chat')) {
       return;
     }
@@ -688,61 +689,189 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _showRewardAdPopup() {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: Colors.white10)),
-        title: const Row(
-          children: [
-            Icon(Icons.card_giftcard_rounded, color: Colors.orangeAccent),
-            SizedBox(width: 12),
-            Text("Special Reward!", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: const Text(
-          "Watch a short video to keep chatting for free or remove all ads forever.",
-          style: TextStyle(color: Colors.white70, fontSize: 14),
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        actions: [
-          Column(
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 30, spreadRadius: 10)
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              ElevatedButton(
-                onPressed: () {
-                  // Show loading indicator since Rewarded ads might take time
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Loading Reward Ad...'), duration: Duration(seconds: 1))
-                  );
-                  
-                  AdService().showRewardedAd(
-                    onRewardEarned: (reward) {
-                      Navigator.pop(context); // Close popup only after reward earned or ad closed
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reward Granted! Ads paused.')));
-                    },
-                    onAdClosed: () {
-                      if (Navigator.canPop(context)) Navigator.pop(context);
-                    }
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orangeAccent,
-                  foregroundColor: Colors.black,
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              Positioned(
+                right: -12,
+                top: -12,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A2A),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18),
+                  ),
                 ),
-                child: const Text("WATCH AD TO CONTINUE", style: TextStyle(fontWeight: FontWeight.w900)),
               ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const TrialOnboardingScreen(forceShow: true)));
-                },
-                child: const Text("REMOVE ADS & GO PREMIUM", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 15),
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.card_giftcard_rounded, color: Colors.orangeAccent, size: 45),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    "Special Reward!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "Watch a short video to get ${AppConfigService().rewardDurationMinutes} minutes of Premium access for FREE and keep chatting!",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                  ),
+                  const SizedBox(height: 35),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (!await MonetizationOrchestrator().canUserWatchRewardedAd()) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Daily reward limit reached!'))
+                            );
+                            Navigator.pop(context);
+                          }
+                          return;
+                        }
+
+                        if (!AdService().isRewardedAdLoaded()) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Loading Reward Ad...'), duration: Duration(seconds: 1))
+                            );
+                          }
+                          AdService().loadRewardedAd();
+                          await Future.delayed(const Duration(seconds: 2));
+                        }
+                        
+                        if (context.mounted) {
+                          if (AdService().isRewardedAdLoaded()) {
+                            Navigator.pop(context);
+                            AdService().showRewardedAd(
+                              onRewardEarned: (reward) {
+                                MonetizationOrchestrator().grantDynamicAccess();
+                                if (context.mounted) {
+                                  _showRewardGrantedPopup();
+                                }
+                              },
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Ad not ready yet. Please try again.'))
+                            );
+                          }
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orangeAccent,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 8,
+                      ),
+                      child: const Text("Watch Video Ad", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const TrialOnboardingScreen(forceShow: true)));
+                    },
+                    child: const Text("REMOVE ADS & GO PREMIUM", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  void _showRewardGrantedPopup() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.2), width: 1),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 30, spreadRadius: 10)
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.greenAccent.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 50),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "Reward Granted!",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "Congratulations! You have unlocked Premium features for the next ${AppConfigService().rewardDurationMinutes} minutes. Enjoy your conversation!",
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.greenAccent,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 4,
+                  ),
+                  child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -877,6 +1006,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _handleCall(bool isVideo) async {
     final displayName = _receiverName ?? widget.name;
+    // Centralized Access Check
     if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call')) {
       return;
     }
@@ -1188,6 +1318,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // --- RECORDING LOGIC ---
   void _startRecording() async {
+    // Centralized Access Check
     if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'audio_msg')) {
       return;
     }
@@ -1999,7 +2130,7 @@ class ChatMessageTile extends StatelessWidget {
     return ValueListenableBuilder<String>(
       valueListenable: PremiumService().statusNotifier,
       builder: (context, status, _) {
-        final bool isPremium = status == "PREMIUM";
+        final bool isPremium = status == "PREMIUM" || status == "GOLD (TRIAL)";
         final bool showLocked = !isPremium && !m.isMe;
 
         return ValueListenableBuilder<bool>(
@@ -2165,7 +2296,7 @@ class ChatMessageTile extends StatelessWidget {
     return ValueListenableBuilder<String>(
       valueListenable: PremiumService().statusNotifier,
       builder: (context, status, _) {
-        final bool isPremium = status == "PREMIUM";
+        final bool isPremium = status == "PREMIUM" || status == "GOLD (TRIAL)";
         final bool showLocked = !isPremium && !m.isMe;
 
         return InkWell(
@@ -2280,8 +2411,8 @@ class ChatMessageTile extends StatelessWidget {
   }
 
   void _showOfferPage(BuildContext context) {
-    // We will navigate directly to the OfferTrialScreen
-    OfferTrialScreen.show(context);
+    // Universal Access Guard Interceptor
+    AccessGuard().runWithAccessCheck(context, onAllowed: () {});
   }
 
   Widget _buildViewOncePlaceholder(ChatMessage m) {

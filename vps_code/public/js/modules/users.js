@@ -5,6 +5,7 @@ let currentUserFilters = {
     dateRange: 'all',
     trustLevel: 'all',
     userType: 'registered',
+    autoPay: 'all',
     sortBy: 'createdAt',
     sortOrder: 'desc',
     page: 1,
@@ -22,7 +23,7 @@ async function loadUsers(filters = {}) {
         // selectedUsers.clear(); // Uncomment if you want to clear selection on navigation
     }
 
-    const { search, status, accountStatus, dateRange, trustLevel, userType, sortBy, sortOrder, page, limit } = currentUserFilters;
+    const { search, status, accountStatus, dateRange, trustLevel, userType, autoPay, sortBy, sortOrder, page, limit } = currentUserFilters;
 
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
@@ -31,7 +32,8 @@ async function loadUsers(filters = {}) {
     mainContent.innerHTML = `
         <div class="space-y-6">
             <!-- Analytics Overview -->
-            <div id="userStatsContainer" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div id="userStatsContainer" class="grid grid-cols-1 md:grid-cols-6 gap-4">
+                <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
                 <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
                 <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
                 <div class="glass p-4 rounded-[1.5rem] animate-pulse"><div class="skeleton h-3 w-20 mb-2"></div><div class="skeleton h-8 w-32"></div></div>
@@ -51,6 +53,16 @@ async function loadUsers(filters = {}) {
                         <option value="premium" ${userType === 'premium' ? 'selected' : ''}>Premium Only</option>
                         <option value="free" ${userType === 'free' ? 'selected' : ''}>Free Users Only</option>
                         <option value="unregistered" ${userType === 'unregistered' ? 'selected' : ''}>Unregistered</option>
+                        <option value="payer" ${userType === 'payer' ? 'selected' : ''}>Payer</option>
+                        <option value="admode" ${userType === 'admode' ? 'selected' : ''}>Ad Mode</option>
+                    </select>
+
+                    <select id="autoPayFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
+                        <option value="all" ${autoPay === 'all' ? 'selected' : ''}>Auto Pay: All</option>
+                        <option value="active" ${autoPay === 'active' ? 'selected' : ''}>Active AutoPay</option>
+                        <option value="disabled" ${autoPay === 'disabled' ? 'selected' : ''}>Disabled AutoPay</option>
+                        <option value="cancelled" ${autoPay === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+                        <option value="expired" ${autoPay === 'expired' ? 'selected' : ''}>Expired</option>
                     </select>
 
                     <select id="dateRangeFilter" onchange="applyUserFilters()" class="glass bg-white/5 border border-white/5 p-4 rounded-2xl outline-none text-xs font-bold text-slate-300 focus:border-orange-500/50 transition">
@@ -87,7 +99,7 @@ async function loadUsers(filters = {}) {
     try {
         const response = await API.getUsers(currentUserFilters);
         const users = response.users || [];
-        const stats = response.stats || { totalUsers: 0, onlineUsers: 0, todayJoined: 0, totalPremium: 0, todayPremium: 0 };
+        const stats = response.stats || { totalUsers: 0, onlineUsers: 0, todayJoined: 0, totalPremium: 0, todayPremium: 0, totalAutoPayActive: 0, totalAutoPayCancelled: 0, totalAutoPayExpired: 0 };
         const pagination = response.pagination || { page: 1, pages: 1, total: 0 };
 
         // Update Stats UI
@@ -99,6 +111,16 @@ async function loadUsers(filters = {}) {
             <div class="glass p-5 rounded-[1.5rem] border-b-2 border-orange-400/40">
                 <p class="text-[9px] font-black text-orange-400 uppercase mb-1 tracking-widest">Total Premium</p>
                 <h3 class="text-2xl font-black text-white">${(stats.totalPremium || 0).toLocaleString()} <span class="text-[9px] text-orange-400 ml-1 font-bold">PRO</span></h3>
+            </div>
+            <div class="glass p-5 rounded-[1.5rem] border-b-2 border-purple-500/40">
+                <p class="text-[9px] font-black text-purple-400 uppercase mb-1 tracking-widest">Auto Pay Stats</p>
+                <div class="flex flex-col">
+                    <h3 class="text-xl font-black text-emerald-500">${stats.totalAutoPayActive || 0} <span class="text-[9px] text-slate-500 ml-1 font-bold uppercase">Active</span></h3>
+                    <div class="flex items-center space-x-2 mt-0.5">
+                        <span class="text-[9px] font-black text-orange-400 uppercase">${stats.totalAutoPayCancelled || 0} Cancel</span>
+                        <span class="text-[9px] font-black text-red-500 uppercase">${stats.totalAutoPayExpired || 0} Expired</span>
+                    </div>
+                </div>
             </div>
             <div class="glass p-5 rounded-[1.5rem] border-b-2 border-emerald-500/20">
                 <p class="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Currently Online</p>
@@ -144,6 +166,16 @@ async function loadUsers(filters = {}) {
                                 </div>
                                 <div class="flex items-center space-x-2">
                                     <p class="text-[10px] text-slate-500">${u.phone}</p>
+                                    ${u.monetizationMode === 'adDriven' ?
+                                        '<span class="px-1.5 py-0.5 bg-slate-500/10 text-slate-500 text-[8px] font-black rounded uppercase">Ad Mode</span>' :
+                                        '<span class="px-1.5 py-0.5 bg-orange-500/10 text-orange-500 text-[8px] font-black rounded uppercase">Payer</span>'}
+                                    ${u.isPremium && u.subscription ? `
+                                        ${u.subscription.autoRenew && u.subscription.status === 'active' ?
+                                            '<span class="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 text-[8px] font-black rounded uppercase">AutoPay: ON</span>' :
+                                            (u.subscription.status === 'cancelled' ? '<span class="px-1.5 py-0.5 bg-red-500/10 text-red-500 text-[8px] font-black rounded uppercase">AutoPay: Cancel</span>' :
+                                            (u.subscription.status === 'expired' ? '<span class="px-1.5 py-0.5 bg-slate-500/10 text-slate-500 text-[8px] font-black rounded uppercase">AutoPay: Expired</span>' :
+                                            '<span class="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 text-[8px] font-black rounded uppercase">AutoPay: OFF</span>'))}
+                                    ` : ''}
                                     ${u.multiAccountCount > 1 ? `<span class="px-1.5 py-0.5 bg-red-500/10 text-red-500 text-[8px] font-black rounded uppercase">Multi-UID: ${u.multiAccountCount}</span>` : ''}
                                 </div>
                             </div>
@@ -898,8 +930,9 @@ function applyUserFilters() {
     const accountStatus = document.getElementById('accountStatusFilter')?.value || 'All';
     const dateRange = document.getElementById('dateRangeFilter')?.value || 'all';
     const userType = document.getElementById('userTypeFilter')?.value || 'registered';
+    const autoPay = document.getElementById('autoPayFilter')?.value || 'all';
 
-    loadUsers({ search, status, accountStatus, dateRange, userType, page: 1 });
+    loadUsers({ search, status, accountStatus, dateRange, userType, autoPay, page: 1 });
 }
 
 function toggleSort(field) {

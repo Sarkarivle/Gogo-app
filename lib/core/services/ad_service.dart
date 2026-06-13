@@ -1,7 +1,7 @@
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter/material.dart';
 import 'package:gogo/core/services/app_config_service.dart';
-import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'dart:math';
 
 class AdService {
@@ -18,18 +18,13 @@ class AdService {
   int _rewardedRetryAttempt = 0;
 
   DateTime? _lastInterstitialTime;
+  final DateTime _appStartTime = DateTime.now();
 
   bool get shouldShowAds {
-    final adsEnabled = AppConfigService().isAdsEnabled;
-    if (!adsEnabled) return false;
-
-    final isPremium = PremiumService().isPremium;
-    final freeUsersOnly = AppConfigService().adsConfig?['freeUsersOnly'] ?? true;
-
-    // If premium users shouldn't see ads
-    if (isPremium && freeUsersOnly) return false;
-
-    return true;
+    // INTELLIGENT OVERRIDE:
+    // Only show aggressive ads (Feeds, Interstitials, Native) to users in Ad-Driven Mode.
+    // Temporary 1-hour access from rewards does NOT hide these ads; only paid Premium does.
+    return MonetizationOrchestrator().shouldShowAggressiveAds;
   }
 
   String get _activeProvider => AppConfigService().adsConfig?['activeProvider'] ?? 'google';
@@ -93,10 +88,20 @@ class AdService {
       return;
     }
 
+    // POLICY PROTECTION: Avoid showing ads immediately on app launch
+    // AdSense policy discourages interstitials on startup screens.
+    // We add a 10-second grace period from app start.
+    if (DateTime.now().difference(_appStartTime).inSeconds < 10) {
+      debugPrint('AdService: Skipping interstitial due to App Start Grace Period.');
+      onAdClosed?.call();
+      return;
+    }
+
     // Frequency capping from Admin Panel
     final frequency = AppConfigService().adsConfig?['frequencyMinutes'] ?? 5;
     if (_lastInterstitialTime != null) {
       if (DateTime.now().difference(_lastInterstitialTime!).inMinutes < frequency) {
+        debugPrint('AdService: Capping interstitial. Last shown less than $frequency min ago.');
         onAdClosed?.call();
         return;
       }
@@ -157,6 +162,8 @@ class AdService {
     );
   }
 
+  bool isRewardedAdLoaded() => _rewardedAd != null;
+
   void showRewardedAd({required Function(RewardItem) onRewardEarned, VoidCallback? onAdClosed}) {
     if (!shouldShowAds) {
       onAdClosed?.call();
@@ -166,10 +173,6 @@ class AdService {
     if (_rewardedAd == null) {
       debugPrint('RewardedAd is null. Trying to load...');
       loadRewardedAd();
-      
-      // Fallback: If ad isn't ready, don't just close. Give it a second or inform user.
-      // But for better UX, if it's not ready, we just trigger load and return.
-      // The calling code (ChatPage) already shows a Snackbar "Loading...".
       onAdClosed?.call();
       return;
     }
