@@ -18,6 +18,8 @@ import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
+import 'package:gogo/core/services/app_config_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -562,10 +564,12 @@ class PremiumMembershipCard extends StatelessWidget {
 
         // Logic for Button Text and Action
         String buttonText = 'Premium Settings';
+        bool isAdDriven = MonetizationOrchestrator().currentMode == MonetizationMode.adDriven;
+
         if (!isPaidPremium && !hasAccess) {
-          buttonText = 'Activate Premium';
+          buttonText = isAdDriven ? 'Watch Ad for Gold' : 'Activate Premium';
         } else if (hasAccess && !isPaidPremium) {
-          buttonText = 'Manage Membership';
+          buttonText = isAdDriven ? 'Watch Ad for More' : 'Manage Membership';
         }
 
         return Container(
@@ -646,12 +650,20 @@ class PremiumMembershipCard extends StatelessWidget {
               const SizedBox(height: 24),
               InkWell(
                 onTap: () {
-                  AccessGuard().runWithAccessCheck(
-                    context, 
-                    onAllowed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumSettingsPage()));
-                    }
-                  );
+                  // If user is in Ad-Driven mode and not a paid premium, 
+                  // prioritize showing the reward popup to extend/get access.
+                  if (MonetizationOrchestrator().currentMode == MonetizationMode.adDriven && 
+                      !(userData?['isPremium'] == true) && 
+                      AppConfigService().isAdsEnabled) {
+                    MonetizationOrchestrator().showChoicePopup(context);
+                  } else {
+                    AccessGuard().runWithAccessCheck(
+                      context, 
+                      onAllowed: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => const PremiumSettingsPage()));
+                      }
+                    );
+                  }
                 },
                 borderRadius: BorderRadius.circular(16),
                 child: Container(

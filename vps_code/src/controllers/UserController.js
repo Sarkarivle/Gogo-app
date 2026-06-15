@@ -138,16 +138,16 @@ exports.login = async (req, res) => {
                 gender: 'Male',
                 accountStatus: 'Active',
                 isOnline: true,
-                lastSeen: new Date()
+                lastSeen: new Date(),
+                deviceId: deviceId
             });
-            await user.save();
+        } else {
+            if (user.isBanned) return res.status(403).json({ success: false, message: "Account blocked" });
+            user.lastSeen = new Date();
+            user.isOnline = true;
+            if (deviceId) user.deviceId = deviceId;
         }
 
-        if (user.isBanned) return res.status(403).json({ success: false, message: "Account blocked" });
-
-        user.lastSeen = new Date();
-        user.isOnline = true;
-        if (deviceId) user.deviceId = deviceId;
         await user.save();
 
         const token = jwt.sign({ phone: user.phone, id: user._id }, JWT_SECRET, { expiresIn: '90d' });
@@ -182,8 +182,16 @@ exports.getDiscover = async (req, res) => {
         } = req.query;
 
         const myPhone = normalize(req.user?.phone);
-        const currentUser = await User.findOne(phoneQuery(myPhone)).lean();
-        const redisClient = req.app.get('redis');
+
+        let userLat = parseFloat(lat);
+        let userLng = parseFloat(lng);
+
+        // OPTIMIZATION: Only fetch currentUser from DB if coordinates are missing from query
+        if ((!userLat || !userLng) && tab === 'Nearby') {
+            const currentUser = await User.findOne(phoneQuery(myPhone), 'lat lng').lean();
+            userLat = userLat || currentUser?.lat;
+            userLng = userLng || currentUser?.lng;
+        }
 
         // 1. Discovery Query Optimization:
         // For 100k+ users, we avoid fetching ALL online users from Redis.
@@ -193,7 +201,7 @@ exports.getDiscover = async (req, res) => {
         let query = {
             phone: { $nin: [myPhone, `+91${myPhone}`, `91${myPhone}`] },
             accountStatus: 'Active',
-            isBanned: { $ne: true }
+            isBanned: false // Optimized from { $ne: true }
         };
 
         // Quality Filter: By default, show users with onboarding or photos
@@ -229,8 +237,6 @@ exports.getDiscover = async (req, res) => {
         const limitInt = parseInt(limit);
 
         let users = [];
-        const userLat = parseFloat(lat) || currentUser?.lat;
-        const userLng = parseFloat(lng) || currentUser?.lng;
 
         console.log(`🔍 [Discover] Phone: ${myPhone}, Tab: ${tab}, Lat: ${userLat}, Lng: ${userLng}, Page: ${page}`);
 
@@ -344,6 +350,22 @@ exports.updateProfile = async (req, res) => {
 exports.updateLocation = async (req, res) => {
     try {
         const { lat, lng, city, area } = req.body;
+        const myPhone = req.user.phone;
+
+        // OPTIMIZATION: Throttled DB writes for location updates
+        const redis = req.app.get('redis');
+        const throttleKey = `loc_throttle:${myPhone}`;
+
+        if (redis) {
+            const isThrottled = await redis.get(throttleKey);
+            // If location hasn't changed city/area, and we updated recently, skip DB write
+            if (isThrottled && !city && !area) {
+                return res.json({ success: true, throttled: true });
+            }
+            // Set 5-minute throttle for standard location pings
+            await redis.set(throttleKey, '1', { EX: 300 });
+        }
+
         const update = {
             lastSeen: new Date(),
             lastLocationUpdate: new Date()
@@ -362,7 +384,7 @@ exports.updateLocation = async (req, res) => {
         if (city) update.city = city;
         if (area) update.area = area;
 
-        await User.findOneAndUpdate(phoneQuery(req.user.phone), { $set: update });
+        await User.findOneAndUpdate(phoneQuery(myPhone), { $set: update });
         res.json({ success: true });
     } catch (e) {
         console.error("[UserController] updateLocation Error:", e);
@@ -378,7 +400,8 @@ exports.trackEvent = async (req, res) => {
                 ip: req.headers['x-forwarded-for'] || req.socket.remoteAddress,
                 userAgent: req.headers['user-agent']
             };
-            await analyticsService.trackEvent(eventType, distinctId, clientMeta);
+            // Fire and forget to keep API response times ultra-fast
+            analyticsService.trackEvent(eventType, distinctId, clientMeta).catch(() => {});
         }
         res.json({ success: true });
     } catch (e) {
@@ -414,6 +437,39 @@ exports.getPublicConfig = async (req, res) => {
     }
 };
 exports.reportUser = async (req, res) => res.json({ success: true });
-exports.updatePremium = async (req, res) => res.json({ success: true });
+exports.updatePremium = async (req, res) => {
+    try {
+        const { isPremium, duration, monetizationMode } = req.body;
+        const myPhone = req.user.phone;
+
+        const update = {};
+        if (monetizationMode) update.monetizationMode = monetizationMode;
+
+        if (isPremium && duration) {
+            update.isPremium = true;
+            update.premiumExpiry = new Date(Date.now() + duration * 60000);
+            update.premiumPlan = 'Temporary Gold (Reward Ad)';
+        } else if (isPremium !== undefined) {
+            update.isPremium = isPremium;
+        }
+
+        const user = await User.findOneAndUpdate(phoneQuery(myPhone), { $set: update }, { new: true }).lean();
+
+        // Notify admin of change via socket
+        const io = req.app.get('socketio');
+        if (io) {
+            io.to('admin').emit('admin_live_event', {
+                type: 'PREMIUM_UPDATE',
+                label: isPremium ? 'Temporary Premium' : 'Premium Removed',
+                phone: normalize(myPhone)
+            });
+        }
+
+        res.json({ success: true, user });
+    } catch (e) {
+        console.error("updatePremium Error:", e);
+        res.status(500).json({ success: false });
+    }
+};
 exports.deactivateAccount = async (req, res) => res.json({ success: true });
 exports.reactivateAccount = async (req, res) => res.json({ success: true });

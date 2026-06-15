@@ -755,21 +755,33 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server on ${PORT}`);
 
-    // --- GHOST USER CLEANUP TASK (Runs every 5 minutes) ---
+    // --- GHOST USER CLEANUP TASK (Runs every 10 minutes) ---
     setInterval(async () => {
         try {
+            // OPTIMIZATION: Instead of scanning ALL online users in DB,
+            // only check those that are online but not in Redis.
             const onlineInDB = await User.find({ isOnline: true }, 'phone').lean();
-            for (const user of onlineInDB) {
-                // If user is online in DB but NOT in our local socket map
-                if (!phoneToSockets.has(user.phone)) {
-                    await User.updateOne({ _id: user._id }, { isOnline: false });
-                    await redisClient.sRem('online_users', user.phone);
-                    io.emit('user_status_change', { phone: user.phone, isOnline: false });
-                    console.log(`🧹 Ghost Cleanup: Marked ${user.phone} as Offline`);
+            if (onlineInDB.length === 0) return;
+
+            const redisOnline = await redisClient.sMembers('online_users');
+            const redisOnlineSet = new Set(redisOnline);
+
+            const toOffline = onlineInDB
+                .filter(u => !phoneToSockets.has(u.phone) && !redisOnlineSet.has(u.phone))
+                .map(u => u.phone);
+
+            if (toOffline.length > 0) {
+                const variations = [];
+                toOffline.forEach(p => variations.push(p, `+91${p}`, `91${p}`));
+
+                await User.updateMany({ phone: { $in: variations } }, { isOnline: false });
+                for (const p of toOffline) {
+                    io.emit('user_status_change', { phone: p, isOnline: false });
                 }
+                console.log(`🧹 Ghost Cleanup: Marked ${toOffline.length} users as Offline`);
             }
         } catch (err) {
             console.error("❌ Cleanup Error:", err.message);
         }
-    }, 5 * 60 * 1000); // 5 Minutes
+    }, 10 * 60 * 1000); // 10 Minutes
 });

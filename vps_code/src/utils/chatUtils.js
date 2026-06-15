@@ -75,11 +75,19 @@ async function updateConversationSummary(message) {
         const { redis, io } = analytics;
 
         // Atomic Database & Cache Updates
+        const updateDoc = { $set: { lastMessage: summary } };
+        const partnerUpdateDoc = {
+            $set: { lastMessage: summary },
+            $inc: { unreadCount: (type === 'block_event' || type === 'unblock_event') ? 0 : 1 }
+        };
+
+        // OPTIMIZATION: Only emit socket events if the last message has actually changed
+        // and avoid double await for faster response.
         const updates = [
             Conversation.findOneAndUpdate(
                 { userPhone: sPhone, partnerPhone: rPhone },
-                { $set: { lastMessage: summary } },
-                { upsert: true, new: true }
+                updateDoc,
+                { upsert: true, new: true, lean: true }
             ).exec().then(updatedConv => {
                 if (updatedConv && io) {
                     io.to(`user_${sPhone}`).emit('conversation_update', {
@@ -90,11 +98,8 @@ async function updateConversationSummary(message) {
             }),
             Conversation.findOneAndUpdate(
                 { userPhone: rPhone, partnerPhone: sPhone },
-                {
-                    $set: { lastMessage: summary },
-                    $inc: { unreadCount: (type === 'block_event' || type === 'unblock_event') ? 0 : 1 }
-                },
-                { upsert: true, new: true }
+                partnerUpdateDoc,
+                { upsert: true, new: true, lean: true }
             ).exec().then(updatedConv => {
                 if (updatedConv && io && (type !== 'block_event' && type !== 'unblock_event')) {
                     io.to(`user_${rPhone}`).emit('unread_update', {

@@ -77,24 +77,15 @@ class PremiumService {
 
   /// Logical check for ANY type of access (Paid OR Free Trial)
   bool get hasAccess {
-    // 1. Premium users ALWAYS have full access
-    if (isPremium) {
-      if (accessNotifier.value != true) accessNotifier.value = true;
-      if (statusNotifier.value != "PREMIUM") statusNotifier.value = "PREMIUM";
-      return true;
-    }
+    bool access = hasFullAccess;
 
-    // 2. Temporary Gold Access (1-Hour Reward)
-    if (MonetizationOrchestrator().hasTemporaryAccess) {
-      if (accessNotifier.value != true) accessNotifier.value = true;
-      if (statusNotifier.value != "GOLD (TRIAL)") statusNotifier.value = "GOLD (TRIAL)";
-      return true;
-    }
-
-    bool access = isFreemiumUser;
-
-    // 3. Trial Logic for Free Users
+    // 3. Trial Logic for Free Users (If not already premium)
     if (!access && AppConfigService().isOneMessageTrialEnabled && !_isTrialExceeded) {
+      access = true;
+    }
+    
+    // Also check Freemium trial
+    if (!access && isFreemiumUser) {
       access = true;
     }
 
@@ -109,6 +100,18 @@ class PremiumService {
     }
 
     return access;
+  }
+
+  /// Strict check: Only Paid Premium or Temporary Reward Gold access. 
+  /// Ignores the free message trial.
+  bool get hasFullAccess {
+    // 1. Premium users ALWAYS have full access
+    if (isPremium) return true;
+
+    // 2. Temporary Gold Access (1-Hour Reward)
+    if (MonetizationOrchestrator().hasTemporaryAccess) return true;
+
+    return false;
   }
 
   String get accountStatusLabel {

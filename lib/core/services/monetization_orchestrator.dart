@@ -6,6 +6,7 @@ import 'package:gogo/core/services/app_config_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/core/services/ad_service.dart';
 import 'package:gogo/shared/screens/offer_trial_screen.dart';
+import 'package:gogo/features/profile/repositories/user_repository.dart';
 
 /// Defines the monetization strategy for the user.
 enum MonetizationMode { 
@@ -121,6 +122,17 @@ class MonetizationOrchestrator {
     
     await prefs.setString('reward_last_date', today);
     await prefs.setInt('reward_daily_count', count + 1);
+
+    // Notify server about temporary premium status (Green in Admin)
+    try {
+      await ApiService.post('/api/user/update-premium', {
+        'isPremium': true,
+        'duration': durationMinutes,
+        'monetizationMode': 'adDriven'
+      });
+    } catch (e) {
+      debugPrint("Error notifying server of reward: $e");
+    }
     
     // Trigger global UI refresh
     PremiumService().refreshAccessState();
@@ -142,13 +154,20 @@ class MonetizationOrchestrator {
 
   /// Master Interceptor for Chat/Feature Limits
   void showChoicePopup(BuildContext context) {
+    // 1. Respect the current mode: Payer users get the payment screen, Ad-Driven get rewards.
     if (!isAdModeActive) {
-      // Payer Mode: Direct to Sales Page
       OfferTrialScreen.show(context);
       return;
     }
 
-    // Ad Mode: Show the Professional Hinglish Centered Dialog
+    // 2. AD-DRIVEN LOGIC:
+    // Notify server immediately that this user is now in Ad-Driven segment (Red in Admin)
+    final user = UserRepository().currentUser;
+    if (user != null) {
+      syncWithServer(user['phone']);
+    }
+
+    // 3. Show the Professional Hinglish Centered Dialog
     showDialog(
       context: context,
       barrierDismissible: true,

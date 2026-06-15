@@ -1006,8 +1006,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _handleCall(bool isVideo) async {
     final displayName = _receiverName ?? widget.name;
-    // Centralized Access Check
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call')) {
+    // Centralized Access Check - Strict for Calls
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call', isStrict: true)) {
       return;
     }
 
@@ -1318,8 +1318,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // --- RECORDING LOGIC ---
   void _startRecording() async {
-    // Centralized Access Check
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'audio_msg')) {
+    // Centralized Access Check - Strict for Audio Messages
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'audio_msg', isStrict: true)) {
       return;
     }
     final hasPermission = await _audioRecorder.hasPermission();
@@ -1393,6 +1393,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   // --- MEDIA HANDLING ---
   void _showMediaOptions() {
+    // Centralized Access Check - Strict for Media
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'media_send', isStrict: true)) {
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

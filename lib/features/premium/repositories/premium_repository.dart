@@ -9,11 +9,14 @@ class PremiumRepository {
 
   /// Sabse important function: Kya user ye action kar sakta hai?
   /// Agar nahi, to ye function khud Choice Popup ya Offer Page khol dega.
-  bool checkAccessAndShowOffer(BuildContext context, {required String feature}) {
+  /// [isStrict] means free message trial is NOT allowed for this feature.
+  bool checkAccessAndShowOffer(BuildContext context, {required String feature, bool isStrict = false}) {
     final service = PremiumService();
     
-    // 1. Premium users (Paid or Temporary Gold) can do everything
-    if (service.hasAccess) return true;
+    // 1. Check access based on strictness
+    bool allowed = isStrict ? service.hasFullAccess : service.hasAccess;
+
+    if (allowed) return true;
 
     // 2. If no access, trigger the intelligent decision popup
     _handleAccessDenied(context);

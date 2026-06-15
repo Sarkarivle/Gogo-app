@@ -118,6 +118,7 @@ UserSchema.index({ isBanned: 1, isDeactivated: 1 });
 UserSchema.index({ isPremium: -1, lastSeen: -1 });
 UserSchema.index({ accountStatus: 1, lastSeen: -1 }); // Fast Discovery
 UserSchema.index({ isOnline: 1, lastSeen: -1 }); // Fast Online Tab
+UserSchema.index({ isPremium: -1, isVerified: -1, isOnline: -1, lastSeen: -1 }); // Optimized Discovery
 UserSchema.index({ chatCount: -1, lastSeen: -1 }); // Fast Popular Tab
 
 module.exports = mongoose.model('User', UserSchema);
