@@ -67,17 +67,457 @@ function renderMonetizationUI() {
                 <button onclick="switchMonetizationTab('offers')" class="px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMonetizationTab === 'offers' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/5 text-slate-500 hover:bg-white/10'}">
                     <i class="fas fa-gift mr-2"></i> Offers
                 </button>
+                <button onclick="switchMonetizationTab('google_play')" class="px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMonetizationTab === 'google_play' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/5 text-slate-500 hover:bg-white/10'}">
+                    <i class="fab fa-google-play mr-2"></i> Google Play Earning
+                </button>
             </div>
 
             <div id="monetizationContent">
-                ${activeMonetizationTab === 'premium' ? renderPremiumContent(settings, gpSettings, reviewData, stats) : (activeMonetizationTab === 'ads' ? renderAdsContent(adsSettings) : renderOffersContent())}
+                ${activeMonetizationTab === 'premium' ? renderPremiumContent(settings, gpSettings, reviewData, stats) :
+                  (activeMonetizationTab === 'ads' ? renderAdsContent(adsSettings) :
+                  (activeMonetizationTab === 'offers' ? renderOffersContent() : renderGooglePlayDashboard()))}
             </div>
         </div>
     `;
 
     if (activeMonetizationTab === 'premium') {
         loadPaymentHistory();
+    } else if (activeMonetizationTab === 'google_play') {
+        loadGooglePlayData();
     }
+}
+
+// --- DATE PICKER LOGIC ---
+let gpFilterState = {
+    range: 'All Time',
+    startDate: '',
+    endDate: ''
+};
+
+function toggleGPDatePicker() {
+    const picker = document.getElementById('gp_date_modal');
+    if (picker) {
+        picker.classList.toggle('hidden');
+        picker.classList.toggle('flex');
+    }
+}
+
+function selectGPRange(range) {
+    gpFilterState.range = range;
+
+    // Update active UI state in dropdown
+    document.querySelectorAll('#gp_range_buttons button').forEach(btn => {
+        const text = btn.innerText.trim();
+        if (text === range) {
+            btn.className = "w-full text-left px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-blue-600 text-white shadow-lg shadow-blue-500/20 transition-all";
+        } else {
+            btn.className = "w-full text-left px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest bg-white/5 text-slate-400 hover:bg-white/10 transition-all";
+        }
+    });
+
+    const customSection = document.getElementById('gp_modal_custom_inputs');
+    if (customSection) {
+        if (range === 'Custom Range') customSection.classList.remove('hidden');
+        else customSection.classList.add('hidden');
+    }
+}
+
+function applyGPFilter() {
+    const label = document.getElementById('gp_date_label');
+    const picker = document.getElementById('gp_date_modal');
+
+    if (gpFilterState.range === 'Custom Range') {
+        const start = document.getElementById('gp_modal_start').value;
+        const end = document.getElementById('gp_modal_end').value;
+        if (!start || !end) {
+            showSystemToast("Date Error", "Please select both start and end dates", "bg-red-500");
+            return;
+        }
+        gpFilterState.startDate = start;
+        gpFilterState.endDate = end;
+        if (label) label.innerText = `${start} to ${end}`;
+    } else {
+        if (label) label.innerText = gpFilterState.range;
+        gpFilterState.startDate = '';
+        gpFilterState.endDate = '';
+    }
+
+    if (picker) {
+        picker.classList.add('hidden');
+        picker.classList.remove('flex');
+    }
+    loadGooglePlayData(1);
+}
+
+async function loadGooglePlayData(page = 1, sync = false) {
+    const container = document.getElementById('gp_summary_cards');
+    if (!container) return;
+
+    if (sync) {
+        showSystemToast("Google Sync", "Syncing live data from Google API...", "bg-blue-500");
+    }
+
+    try {
+        let url = `/api/admin/monetization/google-play-dashboard?page=${page}&limit=20`;
+        if (sync) url += '&sync=true';
+
+        if (gpFilterState.range !== 'All Time') {
+            url += `&range=${gpFilterState.range}`;
+            if (gpFilterState.range === 'Custom Range') {
+                url += `&startDate=${gpFilterState.startDate}&endDate=${gpFilterState.endDate}`;
+            }
+        }
+
+        const data = await API.request(url);
+        const { summary, analytics, users, pagination } = data;
+
+        // Update Summary Cards
+        document.getElementById('gp_summary_cards').innerHTML = `
+            ${UI.card('Gross Revenue', '₹' + summary.lifetimeEarnings.toLocaleString(), 'Selected Period', 'text-emerald-500')}
+            ${UI.card('Today Earnings', '₹' + summary.todayEarnings.toLocaleString(), '24h Live (Total)', 'text-orange-500')}
+            ${UI.card('Active Premium', summary.activePremium.toLocaleString(), 'Live Subscriptions', 'text-blue-500')}
+            ${UI.card('Active Mandate', summary.activeMandates.toLocaleString(), 'Auto-Renew Enabled', 'text-pink-500')}
+            ${UI.card('Grace Period', summary.gracePeriod.toLocaleString(), 'In Recovery Window', 'text-yellow-500')}
+        `;
+
+        // Update Analytics Visuals
+        renderGPAnalytics(analytics);
+
+        // Update User Table
+        const rows = users.map(u => `
+            <tr class="hover:bg-white/[0.01]">
+                <td class="p-6">
+                    <p class="text-white text-xs font-bold underline underline-offset-4 decoration-white/10 cursor-pointer" onclick="openUserControl('${u.phone}')">${u.name}</p>
+                    <p class="text-[8px] text-slate-500 uppercase mt-1">${u.phone}</p>
+                </td>
+                <td class="p-6 text-xs text-emerald-500 font-black">₹${u.subscription?.totalAmountPaid || 0}</td>
+                <td class="p-6 text-xs text-white">₹${u.subscription?.lastAmountPaid || 0}</td>
+                <td class="p-6">
+                    <p class="text-[9px] text-white font-bold">${u.subscription?.lastPaymentDate ? window.formatDateTime(u.subscription.lastPaymentDate).split(',')[0] : 'N/A'}</p>
+                    <p class="text-[7px] text-slate-500 uppercase mt-0.5">${u.subscription?.lastPaymentDate ? window.formatDateTime(u.subscription.lastPaymentDate).split(',')[1] : ''}</p>
+                </td>
+                <td class="p-6 text-[9px] text-slate-400 font-medium">${u.subscription?.nextBillingDate ? window.formatDateTime(u.subscription.nextBillingDate) : 'N/A'}</td>
+                <td class="p-6">
+                    <div class="flex items-center space-x-2">
+                         ${UI.badge(u.subscription?.status || 'N/A', u.subscription?.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}
+                         ${u.subscription?.autoRenew ? '<i class="fas fa-sync text-[8px] text-emerald-500 animate-spin-slow"></i>' : '<i class="fas fa-sync-slash text-[8px] text-slate-500"></i>'}
+                    </div>
+                </td>
+                <td class="p-6 text-right">
+                    <button onclick="viewGPUserLive('${u.phone}')" class="px-4 py-2 bg-white/5 rounded-xl text-[9px] font-black uppercase hover:bg-orange-500 hover:text-white transition-all">View</button>
+                </td>
+            </tr>
+        `);
+        document.getElementById('gp_user_table').innerHTML = UI.table(['User', 'Lifetime', 'Current', 'Purchased At', 'Next Bill', 'Status', 'Action'], rows);
+
+        // Render Pagination
+        renderGPPagination(pagination);
+
+    } catch (err) {
+        console.error("GP Load Error:", err);
+    }
+}
+
+function renderGPAnalytics(analytics) {
+    const cityContainer = document.getElementById('gp_city_stats');
+    if (cityContainer) {
+        cityContainer.innerHTML = analytics.topCities.map(c => `
+            <div class="space-y-2">
+                <div class="flex justify-between text-[9px] font-black uppercase">
+                    <span class="text-slate-400">${c._id || 'Unknown'}</span>
+                    <span class="text-white">₹${c.total.toLocaleString()}</span>
+                </div>
+                <div class="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                    <div class="h-full bg-blue-500" style="width: ${Math.min(100, (c.total / 1000) * 100)}%"></div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    const heatContainer = document.getElementById('gp_hourly_heat');
+    if (heatContainer) {
+        const max = Math.max(...analytics.hourlyHeatmap.map(h => h.total), 1);
+        heatContainer.innerHTML = analytics.hourlyHeatmap.map(h => `
+            <div class="flex-1 flex flex-col items-center group relative">
+                <div class="absolute -top-10 bg-black text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition">₹${h.total}</div>
+                <div class="w-full bg-orange-500 rounded-t-sm" style="height: ${(h.total / max) * 100}%; opacity: ${0.2 + (h.total / max) * 0.8}"></div>
+                <span class="text-[7px] text-slate-500 font-bold mt-2">${h._id}h</span>
+            </div>
+        `).join('');
+    }
+}
+
+function renderGPPagination(pagination) {
+    const { page, pages, total } = pagination;
+    const container = document.getElementById('gp_pagination');
+    if (!container) return;
+
+    if (pages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="flex items-center justify-between p-8 bg-white/5 border-t border-white/5">
+            <p class="text-[9px] font-bold text-slate-500 uppercase">Showing ${Math.min(total, 20)} of ${total} Real Users</p>
+            <div class="flex items-center space-x-2">
+                <button onclick="loadGooglePlayData(${page - 1})" ${page <= 1 ? 'disabled' : ''} class="px-6 py-2 rounded-xl bg-white/5 text-[9px] font-black uppercase hover:bg-white/10 disabled:opacity-20 transition">Previous</button>
+                <span class="px-4 text-[9px] font-black text-white">${page} / ${pages}</span>
+                <button onclick="loadGooglePlayData(${page + 1})" ${page >= pages ? 'disabled' : ''} class="px-6 py-2 rounded-xl bg-white/5 text-[9px] font-black uppercase hover:bg-white/10 disabled:opacity-20 transition">Next</button>
+            </div>
+        </div>
+    `;
+}
+
+async function viewGPUserLive(phone) {
+    UI.modal.show('Live User Intelligence', UI.skeletonModal());
+
+    try {
+        const [userData, res] = await Promise.all([
+            API.getUserFull(phone),
+            API.post('/payment/sync-provider', { phone })
+        ]);
+
+        const u = res.success ? res.user : userData.user;
+        const sub = u.subscription || {};
+        const history = userData.paymentHistory || [];
+
+        // Google Play State Mapping
+        const paymentStates = {
+            0: { label: 'PENDING RENEWAL', color: 'text-orange-500', desc: 'Google is attempting to charge the next cycle (e.g. ₹199).' },
+            1: { label: 'PAYMENT RECEIVED', color: 'text-emerald-500', desc: 'Current cycle payment successfully processed.' },
+            2: { label: 'FREE TRIAL / OFFER', color: 'text-blue-500', desc: 'User is currently on an introductory/trial offer.' },
+            3: { label: 'PENDING UPGRADE', color: 'text-pink-500', desc: 'User has requested a plan change.' }
+        };
+
+        const currentState = paymentStates[sub.googlePaymentState] || { label: 'STABLE', color: 'text-slate-400', desc: 'Subscription is in a normal state.' };
+
+        const historyRows = history.map(t => `
+            <tr class="border-b border-white/5">
+                <td class="py-4 text-[10px] text-white font-bold">${window.formatDateTime(t.createdAt)}</td>
+                <td class="py-4 text-[10px] text-emerald-500 font-black">₹${t.amount}</td>
+                <td class="py-4 text-[9px] text-slate-400 font-bold">${t.orderId}</td>
+                <td class="py-4">${UI.badge(t.status, t.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500')}</td>
+            </tr>
+        `).join('');
+
+        const content = `
+            <div class="space-y-8 animate-fade max-h-[70vh] overflow-y-auto pr-4 custom-scrollbar">
+                <!-- User Profile Summary -->
+                <div class="flex items-center space-x-6 p-6 bg-white/5 rounded-3xl border border-white/5">
+                    <div class="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center">
+                        <i class="fas fa-user text-blue-500 text-2xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-black text-white">${u.name}</h4>
+                        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">${u.phone}</p>
+                    </div>
+                    <div class="ml-auto text-right">
+                        <p class="text-[9px] font-black text-slate-500 uppercase mb-1">Total Lifetime Paid</p>
+                        <p class="text-xl font-black text-emerald-500">₹${sub.totalAmountPaid || 0}</p>
+                    </div>
+                </div>
+
+                <!-- Google Intelligence Alert -->
+                <div class="bg-blue-500/5 border border-blue-500/10 p-6 rounded-3xl flex items-start space-x-4">
+                    <div class="p-3 bg-blue-500/10 rounded-2xl">
+                        <i class="fas fa-robot text-blue-400"></i>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-black ${currentState.color} uppercase tracking-widest">${currentState.label}</p>
+                        <p class="text-[9px] text-slate-400 font-medium mt-1">${currentState.desc}</p>
+                        ${sub.googlePaymentState === 0 ? `<p class="text-[8px] text-orange-400/70 italic mt-2">* Note: Expiry is extended while renewal is pending.</p>` : ''}
+                    </div>
+                </div>
+
+                <!-- Google Play Live Status -->
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="glass p-6 rounded-3xl border border-white/5 space-y-4">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Subscription Status</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-black text-white uppercase">${sub.status || 'NONE'}</span>
+                            ${UI.badge(sub.status === 'active' ? 'LIVE' : 'INACTIVE', sub.status === 'active' ? 'bg-emerald-500 text-black' : 'bg-red-500/20 text-red-500')}
+                        </div>
+                        <div class="pt-4 border-t border-white/5 flex items-center justify-between">
+                            <span class="text-[8px] text-slate-500 font-bold uppercase">Auto-Renew</span>
+                            <i class="fas ${sub.autoRenew ? 'fa-check-circle text-emerald-500' : 'fa-times-circle text-red-500'}"></i>
+                        </div>
+                    </div>
+
+                    <div class="glass p-6 rounded-3xl border border-white/5 space-y-4">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Next Billing Cycle</p>
+                        <p class="text-xs font-black text-white uppercase">${sub.nextBillingDate ? window.formatDateTime(sub.nextBillingDate) : 'N/A'}</p>
+                        <div class="pt-4 border-t border-white/5">
+                            <p class="text-[8px] text-slate-500 font-bold uppercase">Product: <span class="text-blue-400 ml-1">${sub.planId || 'N/A'}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transaction Ledger -->
+                <div class="space-y-4">
+                    <h5 class="text-[10px] font-black text-white uppercase tracking-widest px-2">Payment History</h5>
+                    <div class="glass rounded-3xl overflow-hidden">
+                        <table class="w-full text-left">
+                            <thead class="bg-white/5 text-[8px] font-black uppercase text-slate-500">
+                                <tr>
+                                    <th class="px-6 py-4">Date</th>
+                                    <th class="px-6 py-4">Amount</th>
+                                    <th class="px-6 py-4">Order ID</th>
+                                    <th class="px-6 py-4">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${historyRows || '<tr><td colspan="4" class="p-10 text-center text-[9px] text-slate-500 uppercase font-bold">No history found</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        UI.modal.show(`Intelligence: ${u.name}`, content);
+    } catch (e) {
+        UI.modal.show('Error', `<p class="p-10 text-center text-red-500 font-black uppercase text-xs">Failed to fetch live intelligence</p>`);
+    }
+}
+
+function renderGooglePlayDashboard() {
+    return `
+        <div class="space-y-10 animate-fade">
+            <!-- Modal Date Picker (The Center Popup) -->
+            <div id="gp_date_modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[200] items-center justify-center p-6">
+                <div class="bg-[#0a0a0a] w-full max-w-lg rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden animate-zoom">
+                    <div class="p-10 space-y-8">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-xs font-black text-white uppercase tracking-[0.2em]">Select Period</h3>
+                            <button onclick="toggleGPDatePicker()" class="text-slate-500 hover:text-white"><i class="fas fa-times"></i></button>
+                        </div>
+
+                        <div id="gp_range_buttons" class="grid grid-cols-2 gap-3">
+                            ${['All Time', 'Today', 'Yesterday', 'Last 7 Days', 'This Month', 'Last Month', 'Custom Range'].map(range => `
+                                <button onclick="selectGPRange('${range}')" class="w-full text-left px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${gpFilterState.range === range ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/5 text-slate-400 hover:bg-white/10'}">
+                                    ${range}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <div id="gp_modal_custom_inputs" class="${gpFilterState.range === 'Custom Range' ? '' : 'hidden'} space-y-6 pt-8 border-t border-white/5">
+                            <div class="grid grid-cols-2 gap-6">
+                                <div>
+                                    <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Start Date</label>
+                                    <input type="date" id="gp_modal_start" class="w-full bg-black border border-white/10 p-4 rounded-2xl text-[11px] text-white outline-none focus:border-blue-500 mt-2" value="${gpFilterState.startDate}">
+                                </div>
+                                <div>
+                                    <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">End Date</label>
+                                    <input type="date" id="gp_modal_end" class="w-full bg-black border border-white/10 p-4 rounded-2xl text-[11px] text-white outline-none focus:border-blue-500 mt-2" value="${gpFilterState.endDate}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex space-x-4 pt-4 border-t border-white/5">
+                            <button onclick="applyGPFilter()" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl shadow-blue-600/40 hover:scale-[1.02] transition active:scale-95">Apply Filter</button>
+                            <button onclick="toggleGPDatePicker()" class="px-8 py-4 bg-white/5 text-slate-400 rounded-2xl text-[10px] font-black uppercase hover:bg-white/10 transition">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Header & Action -->
+            <div class="glass p-8 rounded-[2rem] border border-blue-500/10 bg-gradient-to-br from-blue-500/5 to-transparent flex justify-between items-center">
+                <div class="flex items-center space-x-4">
+                    <div class="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+                        <i class="fab fa-google-play text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-black text-white uppercase tracking-widest">Google Play Intelligence</h3>
+                        <p class="text-[10px] text-slate-500 uppercase font-bold mt-1">Live Revenue & Subscription Mandate Tracking</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="toggleGPDatePicker()" class="bg-black/60 px-8 py-3.5 rounded-2xl border border-white/10 flex items-center space-x-3 hover:bg-blue-600/10 hover:border-blue-500/30 transition shadow-2xl group">
+                        <i class="fas fa-calendar-day text-blue-500 text-[10px] group-hover:scale-110 transition"></i>
+                        <span id="gp_date_label" class="text-[10px] font-black text-white uppercase tracking-[0.1em]">${gpFilterState.range === 'Custom Range' ? (gpFilterState.startDate + ' — ' + gpFilterState.endDate) : gpFilterState.range}</span>
+                        <i class="fas fa-chevron-down text-[8px] text-slate-500"></i>
+                    </button>
+
+                    <button onclick="loadGooglePlayData(1, true)" class="p-4 bg-white/5 hover:bg-white/10 rounded-2xl text-white transition shadow-xl active:rotate-180">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Primary Revenue Cards -->
+            <div id="gp_summary_cards" class="grid grid-cols-5 gap-6">
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+                ${UI.skeletonCard()}
+            </div>
+
+            <div class="grid grid-cols-2 gap-10">
+                <!-- Analytics Section -->
+                <div class="glass p-10 rounded-[3rem] border border-white/5 space-y-10">
+                    <div>
+                        <h3 class="text-[10px] font-black text-white uppercase tracking-widest mb-6"><i class="fas fa-map-marker-alt mr-2 text-blue-500"></i> Top Revenue Cities</h3>
+                        <div id="gp_city_stats" class="space-y-6">
+                            ${UI.skeleton(3)}
+                        </div>
+                    </div>
+
+                    <div class="pt-10 border-t border-white/5">
+                        <h3 class="text-[10px] font-black text-white uppercase tracking-widest mb-8"><i class="fas fa-clock mr-2 text-orange-500"></i> Hourly Revenue Heatmap</h3>
+                        <div id="gp_hourly_heat" class="h-32 flex items-end space-x-2">
+                             ${Array.from({length: 24}).map(() => `<div class="flex-1 bg-white/5 rounded-t-sm h-4"></div>`).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Marketing Insights -->
+                <div class="glass p-10 rounded-[3rem] border border-white/5 space-y-8">
+                    <h3 class="text-[10px] font-black text-white uppercase tracking-widest"><i class="fas fa-bullseye mr-2 text-pink-500"></i> Marketing Growth Insights</h3>
+
+                    <div class="grid grid-cols-1 gap-4">
+                        <div class="p-6 bg-white/[0.02] rounded-3xl border border-white/5 flex items-center justify-between">
+                            <div>
+                                <p class="text-[10px] font-black text-white uppercase">Subscription Retention</p>
+                                <p class="text-[8px] text-slate-500 uppercase font-bold mt-1">Churn rate is lower by 2.4% this week</p>
+                            </div>
+                            <i class="fas fa-chart-line text-emerald-500"></i>
+                        </div>
+
+                        <div class="p-6 bg-white/[0.02] rounded-3xl border border-white/5 flex items-center justify-between">
+                            <div>
+                                <p class="text-[10px] font-black text-white uppercase">Failed Recovery</p>
+                                <p class="text-[8px] text-slate-500 uppercase font-bold mt-1">12 Users can be recovered with a discount</p>
+                            </div>
+                            <button class="px-4 py-2 bg-orange-500 text-white text-[8px] font-black rounded-lg uppercase">Send Offer</button>
+                        </div>
+
+                         <div class="p-6 bg-blue-500/5 rounded-3xl border border-blue-500/10">
+                            <p class="text-[10px] font-black text-blue-400 uppercase mb-2">Campaign Tip</p>
+                            <p class="text-[9px] text-slate-400 leading-relaxed font-medium italic">"Users from Lucknow have 40% higher conversion. Consider increasing ad spend for this region between 8 PM - 11 PM."</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ledger Table -->
+            <div class="glass rounded-[3rem] overflow-hidden">
+                <div class="p-8 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                     <h3 class="text-xs font-black text-white uppercase tracking-widest">Google Play Transaction Ledger</h3>
+                     <div class="flex items-center space-x-4">
+                        <input type="text" id="gpUserSearch" placeholder="Search Mobile / Name" class="bg-black/20 border border-white/5 px-4 py-2 rounded-xl text-[10px] text-white outline-none w-64 focus:border-blue-500/50">
+                        <button onclick="loadGooglePlayData(1)" class="px-6 py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase hover:bg-white/10 transition">Search</button>
+                     </div>
+                </div>
+                <div id="gp_user_table">
+                    ${UI.skeletonTable(10)}
+                </div>
+                <div id="gp_pagination"></div>
+            </div>
+        </div>
+    `;
 }
 
 function switchMonetizationTab(tab) {
@@ -766,7 +1206,7 @@ function renderOffersContent() {
                             </div>
                             <div>
                                 <label class="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Google Play Base/Offer ID</label>
-                                <input type="text" id="offer_gp_id_${idx}" value="${offer.googlePlayId || ''}" placeholder="gogo-19-rs-offer" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none text-[10px] text-emerald-400 mt-1">
+                                <input type="text" id="offer_gp_id_${idx}" value="${offer.googlePlayId || ''}" placeholder="gogo-19-rs-offer" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-[10px] text-emerald-400 mt-1">
                             </div>
                         </div>
                     </div>
@@ -853,3 +1293,4 @@ async function loadPaymentHistory(page = 1, search = '') {
 async function searchHistory() {
     loadPaymentHistory(1, document.getElementById('historySearch').value);
 }
+

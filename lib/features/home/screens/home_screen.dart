@@ -142,21 +142,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     // Background unread sync every 30s
     _unreadTimer = Timer.periodic(const Duration(seconds: 30), (t) => _fetchUnreadCount());
 
-    // 2. Profiles immediately + User sync in background
+    // 2. Fetch User first to ensure phone is available for API calls
+    final user = await _userRepository.getCurrentUser();
+    if (user != null && mounted) {
+      setState(() => currentUser = user);
+      SocketService().updateCurrentUser(user['phone']);
+    }
+
+    // 3. Profiles immediately
     _updateLocationAndProfiles();
     
-    _userRepository.getCurrentUser().then((user) {
-      if (user != null && mounted) {
-        setState(() => currentUser = user);
-        SocketService().updateCurrentUser(user['phone']);
-      }
+    // PRIORITY: Show Interstitial Ad on Home Screen Load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AdService().showInterstitialAd();
     });
   }
 
-  // _loadInitialData is now integrated into _updateLocationAndProfiles to prevent double fetch
-
   Future<void> _updateLocationAndProfiles() async {
-    // 1. Show cache immediately if available for instant feel
+    // 1. Instant Feel: Show cache immediately if available
     if (mounted) {
       final tabName = ['Nearby', 'Online'][_tabController.index];
       final cached = ProfileRepository.getCachedProfiles(tabName);
@@ -166,24 +169,52 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           _profiles = List.from(cached);
           _isLoadingProfiles = false;
         });
+      } else {
+        setState(() => _isLoadingProfiles = true);
       }
     }
 
-    // 2. Always trigger fresh fetch immediately
-    _fetchProfiles(isReset: true);
-    
-    // 3. Location update in background (Non-blocking)
-    LocationService().getCurrentPosition().then((pos) {
-      _lastKnownPosition = pos;
-    });
+    // 2. Parallel Background Task: Fresh GPS and Profiles
+    // We don't "await" here so the UI stays responsive
+    _fetchReactiveData();
+  }
 
-    if (currentUser != null && mounted) {
-      LocationRepository().updateLocation(currentUser!['phone']).then((_) async {
-        final updatedUser = await _userRepository.getCurrentUser();
-        if (mounted && updatedUser != null) {
-          currentUser = updatedUser;
+  Future<void> _fetchReactiveData() async {
+    try {
+      // Get current position (with a quick timeout)
+      final pos = await LocationService().getCurrentPosition().timeout(
+        const Duration(seconds: 3), 
+        onTimeout: () => null
+      );
+
+      if (mounted) {
+        _lastKnownPosition = pos;
+        
+        // If we got a fresh location fix, we update server in background
+        if (pos != null && currentUser != null) {
+          // Fire and forget server update
+          LocationRepository().updateLocation(
+            currentUser!['phone'], 
+            providedPosition: pos
+          ).then((_) async {
+            final updatedUser = await _userRepository.getCurrentUser();
+            if (mounted && updatedUser != null) {
+              currentUser = updatedUser;
+            }
+          });
+          
+          // Since we have a fresh location, we clear cache to force a fresh geolocated fetch
+          ProfileRepository.clearCache();
         }
-      });
+      }
+      
+      // 3. Trigger fresh fetch (It will use _lastKnownPosition if available)
+      if (mounted) {
+        _fetchProfiles(isReset: true);
+      }
+    } catch (e) {
+      debugPrint("Reactive fetch error: $e");
+      if (mounted) _fetchProfiles(isReset: true);
     }
   }
 
@@ -257,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       setState(() => _isLoadingMore = true);
     } else {
       _lastRequestTimestamp = requestTimestamp;
-      if (_profiles.isEmpty && !isReset) {
+      if (_profiles.isEmpty) {
         setState(() => _isLoadingProfiles = true);
       }
     }

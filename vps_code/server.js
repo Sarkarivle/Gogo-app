@@ -267,24 +267,28 @@ io.on('connection', (socket) => {
 
     // --- CALLING SYSTEM ---
     socket.on('initiate_call', async (data) => {
-        const other = normalizePhone(data.targetPhone || data.receiverPhone);
-        if (other) {
-            // SECURITY: Check if either user has blocked the other
-            const block = await Block.findOne({
-                $or: [
-                    { blockerPhone: myPhone, blockedPhone: other },
-                    { blockerPhone: other, blockedPhone: myPhone }
-                ]
-            });
+        try {
+            const other = normalizePhone(data.targetPhone || data.receiverPhone);
+            if (other) {
+                // SECURITY: Check if either user has blocked the other
+                const block = await Block.findOne({
+                    $or: [
+                        { blockerPhone: myPhone, blockedPhone: other },
+                        { blockerPhone: other, blockedPhone: myPhone }
+                    ]
+                });
 
-            if (block) {
-                console.warn(`🚫 Blocked call attempt: ${myPhone} -> ${other}`);
-                return; // Silently ignore or emit an error if needed
+                if (block) {
+                    console.warn(`🚫 Blocked call attempt: ${myPhone} -> ${other}`);
+                    return; // Silently ignore or emit an error if needed
+                }
+
+                const roomId = getRoomId(myPhone, other);
+                analyticsService.trackCallStart(roomId);
+                io.to(`user_${other}`).emit('incoming_call', { callerPhone: myPhone, callerName: data.callerName, isVideo: data.isVideo });
             }
-
-            const roomId = getRoomId(myPhone, other);
-            analyticsService.trackCallStart(roomId);
-            io.to(`user_${other}`).emit('incoming_call', { callerPhone: myPhone, callerName: data.callerName, isVideo: data.isVideo });
+        } catch (e) {
+            console.error("initiate_call error:", e);
         }
     });
 

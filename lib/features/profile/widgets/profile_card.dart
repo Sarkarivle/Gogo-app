@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/shared/widgets/blinking_dot.dart';
+import 'package:gogo/core/services/ad_service.dart';
 
 class ProfileCard extends StatelessWidget {
   final String distance;
@@ -77,19 +78,22 @@ class ProfileCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        ProfileDetailPage.navigate(
-          context,
-          name: name,
-          phone: phone,
-          distance: (fullDistance != null && fullDistance!.isNotEmpty) ? fullDistance! : distance,
-          city: city,
-          area: area,
-          age: age,
-          position: position,
-          havePlace: havePlace,
-          isVerified: isVerified,
-          isOnline: isOnline,
-        );
+        // Show  ad before navigating to profile details
+        AdService().showInterstitialAd(onAdClosed: () {
+          ProfileDetailPage.navigate(
+            context,
+            name: name,
+            phone: phone,
+            distance: (fullDistance != null && fullDistance!.isNotEmpty) ? fullDistance! : distance,
+            city: city,
+            area: area,
+            age: age,
+            position: position,
+            havePlace: havePlace,
+            isVerified: isVerified,
+            isOnline: isOnline,
+          );
+        });
       },
       child: Container(
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),

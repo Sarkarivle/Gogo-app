@@ -62,6 +62,7 @@ router.get('/config/:key', s(AdminController.getConfig));
 router.post('/config/update', s(AdminController.updateConfig));
 router.get('/monetization/stats', s(AdminController.getMonetizationStats));
 router.get('/monetization/history', s(AdminController.getPaymentHistory));
+router.get('/monetization/google-play-dashboard', s(AdminController.getGooglePlayFullDashboard));
 router.get('/media/all', s(AdminController.getAllMedia));
 router.post('/media/delete', s(AdminController.deleteMedia));
 

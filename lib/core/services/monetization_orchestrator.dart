@@ -266,13 +266,23 @@ class MonetizationOrchestrator {
                       // Show loading overlay if ad not ready
                       if (!AdService().isRewardedAdLoaded()) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Loading Ad... please wait"), duration: Duration(seconds: 2))
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.pinkAccent)),
                           );
                         }
+                        
                         AdService().loadRewardedAd();
-                        // Wait a bit and try to show
-                        await Future.delayed(const Duration(seconds: 2));
+                        
+                        // Wait up to 8 seconds for real production ads
+                        int attempts = 0;
+                        while (!AdService().isRewardedAdLoaded() && attempts < 16) {
+                          await Future.delayed(const Duration(milliseconds: 500));
+                          attempts++;
+                        }
+
+                        if (context.mounted) Navigator.pop(context); // Remove loader
                       }
 
                       if (context.mounted) {
@@ -288,7 +298,7 @@ class MonetizationOrchestrator {
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Ad not ready yet. Please try again in a moment."))
+                            const SnackBar(content: Text("Ads abhi ready nahi hain. Ek baar internet check karein ya 5 sec baad try karein."))
                           );
                         }
                       }

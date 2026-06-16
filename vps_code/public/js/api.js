@@ -232,6 +232,10 @@ const API = {
     async getPaymentHistory(page = 1) {
         return await this.request(`/api/admin/monetization/history?page=${page}`);
     },
+    async getGPFullDashboard(page = 1) {
+        const url = page.toString().includes('sync=true') ? `/api/admin/monetization/google-play-dashboard?page=1&sync=true` : `/api/admin/monetization/google-play-dashboard?page=${page}`;
+        return await this.request(url);
+    },
     async broadcastNotification(title, message, targets = [], scheduledAt = null) {
         return await this.request('/api/admin/broadcast', {
             method: 'POST',

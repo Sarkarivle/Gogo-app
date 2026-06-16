@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/services/analytics_service.dart';
+import 'package:gogo/core/services/ad_service.dart';
 
 class AppUpdateConfig {
   final String latestVersion;
@@ -99,6 +101,37 @@ class AppConfigService {
 
   String? get loginImageUrl => _trackingConfig?['loginImageUrl'];
 
+  // --- Fallback & Caching Logic ---
+  
+  static const String _adsConfigKey = 'cached_ads_config';
+  
+  Future<void> init() async {
+    await _loadCachedConfigs();
+  }
+
+  Future<void> _loadCachedConfigs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? cachedAds = prefs.getString(_adsConfigKey);
+      if (cachedAds != null) {
+        _adsConfig = jsonDecode(cachedAds);
+        isAdsEnabledNotifier.value = _adsConfig?['isEnabled'] ?? false;
+        debugPrint('AppConfigService: Loaded cached ads configuration.');
+      }
+    } catch (e) {
+      debugPrint('AppConfigService: Failed to load cached configs: $e');
+    }
+  }
+
+  Future<void> _saveAdsConfig(Map<String, dynamic> config) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_adsConfigKey, jsonEncode(config));
+    } catch (e) {
+      debugPrint('AppConfigService: Failed to cache ads config: $e');
+    }
+  }
+
   Future<void> fetchReviewMode({bool forceRefresh = false}) async {
     // Sensitive flags (Freemium/Compliance) should bypass cache if forceRefresh is true
     if (!forceRefresh && _lastConfigFetchTime != null) {
@@ -167,6 +200,12 @@ class AppConfigService {
           final bool newAdsEnabled = _adsConfig?['isEnabled'] ?? false;
           if (isAdsEnabledNotifier.value != newAdsEnabled) {
             isAdsEnabledNotifier.value = newAdsEnabled;
+            if (newAdsEnabled) {
+              AdService().reloadAds();
+            }
+          }
+          if (_adsConfig != null) {
+            await _saveAdsConfig(_adsConfig!);
           }
         }
       }
@@ -180,6 +219,7 @@ class AppConfigService {
       _lastConfigFetchTime = DateTime.now();
     } catch (e) {
       debugPrint('Error fetching app config: $e');
+      // If network fails, we already have cached values in _adsConfig from _loadCachedConfigs
     }
   }
 

@@ -56,7 +56,8 @@ class _LocationPermissionScreenState extends State<LocationPermissionScreen> {
 
       if (pos != null && user != null) {
         // Use the new repository for centralized logic
-        LocationRepository().updateLocation(user['phone'], force: true);
+        // CRITICAL: We await this so the server has the location BEFORE the user lands on Home
+        await LocationRepository().updateLocation(user['phone'], force: true, providedPosition: pos);
       } else if (user == null) {
         throw "User session expired";
       }

@@ -15,11 +15,11 @@ class LocationRepository {
   final double _distanceThrottle = 500.0; // 500 meters
 
   /// Updates the user's location on the server and locally with Pro-Level Throttling
-  Future<void> updateLocation(String phone, {bool force = false}) async {
+  Future<void> updateLocation(String phone, {bool force = false, Position? providedPosition}) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     
-    // 1. Get Current Position (includes Privacy Fuzzy Noise)
-    final Position? currentPosition = await LocationService().getCurrentPosition();
+    // 1. Get Current Position (Use provided if available to save battery/time)
+    final Position? currentPosition = providedPosition ?? await LocationService().getCurrentPosition();
     if (currentPosition == null) return;
 
     // 2. Pro-App Throttling: Check Time AND Distance

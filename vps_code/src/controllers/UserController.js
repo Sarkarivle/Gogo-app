@@ -201,7 +201,7 @@ exports.getDiscover = async (req, res) => {
         let query = {
             phone: { $nin: [myPhone, `+91${myPhone}`, `91${myPhone}`] },
             accountStatus: 'Active',
-            isBanned: false // Optimized from { $ne: true }
+            isBanned: { $ne: true } // Safer check to prevent dropping users with missing fields
         };
 
         // Quality Filter: By default, show users with onboarding or photos
@@ -267,24 +267,26 @@ exports.getDiscover = async (req, res) => {
             } catch (err) { console.error("GeoNear Error:", err.message); }
         }
 
-        // 5. Fallback to Global Find if Nearby is empty or not applicable
+        // 5. Fallback logic for new users or slow GPS
         if (users.length === 0) {
+            // If tab is Nearby but no location was found (or GeoNear returned nothing)
+            // Sort by Activity/Online status to ensure user sees "Active" people first
             users = await User.find(activeQuery)
-                .sort({ isPremium: -1, isVerified: -1, isOnline: -1, lastSeen: -1 })
+                .sort({ isOnline: -1, isPremium: -1, isVerified: -1, lastSeen: -1 })
                 .skip(skip)
                 .limit(limitInt)
                 .lean();
 
-            // 6. DEEP FALLBACK: If still 0, remove quality filters (Maybe DB is fresh)
+            // 6. DEEP FALLBACK: If still 0, remove quality filters
             if (users.length === 0 && page == 1) {
                 console.log("⚠️ [Discover] Zero results with quality filter, falling back to basic query.");
                 users = await User.find(query)
-                    .sort({ isPremium: -1, lastSeen: -1 })
+                    .sort({ isOnline: -1, isPremium: -1, lastSeen: -1 })
                     .limit(limitInt)
                     .lean();
             }
 
-            console.log(`🌍 [Discover] Final search found: ${users.length} users`);
+            console.log(`🌍 [Discover] Final search found: ${users.length} users (Fallback Mode)`);
         }
 
         // 6. Final Enrichment & Labels

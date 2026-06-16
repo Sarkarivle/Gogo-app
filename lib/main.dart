@@ -20,6 +20,7 @@ import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/core/services/ad_service.dart';
+import 'package:gogo/core/services/app_config_service.dart';
 import 'package:gogo/shared/widgets/call_indicator.dart';
 
 void main() async {
@@ -30,6 +31,7 @@ void main() async {
     Firebase.initializeApp(),
     UserRepository().initialize(),
     AppVisibilityCoordinator().init(),
+    AppConfigService().init(), // Load cached configs early
   ]);
 
   // Initialize Ads separately after Firebase

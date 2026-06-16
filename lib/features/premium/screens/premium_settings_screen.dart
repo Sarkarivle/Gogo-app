@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/monetization_orchestrator.dart';
+import 'package:gogo/shared/screens/offer_trial_screen.dart';
 import 'cancel_membership_screen.dart';
 
 class PremiumSettingsPage extends StatefulWidget {
@@ -190,6 +191,21 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                         _buildBillingRow('Type', 'Rewarded Ad Unlock'),
                         _buildBillingRow('Status', 'Active', isBold: true),
                         _buildBillingRow('Duration', '1 Hour'),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              OfferTrialScreen.show(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orangeAccent,
+                              foregroundColor: Colors.black,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Text('BECOME PREMIUM', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
                       ] else ...[
                         _buildBillingRow('Purchase Date', _formatDate(sub['startDate'])),
                         _buildBillingRow('Next Bill', _formatDate(sub['nextBillingDate'])),

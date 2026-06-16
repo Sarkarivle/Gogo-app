@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Gogo</string>
-    <!-- The following values are placeholders. They will be managed by the AppConfigService in Flutter,
-         but Android Manifest requires them to exist at compile time to avoid crashes. -->
+
+    <!-- Meta (Facebook) LOGIN Config -->
     <string name="facebook_app_id">1880682819242298</string>
     <string name="facebook_client_token">d64c3d7f9e05cd6ea378ebbd649ed94b</string>
     <string name="fb_login_protocol_scheme">fb1880682819242298</string>
+
+    <!-- Meta (Facebook) AUDIENCE NETWORK Config -->
+    <!-- Put your separate Audience Network App ID here for reference/mediation setup -->
+    <string name="meta_ads_app_id">1349477367034840</string>
+
+    <!-- AdMob Production App ID - ALWAYS VERIFY FROM ADMOB CONSOLE -->
+    <string name="admob_app_id">ca-app-pub-4668525700908893~9435546040</string>
 </resources>

@@ -31,17 +31,18 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Initialize Meta Audience Network SDK for Bidding
+        
+        // Initialize Meta Audience Network SDK for Mediation/Bidding
         AudienceNetworkAds.initialize(this)
 
-        // Prevent screenshots and hide content in Recent Apps (App Switcher)
+        // Default: Prevent screenshots (Can be toggled by AppConfigService)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        // Register Native Ad Factory
+        // Register Native Ad Factory for AdMob
         GoogleMobileAdsPlugin.registerNativeAdFactory(
             flutterEngine, "listTile", ListTileNativeAdFactory(layoutInflater)
         )
@@ -60,6 +61,16 @@ class MainActivity : FlutterFragmentActivity() {
                         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     }
                     result.success(null)
+                }
+                "getAdMobAppId" -> {
+                    try {
+                        val ai = this@MainActivity.packageManager.getApplicationInfo(this@MainActivity.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                        val bundle = ai.metaData
+                        val appId = bundle.getString("com.google.android.gms.ads.APPLICATION_ID")
+                        result.success(appId)
+                    } catch (e: Exception) {
+                        result.error("ERROR", "Failed to get AdMob App ID from Manifest", e.message)
+                    }
                 }
                 else -> {
                     result.notImplemented()

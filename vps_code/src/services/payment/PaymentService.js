@@ -298,11 +298,40 @@ class PaymentService {
                     const verification = await provider.verifyPayment({ purchaseToken, productId });
                     if (verification.success && verification.expiryTimeMillis) {
                         const expiry = parseInt(verification.expiryTimeMillis);
+                        const googleOrderId = verification.orderId;
+
                         updatedData = {
                             status: (expiry > Date.now()) ? 'active' : 'expired',
                             nextBillingDate: new Date(expiry),
-                            autoRenew: verification.autoRenewing || false
+                            autoRenew: verification.autoRenewing || false,
+                            paymentState: verification.raw?.paymentState,
+                            orderId: googleOrderId
                         };
+
+                        // CRITICAL: Check if this is a NEW renewal transaction (GPA.xxx) that we don't have
+                        if (googleOrderId && googleOrderId.startsWith('GPA.')) {
+                            const existingTx = await PaymentTransaction.findOne({ orderId: googleOrderId });
+                            if (!existingTx) {
+                                console.log(`💰 [Google Sync] New renewal detected for ${normalizedPhone}: ${googleOrderId}`);
+                                // Calculate amount from config
+                                let amount = verification.amount || 199;
+                                if (amount === 0) {
+                                    const offerConfig = await Config.findOne({ key: 'special_offers' });
+                                    const matchedOffer = offerConfig?.value?.offers?.find(o => o.googlePlayId === productId || o.googlePlaySubId === productId);
+                                    amount = matchedOffer?.price || 199;
+                                }
+
+                                // Manually trigger subscription update to add to history
+                                await this._updateUserSubscription(normalizedPhone, {
+                                    orderId: googleOrderId,
+                                    gateway: 'google_play',
+                                    amount: amount,
+                                    gatewayTransactionId: purchaseToken,
+                                    metadata: verification.raw,
+                                    current_period_end: Math.floor(expiry / 1000)
+                                }, 'Google Play', io);
+                            }
+                        }
                     }
                 }
             }
@@ -319,7 +348,9 @@ class PaymentService {
                             premiumExpiry: updatedData.nextBillingDate,
                             'subscription.status': updatedData.status,
                             'subscription.nextBillingDate': updatedData.nextBillingDate,
-                            'subscription.autoRenew': updatedData.autoRenew
+                            'subscription.autoRenew': updatedData.autoRenew,
+                            'subscription.googlePaymentState': updatedData.paymentState,
+                            'subscription.googleOrderId': updatedData.orderId
                         }
                     },
                     { new: true }

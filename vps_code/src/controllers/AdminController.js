@@ -859,6 +859,29 @@ exports.getPaymentHistory = async (req, res) => {
     try { res.json({ success: true, ...await revenueService.getPaymentHistory({}, parseInt(req.query.page || 1), parseInt(req.query.limit || 20)) }); } catch (e) { res.status(500).json({ success: false }); }
 };
 
+exports.getGooglePlayFullDashboard = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const sync = req.query.sync === 'true';
+        const { startDate, endDate } = req.query;
+
+        if (sync) {
+            const data = await revenueService.getGooglePlayFullDashboard(1, 10);
+            const phones = data.users.map(u => u.phone);
+            const PaymentService = require('../services/payment/PaymentService');
+            for (const p of phones) {
+                await PaymentService.syncWithProvider(p, req.app.get('socketio')).catch(e => {});
+            }
+        }
+
+        const data = await revenueService.getGooglePlayFullDashboard(page, 20, { startDate, endDate });
+        res.json({ success: true, ...data });
+    } catch (e) {
+        console.error("GP Dashboard Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
 exports.getAllMedia = async (req, res) => {
     try {
         const { filter, reportedOnly } = req.query;

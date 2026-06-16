@@ -569,7 +569,8 @@ class PremiumMembershipCard extends StatelessWidget {
         if (!isPaidPremium && !hasAccess) {
           buttonText = isAdDriven ? 'Watch Ad for Gold' : 'Activate Premium';
         } else if (hasAccess && !isPaidPremium) {
-          buttonText = isAdDriven ? 'Watch Ad for More' : 'Manage Membership';
+          // Changed 'Watch Ad for More' to 'Become Premium' for users already on Gold Trial
+          buttonText = isAdDriven ? 'Become Premium' : 'Manage Membership';
         }
 
         return Container(
@@ -650,10 +651,12 @@ class PremiumMembershipCard extends StatelessWidget {
               const SizedBox(height: 24),
               InkWell(
                 onTap: () {
-                  // If user is in Ad-Driven mode and not a paid premium, 
-                  // prioritize showing the reward popup to extend/get access.
+                  // If user is in Ad-Driven mode and does not have access yet, 
+                  // prioritize showing the reward popup.
+                  // If they already HAVE trial access, let them navigate to Premium page.
                   if (MonetizationOrchestrator().currentMode == MonetizationMode.adDriven && 
                       !(userData?['isPremium'] == true) && 
+                      !hasAccess &&
                       AppConfigService().isAdsEnabled) {
                     MonetizationOrchestrator().showChoicePopup(context);
                   } else {
