@@ -544,11 +544,17 @@ async function performFullUserWipe(phone) {
     const variations = [phone, `+91${phone}`, `91${phone}`];
     const searchCriteria = { $in: variations };
 
+    // Dynamically load models to avoid circular dependencies or initialization issues
+    const PaymentTransaction = require('../models/PaymentTransaction');
+    const RandomQueue = require('../models/RandomQueue');
+    const RandomRoom = require('../models/RandomRoom');
+
     await Promise.all([
         // 1. Core Profile & Subscription
         User.findOneAndDelete(phoneQuery(phone)),
         Subscription.deleteMany({ userPhone: searchCriteria }),
-        VerificationRequest.deleteMany({ phone: searchCriteria }),
+        VerificationRequest.deleteMany({ userPhone: searchCriteria }), // Changed from phone to userPhone based on schema
+        PaymentTransaction.deleteMany({ userPhone: searchCriteria }),
 
         // 2. Chat & Communication
         Message.deleteMany({ $or: [{ senderPhone: searchCriteria }, { receiverPhone: searchCriteria }] }),
@@ -561,7 +567,9 @@ async function performFullUserWipe(phone) {
 
         // 4. Media & Logs
         RecentPhoto.deleteMany({ phone: searchCriteria }),
-        AnalyticsEvent.deleteMany({ userPhone: searchCriteria })
+        AnalyticsEvent.deleteMany({ userPhone: searchCriteria }),
+        RandomQueue.deleteMany({ phone: searchCriteria }),
+        RandomRoom.deleteMany({ $or: [{ hostId: searchCriteria }, { guestId: searchCriteria }] })
     ]);
 }
 

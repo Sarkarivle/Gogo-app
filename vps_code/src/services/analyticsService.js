@@ -257,11 +257,21 @@ class AnalyticsService {
                 else return; // Don't spam non-standard events that cause 400s
             }
 
+            const eventId = metadata.event_id || `ev_${Date.now()}_${distinctId.slice(-4)}`;
+            if (this.redis) {
+                const dedupeKey = `fb_capi_sent:${fbEventName}:${eventId}`;
+                const isFirstSend = await this.redis.set(dedupeKey, '1', { EX: 7 * 24 * 60 * 60, NX: true });
+                if (!isFirstSend) {
+                    console.log(`🧹 [FB CAPI DEDUPE] Skipped duplicate "${fbEventName}" event_id=${eventId}`);
+                    return;
+                }
+            }
+
             const payload = {
                 data: [{
                     event_name: fbEventName,
                     event_time: Math.floor(Date.now() / 1000),
-                    event_id: metadata.event_id || `ev_${Date.now()}_${distinctId.slice(-4)}`,
+                    event_id: eventId,
                     action_source: "app",
                     user_data: {
                         ph: [hashedPhone],

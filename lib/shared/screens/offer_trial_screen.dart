@@ -36,12 +36,23 @@ class OfferTrialScreen extends StatefulWidget {
     this.rzpPlanId,
   });
 
-  static void show(BuildContext context) {
-    final offersConfig = AppConfigService().offersConfig;
+  static void show(BuildContext context) async {
+    final configService = AppConfigService();
+
+    // If config is missing, fetch it first before showing screen
+    if (configService.offersConfig == null) {
+      await configService.fetchReviewMode(forceRefresh: true);
+    }
+
+    if (!context.mounted) return;
+
+    final offersConfig = configService.offersConfig;
     final List<dynamic> offers = offersConfig?['offers'] ?? [];
-    
+
     if (offers.isNotEmpty) {
-      final offer = offers[0];
+      final offer = offers.length > 1
+          ? offers[1]
+          : offers[0]; // Prefer middle plan (Monthly)
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -57,7 +68,7 @@ class OfferTrialScreen extends StatefulWidget {
         ),
       );
     } else {
-      // Fallback if config is missing
+      // Fallback only if server is unreachable
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -81,21 +92,105 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
   String? _currentOrderId;
   String _activeGateway = "razorpay";
   bool _isUpiEnabled = true;
-  bool _isGooglePlayEnabled = true;
   bool _hasShownExitOffer = false;
   String currentArea = "आस-पास";
   Map<String, String> policyUrls = {};
-  
+
+  List<Map<String, dynamic>> _plans = [];
+  int _selectedPlanIndex = 1; // Default to Monthly (199)
+
   late ConfettiController _confettiController;
   YoutubePlayerController? _youtubeController;
 
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
+    // 1. Load initial plans from existing config
+    _initPlans();
+
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 3));
     _loadUserData();
     _fetchPolicies();
+
+    // 2. Fetch fresh config and update UI
     _fetchPaymentSettings();
+  }
+
+  void _initPlans() {
+    final offersConfig = AppConfigService().offersConfig;
+    final List<dynamic> configOffers = offersConfig?['offers'] ?? [];
+
+    debugPrint(
+        'DEBUG: Initializing Plans from Config: ${configOffers.length} items found');
+
+    if (configOffers.isNotEmpty) {
+      _plans = configOffers.map((e) {
+        final map = Map<String, dynamic>.from(e);
+        final price = (map['price'] as num?)?.toInt() ?? 0;
+
+        // Use backend provided original price if exists, otherwise dynamic calculation
+        if (map['originalPrice'] == null) {
+          if (price == 199) {
+            map['originalPrice'] = 499;
+          } else if (price == 99 || price == 100) {
+            map['originalPrice'] = 220;
+          } else if (price == 19) {
+            map['originalPrice'] = 41;
+          } else if (price == 499) {
+            map['originalPrice'] = 999;
+          } else if (price == 1) {
+            map['originalPrice'] = 199;
+          } else {
+            map['originalPrice'] = (price * 2.2).toInt();
+          }
+        }
+
+        return map;
+      }).toList();
+    } else {
+      // Default fallback
+      _plans = [
+        {
+          'id': 'weekly',
+          'name': '7 Days',
+          'price': 99,
+          'originalPrice': 220,
+          'duration': 7,
+          'googlePlayId': 'gogo_weekly_99',
+          'rzpPlanId': 'plan_weekly'
+        },
+        {
+          'id': 'monthly',
+          'name': '1 Month ',
+          'price': 199,
+          'originalPrice': 499,
+          'duration': 30,
+          'googlePlayId': 'gogo_monthly_199',
+          'rzpPlanId': 'plan_monthly'
+        },
+        {
+          'id': 'quarterly',
+          'name': '3 Months',
+          'price': 499,
+          'originalPrice': 999,
+          'duration': 90,
+          'googlePlayId': 'gogo_quarterly_499',
+          'rzpPlanId': 'plan_quarterly'
+        },
+      ];
+    }
+
+    // Always default to Middle plan if available
+    _selectedPlanIndex = (_plans.length > 1) ? 1 : 0;
+
+    // Sync with widget price if needed
+    for (int i = 0; i < _plans.length; i++) {
+      if (_plans[i]['price'] == widget.price) {
+        _selectedPlanIndex = i;
+        break;
+      }
+    }
   }
 
   @override
@@ -108,7 +203,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
   void _initYoutubeVideo() {
     final trackingConfig = AppConfigService().trackingConfig;
     if (trackingConfig == null) return;
-    
+
     String? videoId;
     final embedCode = trackingConfig['youtubeEmbedCode']?.toString();
     if (embedCode != null && embedCode.isNotEmpty) {
@@ -130,7 +225,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
         videoId = YoutubePlayer.convertUrlToId(videoUrl);
       }
     }
-    
+
     if (videoId != null && videoId.isNotEmpty) {
       if (_youtubeController == null) {
         setState(() {
@@ -153,17 +248,27 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     final paymentRepo = PaymentRepository();
     final configService = AppConfigService();
 
-    await Future.wait([
-      configService.fetchReviewMode(),
-      paymentRepo.fetchPaymentConfigs(),
-    ]);
+    // Show loading if plans are currently empty (fallback used)
+    if (_plans.isEmpty || _plans[0]['price'] == 99) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      await Future.wait([
+        configService.fetchReviewMode(forceRefresh: true),
+        paymentRepo.fetchPaymentConfigs(forceRefresh: true),
+      ]);
+    } catch (e) {
+      debugPrint('Config Fetch Error: $e');
+    }
 
     _initYoutubeVideo();
     if (mounted) {
       setState(() {
+        _isLoading = false;
         _activeGateway = paymentRepo.activeGateway;
         _isUpiEnabled = paymentRepo.isUpiEnabled;
-        _isGooglePlayEnabled = paymentRepo.isGooglePlayEnabled;
+        _initPlans(); // RE-SYNC PLANS FROM FETCHED CONFIG
       });
     }
   }
@@ -190,13 +295,19 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
   Future<void> _launchUrl(String type) async {
     final urlString = policyUrls[type];
     if (urlString == null || urlString.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link not available yet')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link not available yet')));
+      }
       return;
     }
 
     final Uri url = Uri.parse(urlString);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch link')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not launch link')));
+      }
     }
   }
 
@@ -204,7 +315,8 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     final user = UserRepository().currentUser;
     if (user != null) {
       setState(() {
-        currentArea = user['city']?.toString() ?? user['area']?.toString() ?? "आस-पास";
+        currentArea =
+            user['city']?.toString() ?? user['area']?.toString() ?? "आस-पास";
         if (currentArea.toLowerCase() == "unknown") currentArea = "आस-पास";
       });
 
@@ -214,8 +326,12 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
           final freshUser = UserRepository().currentUser;
           if (freshUser != null) {
             setState(() {
-              currentArea = freshUser['city']?.toString() ?? freshUser['area']?.toString() ?? "आस-पास";
-              if (currentArea.toLowerCase() == "unknown") currentArea = "आस-पास";
+              currentArea = freshUser['city']?.toString() ??
+                  freshUser['area']?.toString() ??
+                  "आस-पास";
+              if (currentArea.toLowerCase() == "unknown") {
+                currentArea = "आस-पास";
+              }
             });
           }
         }
@@ -225,53 +341,49 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
 
   Future<void> _claimOffer() async {
     if (_isLoading) return;
-    
-    String? preferredGateway;
-    if (!_isUpiEnabled && _isGooglePlayEnabled) {
-      preferredGateway = 'google_play';
-    }
 
     setState(() => _isLoading = true);
-    
+
     try {
       final userData = UserRepository().currentUser;
       if (userData == null) throw "Session lost";
-      
+
       final phone = userData['phone']?.toString();
       if (phone == null) throw "Phone not found";
 
       UserRepository().trackEvent('offer_payment_started', customId: phone);
 
-      final response = await ApiService.post('/api/payment/create-order', {
-        'phone': phone,
-        'preferredGateway': preferredGateway,
-        'amount': widget.price,
-        'offerId': widget.rzpPlanId ?? widget.offerId,
-        'googlePlayId': widget.googlePlayId,
-        'googlePlaySubId': widget.googlePlaySubId,
-        'duration': widget.duration,
-        'isSubscription': true,
-      });
+      final selectedPlan = _plans[_selectedPlanIndex];
 
-      final orderData = jsonDecode(response.body);
-      
+      final orderData = await PaymentService.createOrder(
+        phone,
+        gateway: _isUpiEnabled ? 'razorpay' : 'google_play',
+        amount: selectedPlan['price'],
+        offerId: selectedPlan['rzpPlanId'] ?? selectedPlan['id'],
+        googlePlayId: selectedPlan['googlePlayId'],
+        googlePlaySubId: selectedPlan['googlePlaySubId'],
+        duration: selectedPlan['duration'],
+        isSubscription: false,
+      );
+
       if (orderData['success'] == true) {
-        final gateway = orderData['gateway']?.toString().toLowerCase() ?? _activeGateway;
+        final gateway =
+            orderData['gateway']?.toString().toLowerCase() ?? _activeGateway;
         _currentOrderId = orderData['orderId'];
 
         final handler = PaymentService.getHandler(gateway);
-        await handler.initiatePayment(
-          {
-            ...orderData, 
-            'phone': phone, 
-            'googlePlayId': widget.googlePlayId,
-            'googlePlaySubId': widget.googlePlaySubId
-          },
-          (data) => _handlePaymentSuccess(data),
-          (err) => _showError(err)
-        );
+        await handler.initiatePayment({
+          ...orderData,
+          'phone': phone,
+          if (selectedPlan['googlePlayId']?.toString().trim().isNotEmpty ==
+              true)
+            'googlePlayId': selectedPlan['googlePlayId'],
+          if (selectedPlan['googlePlaySubId']?.toString().trim().isNotEmpty ==
+              true)
+            'googlePlaySubId': selectedPlan['googlePlaySubId']
+        }, (data) => _handlePaymentSuccess(data), (err) => _showError(err));
       } else {
-        throw orderData['message'] ?? "Order creation failed";
+        throw orderData['message']?.toString() ?? "Order creation failed";
       }
     } catch (e) {
       _showError("Failed: $e");
@@ -287,28 +399,24 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
       final userData = UserRepository().currentUser;
       if (userData == null) throw "Session lost";
 
-      final verifyRes = await PaymentService.verifyPayment(
-        userData['phone'],
-        {
-          'gateway': successData['gateway'] ?? _activeGateway,
-          'orderId': _currentOrderId,
-          'razorpay_payment_id': successData['paymentId'],
-          'razorpay_subscription_id': successData['orderId'] ?? _currentOrderId,
-          'razorpay_signature': successData['signature'],
-          'merchantTransactionId': _currentOrderId,
-          'purchaseToken': successData['purchaseToken'],
-          'productId': successData['productId'],
-        }
-      );
+      final verifyRes = await PaymentService.verifyPayment(userData['phone'], {
+        ...successData,
+        'gateway': successData['gateway'] ?? _activeGateway,
+        'orderId': _currentOrderId,
+        'merchantTransactionId': _currentOrderId,
+      });
 
       if (verifyRes['success'] == true) {
         await UserRepository().updateLocalUser(verifyRes['user']);
         await PremiumService().updatePremiumStatus(true);
-        
+
+        final selectedPlan = _plans[_selectedPlanIndex];
         await AnalyticsService.logPurchase(
-          widget.price.toDouble(),
+          (selectedPlan['price'] as num).toDouble(),
           'INR',
-          widget.rzpPlanId ?? widget.offerId,
+          selectedPlan['rzpPlanId'] ?? selectedPlan['id'],
+          eventId:
+              'purchase_${successData['paymentId'] ?? successData['orderId'] ?? _currentOrderId ?? selectedPlan['rzpPlanId'] ?? selectedPlan['id']}',
         );
 
         _confettiController.play();
@@ -326,24 +434,25 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
   void _showError(String msg) {
     if (!mounted) return;
     setState(() => _isLoading = false);
-    if (msg.toLowerCase().contains('cancel') || msg.toLowerCase().contains('back')) {
-       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Payment Cancelled", style: TextStyle(fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.orangeAccent,
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        )
-      );
+    if (msg.toLowerCase().contains('cancel') ||
+        msg.toLowerCase().contains('back')) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text("Payment Cancelled",
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.orangeAccent,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.redAccent));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.redAccent));
   }
 
   int _getBoysCount(String area) {
     if (area == "आस-पास" || area == "unknown") return 457;
     // Consistent random number based on area name
-    return 42 + (area.hashCode.abs() % 958); 
+    return 42 + (area.hashCode.abs() % 958);
   }
 
   Future<void> _handleBackPress() async {
@@ -360,7 +469,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
 
   void _showExitBottomSheet() {
     setState(() => _hasShownExitOffer = true);
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -394,76 +503,120 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(2))),
+                  Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.white10,
+                          borderRadius: BorderRadius.circular(2))),
                   const SizedBox(height: 32),
-                  const Icon(Icons.stars_rounded, color: Colors.amber, size: 50),
+                  const Icon(Icons.stars_rounded,
+                      color: Colors.amber, size: 50),
                   const SizedBox(height: 20),
-                  const Text("WAIT! DON'T MISS OUT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.2)),
+                  const Text("WAIT! DON'T MISS OUT",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          letterSpacing: 1.2)),
                   const SizedBox(height: 15),
                   RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(
-                      style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.5),
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 15, height: 1.5),
                       children: [
-                        TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
+                        TextSpan(
+                            text: "$currentArea ",
+                            style: const TextStyle(
+                                color: Colors.pinkAccent,
+                                fontWeight: FontWeight.bold)),
                         const TextSpan(text: "mein "),
-                        TextSpan(text: "${_getBoysCount(currentArea)} profiles ", style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
-                        const TextSpan(text: "active hain! Connect karne ke liye abhi unlock karein."),
+                        TextSpan(
+                            text: "${_getBoysCount(currentArea)} profiles ",
+                            style: const TextStyle(
+                                color: Colors.pinkAccent,
+                                fontWeight: FontWeight.bold)),
+                        const TextSpan(
+                            text:
+                                "active hain! Connect karne ke liye abhi unlock karein."),
                       ],
                     ),
                   ),
                   const SizedBox(height: 35),
-                  
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.03),
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.05)),
                     ),
                     child: Row(
                       children: [
-                        Expanded(
-                          flex: 2,
-                          child: GestureDetector(
-                            onTap: () {
-                              if (_isUpiEnabled) {
+                        if (_isUpiEnabled) ...[
+                          Expanded(
+                            flex: 2,
+                            child: GestureDetector(
+                              onTap: () {
                                 Navigator.pop(sheetContext);
-                                Navigator.push(context, MaterialPageRoute(builder: (context) => PaymentScreen(
-                                  offerId: widget.offerId,
-                                  offerName: widget.name,
-                                  price: widget.price,
-                                  duration: widget.duration,
-                                  googlePlayId: widget.googlePlayId,
-                                  googlePlaySubId: widget.googlePlaySubId,
-                                  rzpPlanId: widget.rzpPlanId,
-                                )));
-                              }
-                            },
-                            behavior: HitTestBehavior.opaque,
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                  child: Image.asset('assets/gpay_logo.png', height: 20, errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 20)),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
-                                      const Text("GPay/UPI", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                                    ],
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) => PaymentScreen(
+                                              offerId: widget.offerId,
+                                              offerName: widget.name,
+                                              price: widget.price,
+                                              duration: widget.duration,
+                                              googlePlayId: widget.googlePlayId,
+                                              googlePlaySubId:
+                                                  widget.googlePlaySubId,
+                                              rzpPlanId: widget.rzpPlanId,
+                                            )));
+                              },
+                              behavior: HitTestBehavior.opaque,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: const BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle),
+                                    child: Image.asset('assets/gpay_logo.png',
+                                        height: 20,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const Icon(Icons.payment,
+                                                    color: Colors.black,
+                                                    size: 20)),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text("Pay via",
+                                            style: TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500)),
+                                        const Text("GPay/UPI",
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold),
+                                            overflow: TextOverflow.ellipsis),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
+                          const SizedBox(width: 12),
+                        ],
                         Expanded(
                           flex: 3,
                           child: SizedBox(
@@ -473,8 +626,17 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                 Navigator.pop(sheetContext);
                                 _claimOffer();
                               },
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.pink, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), elevation: 0),
-                              child: Text("Claim Now ₹${widget.price}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.pink,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(25)),
+                                  elevation: 0),
+                              child: Text(
+                                  "Claim Now ₹${_plans[_selectedPlanIndex]['price']}",
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ),
@@ -496,15 +658,29 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
-        title: const Text("Exit GoGo?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text("Are you sure you want to close the app?", style: TextStyle(color: Colors.white70, fontSize: 14)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+        title: const Text("Exit GoGo?",
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text("Are you sure you want to close the app?",
+            style: TextStyle(color: Colors.white70, fontSize: 14)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold))),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("CANCEL",
+                  style: TextStyle(
+                      color: Colors.white38, fontWeight: FontWeight.bold))),
           ElevatedButton(
             onPressed: () => SystemNavigator.pop(),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent.withValues(alpha: 0.1), foregroundColor: Colors.redAccent, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text("YES, EXIT", style: TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+                foregroundColor: Colors.redAccent,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            child: const Text("YES, EXIT",
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -524,15 +700,24 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
           AlertDialog(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.check_circle, color: Colors.green, size: 60),
                 const SizedBox(height: 16),
-                const Text("OFFER ACTIVATED", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.black)),
+                const Text("OFFER ACTIVATED",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                        color: Colors.black)),
                 const SizedBox(height: 8),
-                Text("Your ${widget.name} subscription is now active.", textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                Text(
+                    "Your ${_plans[_selectedPlanIndex]['name']} subscription is now active.",
+                    textAlign: TextAlign.center,
+                    style:
+                        const TextStyle(fontSize: 13, color: Colors.black87)),
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
@@ -541,19 +726,30 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                     onPressed: () {
                       Navigator.of(context, rootNavigator: true).pop();
                       Navigator.pushAndRemoveUntil(
-                        context, 
-                        MaterialPageRoute(builder: (context) => hasCompleted ? const HomeScreen() : const ProfileSetupScreen()),
-                        (route) => false
-                      );
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => hasCompleted
+                                  ? const HomeScreen()
+                                  : const ProfileSetupScreen()),
+                          (route) => false);
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: const Text("CONTINUE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pinkAccent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                    child: const Text("CONTINUE",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 )
               ],
             ),
           ),
-          ConfettiWidget(confettiController: _confettiController, blastDirectionality: BlastDirectionality.explosive),
+          ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirectionality: BlastDirectionality.explosive),
         ],
       ),
     );
@@ -593,66 +789,60 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: _handleBackPress),
-                                TextButton(onPressed: () => _launchUrl('faq'), child: const Text('FAQs', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                                IconButton(
+                                    icon: const Icon(Icons.arrow_back,
+                                        color: Colors.white),
+                                    onPressed: _handleBackPress),
+                                TextButton(
+                                    onPressed: () => _launchUrl('faq'),
+                                    child: const Text('FAQs',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontWeight: FontWeight.bold))),
                               ],
                             ),
                           ),
                           const SizedBox(height: 10),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
                             decoration: BoxDecoration(
                               color: Colors.orangeAccent,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Text(
                               "LIMITED TIME PRICE DROP",
-                              style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold),
                             ),
                           ),
                           const SizedBox(height: 15),
-                          RichText(
-                            text: TextSpan(
-                              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                              children: [
-                                TextSpan(text: "${widget.name} for "),
-                                TextSpan(
-                                  text: "₹",
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.4), 
-                                    decoration: TextDecoration.lineThrough, 
-                                    decorationThickness: 2,
-                                    fontWeight: FontWeight.w300,
-                                    fontSize: 18,
-                                  )
-                                ),
-                                TextSpan(
-                                  text: "499",
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.4), 
-                                    decoration: TextDecoration.lineThrough, 
-                                    decorationThickness: 2
-                                  )
-                                ),
-                              ],
+                          const Text("CHOOSE YOUR PREMIUM PLAN",
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2)),
+                          const SizedBox(height: 20),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              children: List.generate(_plans.length,
+                                  (index) => _buildPlanOption(index)),
                             ),
                           ),
-                          const SizedBox(height: 5),
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                const TextSpan(
-                                  text: "₹",
-                                  style: TextStyle(color: Colors.white, fontSize: 50, fontWeight: FontWeight.w200),
-                                ),
-                                TextSpan(
-                                  text: "${widget.price}",
-                                  style: const TextStyle(color: Colors.white, fontSize: 115, fontWeight: FontWeight.w600, letterSpacing: -2),
-                                ),
-                              ],
-                            ),
+                          const SizedBox(height: 15),
+                          Text(
+                            _selectedPlanIndex == 1
+                                ? "Recommended for you"
+                                : "Unlock all premium features",
+                            style: TextStyle(
+                                color: Colors.pinkAccent.withValues(alpha: 0.8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold),
                           ),
-                          Text("After trial ₹199/month", style: const TextStyle(color: Colors.white38, fontSize: 13)),
                           const SizedBox(height: 15),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -661,27 +851,44 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                 RichText(
                                   textAlign: TextAlign.center,
                                   text: TextSpan(
-                                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, height: 1.3),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        height: 1.3),
                                     children: [
-                                      TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent)),
-                                      TextSpan(text: "mein ${_getBoysCount(currentArea)} active profiles\n"),
-                                      const TextSpan(text: "aapka intezaar kar rahi hain!", style: TextStyle(color: Colors.pinkAccent)),
+                                      TextSpan(
+                                          text: "$currentArea ",
+                                          style: const TextStyle(
+                                              color: Colors.pinkAccent)),
+                                      TextSpan(
+                                          text:
+                                              "mein ${_getBoysCount(currentArea)} active profiles aapka intezaar kar rahi h!"),
                                     ],
                                   ),
                                 ),
                                 const SizedBox(height: 25),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 25, vertical: 15),
                                   decoration: BoxDecoration(
                                     color: Colors.white.withValues(alpha: 0.03),
                                     borderRadius: BorderRadius.circular(25),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                    border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.05)),
                                   ),
                                   child: Column(
                                     children: [
-                                      _buildSmallBenefit(Icons.photo_library_outlined, "Photo Unlock kare"),
-                                      _buildSmallBenefit(Icons.chat_bubble_outline, "Unlimited Message bheje"),
-                                      _buildSmallBenefit(Icons.videocam_outlined, "Unlimited Video Call"),
+                                      _buildSmallBenefit(
+                                          Icons.photo_library_outlined,
+                                          "Photo Unlock kare"),
+                                      _buildSmallBenefit(
+                                          Icons.chat_bubble_outline,
+                                          "Unlimited Message bheje"),
+                                      _buildSmallBenefit(
+                                          Icons.videocam_outlined,
+                                          "Unlimited Video Call"),
                                     ],
                                   ),
                                 ),
@@ -690,79 +897,51 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                           ),
                         ],
                       ),
-
-                      const SizedBox(height: 30),
-
-                      // Video Box
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        height: 220,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.3), width: 1.5),
-                          color: Colors.black,
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: _youtubeController != null
-                          ? YoutubePlayer(controller: _youtubeController!, showVideoProgressIndicator: true, progressIndicatorColor: Colors.pink)
-                          : Stack(
-                              children: [
-                                Container(decoration: const BoxDecoration(image: DecorationImage(image: NetworkImage('https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=1000&auto=format&fit=crop'), fit: BoxFit.cover))),
-                                Center(child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle), child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40))),
-                              ],
-                            ),
-                      ),
-
-                      const SizedBox(height: 10),
-                      const Text("Cancel the plan anytime", style: TextStyle(color: Colors.white38, fontSize: 13)),
-                      const SizedBox(height: 30),
-
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.03),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "Subscription Details",
-                                style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 12),
-                              _buildSubscriptionBullet("Trial period ke baad ye plan standard ₹199/month par auto-renew hoga."),
-                              _buildSubscriptionBullet("Aap kisi bhi waqt Play Store settings se ise cancel kar sakte hain."),
-                              _buildSubscriptionBullet("Success hone par premium features ka instant access mil jayega."),
-                              _buildSubscriptionBullet("Your GoGo Premium subscription auto-renews at the end of the cycle. You can cancel anytime."),
-                              _buildSubscriptionBullet("Premium features like high-quality video calling depend on your internet connectivity."),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 40),
-                      
-                      // Bottom Links
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildBottomLink("Terms & Conditions", () => _launchUrl('terms_conditions')),
-                          const Text("  •  ", style: TextStyle(color: Colors.white38)),
-                          _buildBottomLink("Privacy Policy", () => _launchUrl('privacy_policy')),
-                          const Text("  •  ", style: TextStyle(color: Colors.white38)),
-                          _buildBottomLink("Refund Policy", () => _launchUrl('refund_policy')),
-                        ],
-                      ),
-                      const SizedBox(height: 60),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
               ),
+
+              // Bottom Links
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.shield_outlined,
+                            color: Colors.green.withValues(alpha: 0.5),
+                            size: 12),
+                        const SizedBox(width: 4),
+                        const Text("100% Safe & Secure Payment",
+                            style: TextStyle(
+                                color: Colors.white24,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildBottomLink("Terms & Conditions",
+                            () => _launchUrl('terms_conditions')),
+                        const Text("  •  ",
+                            style: TextStyle(color: Colors.white38)),
+                        _buildBottomLink("Privacy Policy",
+                            () => _launchUrl('privacy_policy')),
+                        const Text("  •  ",
+                            style: TextStyle(color: Colors.white38)),
+                        _buildBottomLink(
+                            "Refund Policy", () => _launchUrl('refund_policy')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
               // Bottom Bar
               _buildActualBottomBar(),
             ],
@@ -772,20 +951,86 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     );
   }
 
-  Widget _buildSubscriptionBullet(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("• ", style: TextStyle(color: Colors.pinkAccent, fontSize: 14)),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
+  Widget _buildPlanOption(int index) {
+    final plan = _plans[index];
+    final isSelected = _selectedPlanIndex == index;
+    final bool isBestValue = index == 1; // 199 plan
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedPlanIndex = index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: EdgeInsets.symmetric(
+              horizontal: 4, vertical: isBestValue ? 0 : 8),
+          padding: EdgeInsets.symmetric(vertical: isBestValue ? 24 : 16),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.pinkAccent.withValues(alpha: 0.15)
+                : Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected
+                  ? Colors.pinkAccent
+                  : Colors.white.withValues(alpha: 0.1),
+              width: isSelected ? 2 : 1,
             ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                        color: Colors.pinkAccent.withValues(alpha: 0.3),
+                        blurRadius: 8)
+                  ]
+                : null,
           ),
-        ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isBestValue)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: Colors.pinkAccent,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: const Text("POPULAR",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold)),
+                )
+              else
+                const SizedBox(height: 18),
+              Text(
+                plan['name'],
+                style: TextStyle(
+                    color: isSelected ? Colors.white : Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              if (plan['originalPrice'] != null)
+                Text(
+                  "₹${plan['originalPrice']}",
+                  style: TextStyle(
+                    color: isSelected ? Colors.white54 : Colors.white38,
+                    fontSize: 12,
+                    decoration: TextDecoration.lineThrough,
+                    decorationColor:
+                        isSelected ? Colors.pinkAccent : Colors.white38,
+                  ),
+                ),
+              Text(
+                "₹${plan['price']}",
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -798,7 +1043,11 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
         children: [
           Icon(icon, color: Colors.pinkAccent, size: 18),
           const SizedBox(width: 12),
-          Text(text, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+          Text(text,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -808,9 +1057,12 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white38, width: 0.8))),
+        decoration: const BoxDecoration(
+            border:
+                Border(bottom: BorderSide(color: Colors.white38, width: 0.8))),
         padding: const EdgeInsets.only(bottom: 1),
-        child: Text(text, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        child: Text(text,
+            style: const TextStyle(color: Colors.white38, fontSize: 11)),
       ),
     );
   }
@@ -819,9 +1071,15 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 25),
       decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFF1E1E1E), Color(0xFF1A080E)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+        gradient: LinearGradient(
+            colors: [Color(0xFF1E1E1E), Color(0xFF1A080E)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, -2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black54, blurRadius: 10, offset: Offset(0, -2))
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -831,25 +1089,36 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
               flex: 2,
               child: GestureDetector(
                 onTap: () {
-                  if (_isUpiEnabled) {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => PaymentScreen(
-                      offerId: widget.offerId,
-                      offerName: widget.name,
-                      price: widget.price,
-                      duration: widget.duration,
-                      googlePlayId: widget.googlePlayId,
-                      googlePlaySubId: widget.googlePlaySubId,
-                      rzpPlanId: widget.rzpPlanId,
-                    )));
-                  }
+                  final selectedPlan = _plans[_selectedPlanIndex];
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => PaymentScreen(
+                                offerId: selectedPlan['id'],
+                                offerName: selectedPlan['name'],
+                                price: selectedPlan['price'],
+                                duration: selectedPlan['duration'],
+                                googlePlayId: selectedPlan['googlePlayId'],
+                                googlePlaySubId:
+                                    selectedPlan['googlePlaySubId'],
+                                rzpPlanId: selectedPlan['rzpPlanId'],
+                              )));
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                      child: Image.asset('assets/gpay_logo.png', height: 22, errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 22)),
+                      decoration: const BoxDecoration(
+                          color: Colors.white, shape: BoxShape.circle),
+                      child: _isUpiEnabled
+                          ? Image.asset('assets/gpay_logo.png',
+                              height: 22,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(Icons.payment,
+                                      color: Colors.black, size: 22))
+                          : const Icon(Icons.shop_rounded,
+                              color: Colors.blue, size: 22),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -857,11 +1126,23 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500)),
+                          const Text("Pay via",
+                              style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500)),
                           Row(
                             children: [
-                              const Flexible(child: Text("GPay/UPI", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-                              if (_isUpiEnabled) const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
+                              Flexible(
+                                  child: Text(
+                                      _isUpiEnabled ? "GPay/UPI" : "Play Store",
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold),
+                                      overflow: TextOverflow.ellipsis)),
+                              const Icon(Icons.keyboard_arrow_down,
+                                  color: Colors.white, size: 18),
                             ],
                           ),
                         ],
@@ -876,20 +1157,34 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
               flex: 3,
               child: SizedBox(
                 height: 50,
-                child: _isLoading 
-                  ? const Center(child: CircularProgressIndicator(color: Colors.pink))
-                  : ElevatedButton(
-                      onPressed: _claimOffer,
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.pink, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), elevation: 0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Flexible(child: Text("Activate Now", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.arrow_forward_ios, size: 12),
-                        ],
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.pink))
+                    : ElevatedButton(
+                        onPressed: _claimOffer,
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.pink,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(25)),
+                            elevation: 0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                                child: Text(
+                                    _isUpiEnabled
+                                        ? "Activate Now"
+                                        : "Pay via Play Store",
+                                    style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis)),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.arrow_forward_ios, size: 12),
+                          ],
+                        ),
                       ),
-                    ),
               ),
             ),
           ],

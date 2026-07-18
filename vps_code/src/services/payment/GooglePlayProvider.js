@@ -10,14 +10,19 @@ class GooglePlayProvider extends PaymentProvider {
     }
 
     async createOrder({ phone, amount, productId: overrideProductId, googlePlaySubId }) {
-        // Use overrideProductId if passed from Offer Page, otherwise fallback to global config
-        const productId = overrideProductId || this.config.productId || 'gogo_monthly_199';
+        // Admin "Base/Offer ID" is stored as productId here, while
+        // googlePlaySubId is the Play Console subscription product ID.
+        const baseOrOfferId = overrideProductId || this.config.productId || 'gogo_monthly_199';
+        const subscriptionProductId = googlePlaySubId || this.config.subscriptionProductId || baseOrOfferId;
 
         return {
             success: true,
             orderId: `gp_${Date.now()}`,
-            productId: productId,
-            googlePlaySubId: googlePlaySubId,
+            productId: baseOrOfferId,
+            googlePlayId: baseOrOfferId,
+            googlePlayBasePlanId: baseOrOfferId,
+            googlePlaySubId: subscriptionProductId,
+            googlePlayProductId: subscriptionProductId,
             gateway: 'google_play'
         };
     }
@@ -116,7 +121,15 @@ class GooglePlayProvider extends PaymentProvider {
                     res.on('end', () => {
                         const result = JSON.parse(data);
                         if (res.statusCode === 200) {
-                            const amount = result.priceAmountMicros ? (parseInt(result.priceAmountMicros) / 1000000) : 0;
+                            // SMART AMOUNT LOGIC: Check for introductory/trial price first
+                            let amount = 0;
+                            if (result.introductoryPriceInfo && result.introductoryPriceInfo.introductoryPriceAmountMicros) {
+                                amount = parseInt(result.introductoryPriceInfo.introductoryPriceAmountMicros) / 1000000;
+                                console.log(`🎁 [Google API] Introductory Price Detected: ₹${amount}`);
+                            } else if (result.priceAmountMicros) {
+                                amount = parseInt(result.priceAmountMicros) / 1000000;
+                            }
+
                             resolve({
                                 success: true,
                                 transactionId: purchaseToken,
@@ -219,4 +232,3 @@ class GooglePlayProvider extends PaymentProvider {
 }
 
 module.exports = GooglePlayProvider;
-

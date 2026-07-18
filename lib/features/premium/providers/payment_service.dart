@@ -16,8 +16,8 @@ import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 
 abstract class PaymentHandler {
   Future<void> initiatePayment(
-    Map<String, dynamic> orderData, 
-    void Function(Map<String, dynamic>) onSuccess, 
+    Map<String, dynamic> orderData,
+    void Function(Map<String, dynamic>) onSuccess,
     void Function(String) onError,
   );
 }
@@ -25,28 +25,35 @@ abstract class PaymentHandler {
 class RazorpayHandler implements PaymentHandler {
   static final Razorpay _razorpay = Razorpay();
   static bool _listenersSet = false;
-  
+
   static void Function(Map<String, dynamic>)? _currentSuccess;
   static void Function(String)? _currentError;
   static String? _currentSubId;
+  static String? _currentOrderId;
 
   void _setupListeners() {
     if (_listenersSet) return;
-    
+
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse res) {
       if (_currentSuccess != null) {
+        final bool isSubscription =
+            (_currentSubId != null && _currentSubId!.startsWith('sub_'));
+
         _currentSuccess!({
           'paymentId': res.paymentId,
-          'orderId': res.orderId ?? _currentSubId,
+          'orderId': res.orderId ?? _currentOrderId ?? _currentSubId,
           'signature': res.signature,
-          'razorpay_subscription_id': _currentSubId,
+          'razorpay_payment_id': res.paymentId,
+          'razorpay_order_id': res.orderId ?? _currentOrderId,
+          'razorpay_subscription_id': isSubscription ? _currentSubId : null,
+          'razorpay_signature': res.signature,
           'gateway': 'razorpay'
         });
         _currentSuccess = null;
         _currentError = null;
       }
     });
-    
+
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse res) {
       if (_currentError != null) {
         _currentError!(res.message ?? "Payment Failed");
@@ -54,31 +61,35 @@ class RazorpayHandler implements PaymentHandler {
         _currentError = null;
       }
     });
-    
+
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse res) {
       _currentError?.call("External wallet not supported");
     });
-    
+
     _listenersSet = true;
   }
 
   @override
   Future<void> initiatePayment(
-    Map<String, dynamic> data, 
-    void Function(Map<String, dynamic>) onSuccess, 
+    Map<String, dynamic> data,
+    void Function(Map<String, dynamic>) onSuccess,
     void Function(String) onError,
   ) async {
     _setupListeners();
-    
+
     _currentSuccess = onSuccess;
     _currentError = onError;
-    _currentSubId = data['subscription']?['id'] ?? data['orderId'];
-    
+    _currentSubId = data['subscription']?['id'];
+    _currentOrderId = data['orderId'];
+
     final rzpKey = data['keyId'];
-    
+
     var options = {
       'key': rzpKey,
-      if (data['subscription'] != null) 'subscription_id': _currentSubId else 'order_id': _currentSubId,
+      if (_currentSubId != null)
+        'subscription_id': _currentSubId
+      else
+        'order_id': _currentOrderId,
       'name': 'GoGo Premium',
       'description': 'Premium Subscription Activation',
       'prefill': {
@@ -87,7 +98,7 @@ class RazorpayHandler implements PaymentHandler {
       },
       'theme': {'color': '#FFD700'}
     };
-    
+
     try {
       _razorpay.open(options);
     } catch (e) {
@@ -98,14 +109,19 @@ class RazorpayHandler implements PaymentHandler {
 
 class PhonePeHandler implements PaymentHandler {
   @override
-  Future<void> initiatePayment(Map<String, dynamic> data, Function(Map<String, dynamic>) onSuccess, Function(String) onError) async {
+  Future<void> initiatePayment(
+      Map<String, dynamic> data,
+      Function(Map<String, dynamic>) onSuccess,
+      Function(String) onError) async {
     try {
       String merchantId = data['merchantId'];
       String orderId = data['orderId'];
       String env = data['env'] ?? "UAT";
 
-      String sdkEnv = (env == "UAT" || env == "SANDBOX") ? "SANDBOX" : "PRODUCTION";
-      await PhonePePaymentSdk.init(sdkEnv, merchantId.trim(), "GOGO_FLOW", true);
+      String sdkEnv =
+          (env == "UAT" || env == "SANDBOX") ? "SANDBOX" : "PRODUCTION";
+      await PhonePePaymentSdk.init(
+          sdkEnv, merchantId.trim(), "GOGO_FLOW", true);
 
       Map<String, dynamic> requestData = {
         "merchantId": merchantId,
@@ -113,8 +129,9 @@ class PhonePeHandler implements PaymentHandler {
         "request": data['base64Payload'],
         "checksum": data['checksum']
       };
-      
-      var result = await PhonePePaymentSdk.startTransaction(jsonEncode(requestData), "gogoapp");
+
+      var result = await PhonePePaymentSdk.startTransaction(
+          jsonEncode(requestData), "gogoapp");
       if (result != null && result['status'] == 'SUCCESS') {
         onSuccess({'paymentId': orderId, 'gateway': 'phonepe'});
       } else {
@@ -130,22 +147,30 @@ class CashfreeHandler implements PaymentHandler {
   final cfPaymentGatewayService = CFPaymentGatewayService();
 
   @override
-  Future<void> initiatePayment(Map<String, dynamic> data, Function(Map<String, dynamic>) onSuccess, Function(String) onError) async {
+  Future<void> initiatePayment(
+      Map<String, dynamic> data,
+      Function(Map<String, dynamic>) onSuccess,
+      Function(String) onError) async {
     try {
       String orderId = data['orderId'];
       String orderSessionId = data['order_session_id'];
       String env = data['env'] ?? "SANDBOX";
 
       var session = CFSessionBuilder()
-          .setEnvironment(env == "PROD" ? CFEnvironment.PRODUCTION : CFEnvironment.SANDBOX)
+          .setEnvironment(
+              env == "PROD" ? CFEnvironment.PRODUCTION : CFEnvironment.SANDBOX)
           .setOrderId(orderId)
           .setPaymentSessionId(orderSessionId)
           .build();
 
       var upi = CFUPIBuilder().setChannel(CFUPIChannel.INTENT).build();
-      var payment = CFUPIPaymentBuilder().setSession(session).setUPI(upi).build();
+      var payment =
+          CFUPIPaymentBuilder().setSession(session).setUPI(upi).build();
 
-      cfPaymentGatewayService.setCallback((String id) => onSuccess({'paymentId': id, 'gateway': 'cashfree'}), (CFErrorResponse err, String id) => onError(err.getMessage() ?? "Failed"));
+      cfPaymentGatewayService.setCallback(
+          (String id) => onSuccess({'paymentId': id, 'gateway': 'cashfree'}),
+          (CFErrorResponse err, String id) =>
+              onError(err.getMessage() ?? "Failed"));
       cfPaymentGatewayService.doPayment(payment);
     } catch (e) {
       onError(e.toString());
@@ -158,21 +183,34 @@ class GooglePlayHandler implements PaymentHandler {
   static StreamSubscription<List<PurchaseDetails>>? _subscription;
 
   @override
-  Future<void> initiatePayment(Map<String, dynamic> data, Function(Map<String, dynamic>) onSuccess, Function(String) onError) async {
-    // Priority 1: Use googlePlayId as the target plan
-    String? targetBasePlanId = data['googlePlayId']?.toString() ?? data['productId']?.toString();
-    
-    // Priority 2: Use googlePlaySubId as the parent product
-    String? parentProductId = data['googlePlaySubId']?.toString();
+  Future<void> initiatePayment(
+      Map<String, dynamic> data,
+      Function(Map<String, dynamic>) onSuccess,
+      Function(String) onError) async {
+    String? cleanId(dynamic value) {
+      final text = value?.toString().trim();
+      return (text == null || text.isEmpty) ? null : text;
+    }
+
+    // Admin "Base/Offer ID" is the purchase path inside the subscription.
+    final String? targetBasePlanId = cleanId(data['googlePlayBasePlanId']) ??
+        cleanId(data['googlePlayId']) ??
+        cleanId(data['basePlanId']) ??
+        cleanId(data['productId']);
+
+    // Admin "Product ID" is the Play Console subscription product.
+    final String? parentProductId = cleanId(data['googlePlayProductId']) ??
+        cleanId(data['googlePlaySubId']) ??
+        cleanId(data['subscriptionProductId']);
 
     // If parentProductId is missing, we try to use targetBasePlanId as the main product ID
     // (This handles cases where the user only enters one ID in the admin panel)
-    String mainSubscriptionId = (parentProductId != null && parentProductId.isNotEmpty) 
-        ? parentProductId 
-        : (targetBasePlanId ?? 'gogo_monthly_199');
-    
-    debugPrint("DEBUG: 💳 Google Play Priority -> Search Sub: $mainSubscriptionId, Target Offer/Base: $targetBasePlanId");
-    
+    String mainSubscriptionId =
+        parentProductId ?? targetBasePlanId ?? 'gogo_monthly_199';
+
+    debugPrint(
+        "DEBUG: 💳 Google Play Priority -> Search Sub: $mainSubscriptionId, Target Offer/Base: $targetBasePlanId");
+
     try {
       final bool available = await _iap.isAvailable();
       if (!available) {
@@ -180,7 +218,16 @@ class GooglePlayHandler implements PaymentHandler {
         return;
       }
 
-      ProductDetailsResponse response = await _iap.queryProductDetails({mainSubscriptionId});
+      // Query IDs from Admin (Offer #1), fallback defaults, and specific IDs passed
+      final Set<String> idsToQuery = {
+        mainSubscriptionId,
+        if (targetBasePlanId != null) targetBasePlanId,
+        'gogo_monthly_199', // Common default
+        'gogo_premium', // Common default
+      };
+
+      ProductDetailsResponse response =
+          await _iap.queryProductDetails(idsToQuery);
 
       if (response.error != null) {
         onError("Play Store Error: ${response.error!.message}");
@@ -188,37 +235,46 @@ class GooglePlayHandler implements PaymentHandler {
       }
 
       if (response.productDetails.isEmpty) {
-        // If the first attempt failed and we had a separate base ID, maybe the base ID IS the product ID
-        if (parentProductId != null && parentProductId.isNotEmpty && targetBasePlanId != null) {
-           debugPrint("🔍 Retrying with Base ID as Product ID: $targetBasePlanId");
-           response = await _iap.queryProductDetails({targetBasePlanId});
-           if (response.productDetails.isNotEmpty) {
-             mainSubscriptionId = targetBasePlanId;
-           }
-        }
-        
-        if (response.productDetails.isEmpty) {
-          onError("Plan '$mainSubscriptionId' not found in Play Store. Check Admin Panel.");
-          return;
-        }
+        onError(
+            "Plan '$mainSubscriptionId' not found. Please ensure the Product ID is active in Play Console.");
+        return;
       }
 
-      final ProductDetails productDetails = response.productDetails.first;
+      // Find the best matching product
+      ProductDetails? productDetails;
+
+      // 1. Try to find the exact match for parent/main ID
+      try {
+        productDetails = response.productDetails
+            .firstWhere((p) => p.id == mainSubscriptionId);
+      } catch (_) {
+        // 2. Try to find match for target base plan ID
+        if (targetBasePlanId != null) {
+          try {
+            productDetails = response.productDetails
+                .firstWhere((p) => p.id == targetBasePlanId);
+          } catch (_) {}
+        }
+        // 3. Just take the first available result as a last resort
+        productDetails ??= response.productDetails.first;
+      }
+
       PurchaseParam purchaseParam;
 
       if (productDetails is GooglePlayProductDetails) {
         String? selectedOfferToken;
-        
+
         final GooglePlayProductDetails googleDetails = productDetails;
-        final List<SubscriptionOfferDetailsWrapper> offers = googleDetails.productDetails.subscriptionOfferDetails ?? [];
-        
+        final List<SubscriptionOfferDetailsWrapper> offers =
+            googleDetails.productDetails.subscriptionOfferDetails ?? [];
+
         debugPrint("--------------------------------------------------");
         debugPrint("DEBUG: 📦 Google Play Selection Engine");
         debugPrint("DEBUG: Target ID from Admin: $targetBasePlanId");
         debugPrint("DEBUG: Total Paths Found: ${offers.length}");
 
         // PRIORITY SELECTION LOGIC
-        
+
         // 1. First Pass: Look for an exact match on OFFER ID (This is the discount/trial)
         for (var o in offers) {
           if (o.offerId != null && o.offerId == targetBasePlanId) {
@@ -235,8 +291,11 @@ class GooglePlayHandler implements PaymentHandler {
               // We prefer an entry with an offerId if available on this base plan
               if (selectedOfferToken == null || o.offerId != null) {
                 selectedOfferToken = o.offerIdToken;
-                debugPrint("✅ MATCH: Found Base Plan: ${o.basePlanId} (Using Offer: ${o.offerId ?? 'None'})");
-                if (o.offerId != null) break; // Found a discounted path for this base plan
+                debugPrint(
+                    "✅ MATCH: Found Base Plan: ${o.basePlanId} (Using Offer: ${o.offerId ?? 'None'})");
+                if (o.offerId != null) {
+                  break; // Found a discounted path for this base plan
+                }
               }
             }
           }
@@ -247,16 +306,18 @@ class GooglePlayHandler implements PaymentHandler {
           for (var o in offers) {
             if (o.offerId != null && o.offerId.toString().isNotEmpty) {
               selectedOfferToken = o.offerIdToken;
-              debugPrint("✅ FALLBACK: Using first available Offer: ${o.offerId}");
+              debugPrint(
+                  "✅ FALLBACK: Using first available Offer: ${o.offerId}");
               break;
             }
           }
         }
-        
+
         // 4. Default: If absolutely nothing matches, use the one it was originally created for
         if (selectedOfferToken == null) {
           selectedOfferToken = googleDetails.offerToken;
-          debugPrint("ℹ️ INFO: No custom match found. Using default offerToken.");
+          debugPrint(
+              "ℹ️ INFO: No custom match found. Using default offerToken.");
         }
         debugPrint("--------------------------------------------------");
 
@@ -274,14 +335,18 @@ class GooglePlayHandler implements PaymentHandler {
       }
 
       await _subscription?.cancel();
-      
-      _subscription = _iap.purchaseStream.listen((List<PurchaseDetails> purchaseDetailsList) {
+
+      _subscription = _iap.purchaseStream.listen(
+          (List<PurchaseDetails> purchaseDetailsList) {
         for (var purchase in purchaseDetailsList) {
-          if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
+          if (purchase.status == PurchaseStatus.purchased ||
+              purchase.status == PurchaseStatus.restored) {
             onSuccess({
               'gateway': 'google_play',
               'purchaseToken': purchase.verificationData.serverVerificationData,
               'productId': purchase.productID,
+              'googlePlayId': targetBasePlanId,
+              'googlePlaySubId': mainSubscriptionId,
               'orderId': purchase.purchaseID,
             });
             if (purchase.pendingCompletePurchase) {
@@ -313,7 +378,8 @@ class GooglePlayHandler implements PaymentHandler {
 }
 
 class PaymentService {
-  static Future<Map<String, dynamic>> createOrder(String phone, {
+  static Future<Map<String, dynamic>> createOrder(
+    String phone, {
     String? gateway,
     int? amount,
     String? offerId,
@@ -332,21 +398,37 @@ class PaymentService {
       if (duration != null) 'duration': duration,
       'isSubscription': isSubscription,
     });
-    return jsonDecode(response.body);
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200 || data['success'] != true) {
+      final msg = data['message'];
+      if (msg is Map) {
+        throw msg['message'] ?? msg['error'] ?? msg.toString();
+      }
+      throw msg?.toString() ?? "Server Error (${response.statusCode})";
+    }
+    return data;
   }
 
-  static Future<Map<String, dynamic>> verifyPayment(String phone, Map<String, dynamic> data) async {
-    final response = await ApiService.post('/api/payment/verify-payment', {...data, 'phone': phone});
+  static Future<Map<String, dynamic>> verifyPayment(
+      String phone, Map<String, dynamic> data) async {
+    final response = await ApiService.post(
+        '/api/payment/verify-payment', {...data, 'phone': phone});
     return jsonDecode(response.body);
   }
 
   static PaymentHandler getHandler(String gateway) {
     switch (gateway.toLowerCase()) {
-      case 'razorpay': return RazorpayHandler();
-      case 'phonepe': return PhonePeHandler();
-      case 'cashfree': return CashfreeHandler();
-      case 'google_play': return GooglePlayHandler();
-      default: return GooglePlayHandler();
+      case 'razorpay':
+        return RazorpayHandler();
+      case 'phonepe':
+        return PhonePeHandler();
+      case 'cashfree':
+        return CashfreeHandler();
+      case 'google_play':
+        return GooglePlayHandler();
+      default:
+        return GooglePlayHandler();
     }
   }
 }

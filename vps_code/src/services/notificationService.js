@@ -2,22 +2,33 @@ const admin = require('firebase-admin');
 const path = require('path');
 const fs = require('fs');
 
-const serviceAccountPath = path.join(__dirname, '../../serviceAccountKey.json');
+const serviceAccountPaths = [
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+    process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    path.join(__dirname, '../../serviceAccountKey.json')
+].filter(Boolean);
 
-if (fs.existsSync(serviceAccountPath)) {
+const serviceAccountPath = serviceAccountPaths.find(candidatePath => fs.existsSync(candidatePath));
+
+if (serviceAccountPath) {
     try {
         if (!admin.apps.length) {
-            const serviceAccount = require(serviceAccountPath);
+            const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+
+            if (serviceAccount.type !== 'service_account' || !serviceAccount.client_email || !serviceAccount.private_key) {
+                throw new Error('Firebase Admin service account required. google-services.json is Android client config, not a backend key.');
+            }
+
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount)
             });
-            console.log("✅ Firebase Admin Initialized Successfully");
+            console.log(`✅ Firebase Admin Initialized Successfully (${serviceAccountPath})`);
         }
     } catch (e) {
         console.error("❌ Firebase Init Error:", e.message);
     }
 } else {
-    console.log("⚠️ Firebase serviceAccountKey.json not found. Push notifications will be skipped.");
+    console.log(`⚠️ Firebase Admin service account not found. Checked: ${serviceAccountPaths.join(', ')}. Push notifications will be skipped.`);
 }
 
 exports.sendPushNotification = async (token, title, body, extraData = {}) => {

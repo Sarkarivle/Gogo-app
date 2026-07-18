@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gogo/core/api/api_service.dart';
@@ -140,24 +141,22 @@ class AppConfigService {
       }
     }
     
-    // If forceRefresh is true, we proceed regardless of time
     try {
+      // Fetch each config with error handling
       final responses = await Future.wait([
-        ApiService.get('/api/payment/settings'),
-        ApiService.get('/api/user/tracking-config'),
-        ApiService.get('/api/payment/review-mode-config'),
-        ApiService.get('/api/payment/ads-settings'),
-        ApiService.get('/api/payment/special-offers'),
+        ApiService.get('/api/payment/settings').catchError((_) => http.Response('{}', 500)),
+        ApiService.get('/api/user/tracking-config').catchError((_) => http.Response('{}', 500)),
+        ApiService.get('/api/payment/review-mode-config').catchError((_) => http.Response('{}', 500)),
+        ApiService.get('/api/payment/ads-settings').catchError((_) => http.Response('{}', 500)),
+        ApiService.get('/api/payment/special-offers').catchError((_) => http.Response('{}', 500)),
       ]);
 
       if (responses[0].statusCode == 200) {
         final data = jsonDecode(responses[0].body);
-        
         final bool newFreemiumMode = data['isFreemiumActive'] ?? false;
         if (isFreemiumActiveNotifier.value != newFreemiumMode) {
           isFreemiumActiveNotifier.value = newFreemiumMode;
         }
-
         _freemiumDurationDays = data['trialDurationDays'] ?? 1;
       }
 
@@ -165,7 +164,6 @@ class AppConfigService {
         final data = jsonDecode(responses[1].body);
         if (data['success'] == true) {
           _trackingConfig = data['config'];
-          // Ensure Meta is activated if it was enabled in this config fetch
           AnalyticsService.activateMetaIfEnabled();
         }
       }
@@ -174,17 +172,14 @@ class AppConfigService {
         final data = jsonDecode(responses[2].body);
         if (data['success'] == true) {
           final config = data['config'];
-          
           final bool newOneMessageTrial = config['isOneMessageTrialEnabled'] ?? false;
           if (isOneMessageTrialEnabledNotifier.value != newOneMessageTrial) {
             isOneMessageTrialEnabledNotifier.value = newOneMessageTrial;
           }
-
           final int newFreeMessageLimit = config['freeMessageLimit'] ?? 1;
           if (freeMessageLimitNotifier.value != newFreeMessageLimit) {
             freeMessageLimitNotifier.value = newFreeMessageLimit;
           }
-
           final bool newScreenshotDisabled = config['isScreenshotDisabled'] ?? true;
           if (isScreenshotDisabledNotifier.value != newScreenshotDisabled) {
             isScreenshotDisabledNotifier.value = newScreenshotDisabled;
@@ -210,16 +205,17 @@ class AppConfigService {
         }
       }
 
-      if (responses.length > 4 && responses[4].statusCode == 200) {
+      if (responses[4].statusCode == 200) {
         final data = jsonDecode(responses[4].body);
         if (data['success'] == true) {
           _offersConfig = data['config'];
+          debugPrint('🎯 Offers Config Synced: ${_offersConfig?['offers']?.length} plans found');
         }
       }
+      
       _lastConfigFetchTime = DateTime.now();
     } catch (e) {
       debugPrint('Error fetching app config: $e');
-      // If network fails, we already have cached values in _adsConfig from _loadCachedConfigs
     }
   }
 

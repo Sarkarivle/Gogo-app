@@ -19,7 +19,12 @@ class AuthRepository {
         final data = jsonDecode(response.body);
         return {'success': data['success'] == true, 'message': data['message'], 'reqId': data['reqId']};
       }
-      return {'success': false, 'message': 'Server error'};
+      try {
+        final data = jsonDecode(response.body);
+        return {'success': false, 'message': data['message'] ?? 'Server error'};
+      } catch (_) {
+        return {'success': false, 'message': 'Server error'};
+      }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
     }

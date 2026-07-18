@@ -11,8 +11,6 @@ class AdService {
   factory AdService() => _instance;
   AdService._internal();
 
-  static const _channel = MethodChannel('com.gogo.app/phone_hint');
-
   // --- HARDCODED PRODUCTION FALLBACKS (From your screenshot) ---
   static const String _fallbackBannerId = "ca-app-pub-4668525700908893/7915589973";
   static const String _fallbackInterstitialId = "ca-app-pub-4668525700908893/7340874905";
@@ -28,7 +26,6 @@ class AdService {
   int _rewardedRetryAttempt = 0;
 
   DateTime? _lastInterstitialTime;
-  final DateTime _appStartTime = DateTime.now();
   bool _isInitialized = false;
 
   bool get isAdsEnabled => AppConfigService().isAdsEnabled;

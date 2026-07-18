@@ -101,15 +101,14 @@ exports.getSpecialOffers = async (req, res) => {
         const config = await Config.findOne({ key: 'special_offers' });
 
         const defaultOffers = [
-            { id: 'monthly', name: '1 Month Premium', price: 199, duration: 30, rzpPlanId: '', googlePlayId: '', googlePlaySubId: '' }
+            { id: 'weekly', name: '1 Week Premium', price: 99, duration: 7, rzpPlanId: '', googlePlayId: 'gogo_weekly_99', googlePlaySubId: '' },
+            { id: 'monthly', name: '1 Month Premium', price: 199, duration: 30, rzpPlanId: '', googlePlayId: 'gogo_monthly_199', googlePlaySubId: '' },
+            { id: 'quarterly', name: '3 Months Premium', price: 499, duration: 90, rzpPlanId: '', googlePlayId: 'gogo_quarterly_499', googlePlaySubId: '' }
         ];
 
         let resultConfig = config?.value || { offers: defaultOffers };
 
-        // Logic Change: Only return ONE offer (the first one) to simplify frontend to "Single Offer" mode
-        if (resultConfig.offers && Array.isArray(resultConfig.offers) && resultConfig.offers.length > 0) {
-            resultConfig.offers = [resultConfig.offers[0]]; // Take only the primary offer
-        } else {
+        if (!resultConfig.offers || !Array.isArray(resultConfig.offers) || resultConfig.offers.length === 0) {
             resultConfig.offers = defaultOffers;
         }
 
@@ -126,17 +125,20 @@ exports.getSpecialOffers = async (req, res) => {
 
 exports.createOrder = async (req, res) => {
     try {
-        let { phone, preferredGateway, amount, offerId, googlePlayId, googlePlaySubId, duration } = req.body;
+        let { phone, preferredGateway, amount, offerId, googlePlayId, googlePlaySubId, duration, isSubscription } = req.body;
         if (req.user && !req.user.role) phone = req.user.phone;
 
         if (!phone) return res.status(400).json({ success: false, message: "Phone is required" });
         const normalizedPhone = normalize(phone);
 
-        const orderData = await PaymentService.createOrder(normalizedPhone, preferredGateway, { amount, offerId, googlePlayId, googlePlaySubId, duration });
+        const orderData = await PaymentService.createOrder(normalizedPhone, preferredGateway, { amount, offerId, googlePlayId, googlePlaySubId, duration, isSubscription });
         res.json(orderData);
     } catch (error) {
         console.error("Create Order Error:", error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({
+            success: false,
+            message: error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error))
+        });
     }
 };
 

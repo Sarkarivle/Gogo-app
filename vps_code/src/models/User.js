@@ -64,12 +64,18 @@ const UserSchema = new mongoose.Schema({
 
     // Payment Tracking
     paymentHistory: [{
-        orderId: String,
-        paymentId: String,
+        orderId: { type: String, index: true }, // GPA ID (Google) or RZP Order ID
+        paymentId: String,                      // Gateway Transaction ID
         amount: Number,
         currency: { type: String, default: 'INR' },
-        status: String, // e.g., 'Captured', 'Failed', 'Refunded'
-        method: String,
+        totalPaidSnapshot: Number,              // Cumulative total paid at this point
+        status: { type: String, index: true },  // PENDING, SUCCESS, FAILED, REFUNDED
+        method: String,                         // Google Play, UPI, Razorpay, etc.
+        expiryDate: Date,                       // New expiry date after this recharge
+        subscriptionStatus: String,             // active, trial_active, cancelled, expired
+        purchaseToken: String,                  // Google Play purchaseToken for background sync
+        productId: String,                      // Play Store Product ID (e.g. gogo_monthly_199)
+        offerId: String,                        // Dynamic Offer ID from admin panel
         timestamp: { type: Date, default: Date.now }
     }],
     accountStatus: {

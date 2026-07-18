@@ -32,7 +32,6 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
   bool _isLoading = false;
   String? _currentOrderId;
   String _activeGateway = "razorpay";
-  Map<String, dynamic>? _winBackOffer;
 
   bool _isUpiEnabled = true;
   bool _isGooglePlayEnabled = true;
@@ -113,8 +112,8 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
     
     // 1. Fetch/Sync App Config & Payment Configs
     await Future.wait([
-      configService.fetchReviewMode(),
-      paymentRepo.fetchPaymentConfigs(),
+      configService.fetchReviewMode(forceRefresh: true),
+      paymentRepo.fetchPaymentConfigs(forceRefresh: true),
     ]);
     
     // 2. Initialize Video after config is loaded
@@ -131,9 +130,6 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
         _activeGateway = paymentRepo.activeGateway;
         _isUpiEnabled = paymentRepo.isUpiEnabled;
         _isGooglePlayEnabled = paymentRepo.isGooglePlayEnabled;
-        
-        // Check for Win-back Offer from Sync Status
-        _winBackOffer = configService.trackingConfig?['offer'];
       });
     }
   }
@@ -222,12 +218,6 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
   Future<void> _startSubscription() async {
     if (_isLoading) return;
     
-    // Determine which gateway to trigger for the main button
-    String? preferredGateway;
-    if (!_isUpiEnabled && _isGooglePlayEnabled) {
-      preferredGateway = 'google_play';
-    }
-
     setState(() => _isLoading = true);
     
     try {
@@ -238,16 +228,47 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
       if (phone == null) throw "Phone not found";
 
       UserRepository().trackEvent('payment_started', customId: phone);
+      
+      // Fetch plan #1 from backend offers
+      final offersConfig = AppConfigService().offersConfig;
+      final List<dynamic> offers = offersConfig?['offers'] ?? [];
+      
+      int amount = PaymentRepository().trialPrice;
+      String? offerId;
+      String? gpId;
+      String? gpSubId;
+      String? rzpId;
+      int duration = 1;
+
+      if (offers.isNotEmpty) {
+         final firstOffer = offers[0];
+         amount = (firstOffer['price'] as num?)?.toInt() ?? amount;
+         offerId = firstOffer['id'];
+         gpId = firstOffer['googlePlayId'];
+         gpSubId = firstOffer['googlePlaySubId'];
+         rzpId = firstOffer['rzpPlanId'];
+         duration = (firstOffer['duration'] as num?)?.toInt() ?? 1;
+      }
+
       await AnalyticsService.logEvent(
         'trial_started',
         parameters: {
-          'amount': 1,
+          'amount': amount.toDouble(),
           'currency': 'INR',
         },
       );
 
-      // Use preferred gateway (e.g. if UPI disabled, trigger Play Store)
-      final orderData = await PaymentService.createOrder(phone, gateway: preferredGateway);
+      // Use direct UPI gateway (razorpay) or Google Play based on settings
+      final orderData = await PaymentService.createOrder(
+        phone, 
+        gateway: _isUpiEnabled ? 'razorpay' : 'google_play', 
+        amount: amount,
+        offerId: rzpId ?? offerId,
+        googlePlayId: gpId,
+        googlePlaySubId: gpSubId,
+        duration: duration,
+        isSubscription: false
+      );
       
       if (orderData['success'] == true) {
         final gateway = orderData['gateway']?.toString().toLowerCase() ?? _activeGateway;
@@ -260,7 +281,11 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
           (err) => _showError(err)
         );
       } else {
-        throw orderData['message'] ?? "Order creation failed";
+        final msg = orderData['message'];
+        if (msg is Map) {
+          throw msg['message'] ?? msg['error'] ?? msg.toString();
+        }
+        throw msg?.toString() ?? "Order creation failed";
       }
     } catch (e) {
       _showError("Failed: $e");
@@ -278,14 +303,10 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
       final verifyRes = await PaymentService.verifyPayment(
         userData['phone'],
         {
+          ...successData,
           'gateway': successData['gateway'] ?? _activeGateway,
           'orderId': _currentOrderId,
-          'razorpay_payment_id': successData['paymentId'],
-          'razorpay_subscription_id': successData['orderId'] ?? _currentOrderId,
-          'razorpay_signature': successData['signature'],
           'merchantTransactionId': _currentOrderId,
-          'purchaseToken': successData['purchaseToken'],
-          'productId': successData['productId'],
         }
       );
 
@@ -423,49 +444,49 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      flex: 2,
-                      child: GestureDetector(
-                        onTap: () {
-                          if (_isUpiEnabled) {
+                    if (_isUpiEnabled) ...[
+                      Expanded(
+                        flex: 2,
+                        child: GestureDetector(
+                          onTap: () {
                             Navigator.pop(sheetContext);
                             Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
-                          }
-                        },
-                        behavior: HitTestBehavior.opaque,
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: _isGooglePlayEnabled && !_isUpiEnabled 
-                                ? const Icon(Icons.shop_rounded, color: Colors.blue, size: 20)
-                                : Image.asset(
-                                    'assets/gpay_logo.png',
-                                    height: 20,
-                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 20),
-                                  ),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
-                                Text(
-                                  _isGooglePlayEnabled && !_isUpiEnabled ? "Play Store" : "GPay / UPI", 
-                                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
                                 ),
-                              ],
-                            ),
-                          ],
+                                child: _isGooglePlayEnabled && !_isUpiEnabled 
+                                  ? const Icon(Icons.shop_rounded, color: Colors.blue, size: 20)
+                                  : Image.asset(
+                                      'assets/gpay_logo.png',
+                                      height: 20,
+                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 20),
+                                    ),
+                              ),
+                              const SizedBox(width: 10),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("Pay via", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
+                                  const Text(
+                                    "GPay / UPI", 
+                                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     Expanded(
                       flex: 3,
                       child: SizedBox(
@@ -590,6 +611,20 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
     );
   }
 
+  String _getOnboardingPrice() {
+    final offersConfig = AppConfigService().offersConfig;
+    final List<dynamic> offers = offersConfig?['offers'] ?? [];
+    
+    if (offers.isNotEmpty) {
+      // User onboarding always shows Plan #1 (Trial)
+      return "₹${offers[0]['price']}";
+    }
+    
+    return hasUsedTrial 
+        ? "₹${PaymentRepository().monthlyPrice}" 
+        : "₹${PaymentRepository().trialPrice}";
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -641,9 +676,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          hasUsedTrial 
-                            ? "₹${_winBackOffer != null ? _winBackOffer!['price'] : PaymentRepository().monthlyPrice}"
-                            : "₹${PaymentRepository().trialPrice}",
+                          _getOnboardingPrice(),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 180,
@@ -667,9 +700,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                               style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, height: 1.3),
                               children: [
                                 TextSpan(text: "$currentArea ", style: const TextStyle(color: Colors.pinkAccent)),
-                                const TextSpan(text: "में "),
-                                const TextSpan(text: "1000+ लड़के\n", style: TextStyle(color: Colors.pinkAccent)),
-                                const TextSpan(text: "आपका इंतज़ार कर रहे है!"),
+                                const TextSpan(text: "में 1000+ लड़के आपका इंतज़ार कर रहे है!"),
                               ],
                             ),
                           ),
@@ -788,9 +819,7 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                       flex: 2,
                       child: GestureDetector(
                         onTap: () {
-                          if (_isUpiEnabled) {
-                            Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
-                          }
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const PaymentScreen()));
                         },
                         behavior: HitTestBehavior.opaque,
                         child: Row(
@@ -801,13 +830,9 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                                 color: Colors.white,
                                 shape: BoxShape.circle,
                               ),
-                              child: _isGooglePlayEnabled && !_isUpiEnabled 
-                                ? const Icon(Icons.shop_rounded, color: Colors.blue, size: 22)
-                                : Image.asset(
-                                    'assets/gpay_logo.png',
-                                    height: 22,
-                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 22),
-                                  ),
+                              child: _isUpiEnabled 
+                                ? Image.asset('assets/gpay_logo.png', height: 22, errorBuilder: (context, error, stackTrace) => const Icon(Icons.payment, color: Colors.black, size: 22))
+                                : const Icon(Icons.shop_rounded, color: Colors.blue, size: 22),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -820,12 +845,12 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          _isGooglePlayEnabled && !_isUpiEnabled ? "Play Store" : "GPay / UPI", 
+                                          _isUpiEnabled ? "GPay / UPI" : "Play Store", 
                                           style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold), 
                                           overflow: TextOverflow.ellipsis
                                         ),
                                       ),
-                                      if (_isUpiEnabled) const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
+                                      const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
                                     ],
                                   ),
                                 ],
@@ -855,9 +880,9 @@ class _TrialOnboardingScreenState extends State<TrialOnboardingScreen> {
                                 children: [
                                   Flexible(
                                     child: Text(
-                                      hasUsedTrial 
-                                        ? "Start Now" 
-                                        : "Start Trial ₹${PaymentRepository().trialPrice}",
+                                      _isUpiEnabled
+                                        ? (hasUsedTrial ? "Start Now" : "Start Trial ₹${PaymentRepository().trialPrice}")
+                                        : "Pay via Play Store",
                                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis,
                                     ),

@@ -14,10 +14,13 @@ class RazorpayProvider extends PaymentProvider {
         });
     }
 
-    async createOrder({ phone, amount, isSubscription = true, isTrial = false, overridePlanId = null }) {
+    async createOrder({ phone, amount, isSubscription = false, isTrial = false, overridePlanId = null }) {
         if (isSubscription) {
             // Use overridePlanId for Win-back offers, otherwise fallback to default
             const targetPlanId = overridePlanId || this.config.planId;
+            if (!targetPlanId) {
+                throw new Error("Razorpay subscription plan ID is missing.");
+            }
 
             const subscriptionData = {
                 plan_id: targetPlanId,
@@ -71,23 +74,45 @@ class RazorpayProvider extends PaymentProvider {
     }
 
     async verifyPayment({ razorpay_payment_id, razorpay_subscription_id, razorpay_order_id, razorpay_signature }) {
+        // Razorpay Verification Logic:
         // For subscriptions: payment_id | subscription_id
         // For orders: order_id | payment_id
-        let body;
-        if (razorpay_subscription_id) {
-            body = razorpay_payment_id + "|" + razorpay_subscription_id;
-        } else {
-            body = (razorpay_order_id || "") + "|" + razorpay_payment_id;
-        }
 
-        const expectedSignature = crypto
-            .createHmac("sha256", this.config.keySecret)
-            .update(body.toString())
-            .digest("hex");
+        const keySecret = this.config.keySecret;
 
-        if (expectedSignature === razorpay_signature) {
+        const verify = (id, isSub) => {
+            if (!id) return false;
+            const body = isSub ? `${razorpay_payment_id}|${id}` : `${id}|${razorpay_payment_id}`;
+            const expected = crypto.createHmac("sha256", keySecret).update(body).digest("hex");
+            return expected === razorpay_signature;
+        };
+
+        // 1. Try Subscription formula if sub ID is present
+        if (razorpay_subscription_id && verify(razorpay_subscription_id, true)) {
+            console.log("✅ Verified using Subscription formula");
             return { success: true, transactionId: razorpay_payment_id };
         }
+
+        // 2. Try Order formula if order ID is present
+        if (razorpay_order_id && verify(razorpay_order_id, false)) {
+            console.log("✅ Verified using Order formula");
+            return { success: true, transactionId: razorpay_payment_id };
+        }
+
+        // 3. Last resort: Try Order ID with Subscription formula (sometimes SDKs swap them)
+        if (razorpay_order_id && verify(razorpay_order_id, true)) {
+            console.log("✅ Verified using swapped Order-as-Sub formula");
+            return { success: true, transactionId: razorpay_payment_id };
+        }
+
+        // 4. Try Sub ID with Order formula
+        if (razorpay_subscription_id && verify(razorpay_subscription_id, false)) {
+            console.log("✅ Verified using swapped Sub-as-Order formula");
+            return { success: true, transactionId: razorpay_payment_id };
+        }
+
+        console.error("❌ Razorpay Signature Verification Failed after trying all combinations.");
+        console.error("IDs received:", { razorpay_payment_id, razorpay_order_id, razorpay_subscription_id });
         throw new Error("Invalid Razorpay signature");
     }
 

@@ -55,19 +55,19 @@ class AnalyticsService {
     _syncWithBackend('onboarding_completed');
   }
 
-  static Future<void> logPurchase(double amount, String currency, String planId) async {
+  static Future<void> logPurchase(double amount, String currency, String planId, {String? eventId}) async {
     if (!_shouldTrackEvent('purchase')) return;
     if (_canTrack('firebase')) {
       await _analytics.logPurchase(value: amount, currency: currency, items: [AnalyticsEventItem(itemId: planId, itemName: 'Premium Plan')]);
     }
-    final String eventId = "pur_${DateTime.now().millisecondsSinceEpoch}_$planId";
+    final String resolvedEventId = eventId ?? "pur_${DateTime.now().millisecondsSinceEpoch}_$planId";
     if (_canTrack('meta')) {
       await _facebookAppEvents.logPurchase(amount: amount, currency: currency, parameters: {
         'content_id': planId,
-        'event_id': eventId,
+        'event_id': resolvedEventId,
       });
     }
-    _syncWithBackend('premium_activated', eventId: eventId, metadata: {'amount': amount, 'currency': currency, 'planId': planId});
+    _syncWithBackend('premium_activated', eventId: resolvedEventId, metadata: {'amount': amount, 'currency': currency, 'planId': planId});
   }
 
   /// 3. Track Video/Audio Calls
