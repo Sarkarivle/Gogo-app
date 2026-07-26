@@ -1,0 +1,29 @@
+const express = require('express');
+const router = express.Router();
+const PaymentController = require('../controllers/PaymentController');
+const auth = require('../../../shared/middleware/auth');
+
+const isUser = auth.isUser;
+const isAdmin = auth.isAdmin;
+
+router.post('/create-order', isUser, PaymentController.createOrder);
+router.post('/verify-payment', isUser, PaymentController.verifyPayment);
+router.post('/cancel', isUser, PaymentController.cancelSubscription);
+router.get('/sync-status', isUser, PaymentController.syncUserStatus);
+router.post('/sync-provider', isAdmin, PaymentController.syncWithProvider);
+router.post('/broadcast-status-change', isAdmin, PaymentController.broadcastStatusChange);
+router.get('/settings', PaymentController.getPublicSettings);
+router.get('/review-mode-config', PaymentController.getReviewModeConfig);
+router.get('/ads-settings', PaymentController.getAdsSettings);
+router.get('/special-offers', PaymentController.getSpecialOffers);
+
+// Webhooks
+router.post('/webhook/razorpay', PaymentController.handleRazorpayWebhook);
+router.post('/webhook/phonepe', PaymentController.handlePhonePeWebhook);
+router.post('/webhook/cashfree', PaymentController.handleCashfreeWebhook);
+router.post('/webhook/google-play', PaymentController.handleGooglePlayWebhook);
+
+// Backward compatibility
+router.post('/webhook', PaymentController.handleRazorpayWebhook);
+
+module.exports = router;

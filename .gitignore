@@ -49,9 +49,16 @@ node_modules/
 .env
 vps_code/node_modules/
 vps_code/.env
+vps_code/uploads/
+vps_code/gp_service_account.json
+vps_code/serviceAccountKey.json
 
 # macOS AppleDouble junk (this project lives on an exFAT drive)
 ._*
 
-# vps_code has its own separate git repo now
-vps_code/
+# Empty/broken junk artifacts at repo root (not real build output)
+/app
+/app-release.aab
+/bundle
+/outputs
+/release
