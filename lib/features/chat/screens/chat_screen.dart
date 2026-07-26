@@ -30,7 +30,11 @@ import 'package:gogo/features/chat/screens/media_preview_screen.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/features/chat/widgets/chat_widgets.dart';
 import 'package:gogo/features/premium/repositories/premium_repository.dart';
+import 'package:gogo/features/premium/repositories/call_credits_repository.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
+import 'package:gogo/features/call/screens/fake_call_screen.dart';
+import 'package:gogo/shared/screens/buy_call_credits_screen.dart';
+import 'package:gogo/shared/screens/offer_trial_screen.dart';
 import 'package:gogo/features/reviews/widgets/review_modal.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/core/services/ad_service.dart';
@@ -122,6 +126,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   int? _receiverAge;
   bool? _isReceiverVerified;
   String? _receiverHavePlace;
+  String? _receiverPhotoUrl;
+  bool _receiverIsCreator = false; // admin-seeded AI persona vs a real user
 
   @override
   void initState() {
@@ -193,6 +199,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         
         _isReceiverVerified = cachedProfile['isVerified'] == true;
         _receiverHavePlace = cachedProfile['havePlace'];
+        _receiverIsCreator = cachedProfile['isCreator'] == true;
+
+        final cachedImages = cachedProfile['profileImages'];
+        if (cachedImages is List && cachedImages.isNotEmpty) {
+          _receiverPhotoUrl = cachedImages.first as String?;
+        }
       }
 
       final userData = UserRepository().currentUser ?? await UserRepository().getCurrentUser();
@@ -253,6 +265,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
           _isReceiverVerified = userData['isVerified'] == true;
           _receiverHavePlace = userData['havePlace'];
+          _receiverIsCreator = userData['isCreator'] == true;
+
+          final images = userData['profileImages'];
+          if (images is List && images.isNotEmpty) {
+            _receiverPhotoUrl = images.first as String?;
+          } else {
+            _receiverPhotoUrl = null;
+          }
         });
       }
     } catch (e) {
@@ -383,6 +403,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
 
     _checkAndShowReviewPopup();
+    _checkAndShowAiUpsell(data);
+  }
+
+  // When the AI creator naturally teases the premium tier (see
+  // aiReplyWorker.js's metadata.aiUpsell), follow the bubble with the
+  // existing paywall shortly after — the "push for something deep, get
+  // routed toward a purchase" pattern.
+  void _checkAndShowAiUpsell(dynamic data) {
+    if (data is! Map) return;
+    final metadata = data['metadata'];
+    if (metadata is! Map || metadata['aiUpsell'] == null) return;
+
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) OfferTrialScreen.show(context);
+    });
   }
 
   void _checkAndShowReviewPopup() {
@@ -1006,6 +1041,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _handleCall(bool isVideo) async {
     final displayName = _receiverName ?? widget.name;
+
+    // Creator profiles have no real device on the other end — route through
+    // the call-credits system and a simulated call instead of real WebRTC
+    // signaling (which would just ring and time out today).
+    if (_receiverIsCreator) {
+      final allowed = await CallCreditsRepository().checkAndConsumeCredit(widget.receiverPhone);
+      if (!mounted) return;
+      if (!allowed) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const BuyCallCreditsScreen()));
+        return;
+      }
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => FakeCallScreen(name: displayName, photoUrl: _receiverPhotoUrl)),
+      );
+      return;
+    }
+
     // Centralized Access Check - Strict for Calls
     if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call', isStrict: true)) {
       return;

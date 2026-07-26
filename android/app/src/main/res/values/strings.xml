@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gogo</string>
+    <string name="app_name">Lulu</string>
 
     <!-- Meta (Facebook) LOGIN Config -->
     <string name="facebook_app_id">1880682819242298</string>

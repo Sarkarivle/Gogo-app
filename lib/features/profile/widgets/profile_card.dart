@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
-import 'package:gogo/shared/widgets/blinking_dot.dart';
 import 'package:gogo/core/services/ad_service.dart';
+import 'package:gogo/core/services/permission_manager.dart';
+import 'package:gogo/features/call/providers/call_service.dart';
+import 'package:gogo/features/call/screens/fake_call_screen.dart';
+import 'package:gogo/features/premium/repositories/premium_repository.dart';
+import 'package:gogo/features/premium/repositories/call_credits_repository.dart';
+import 'package:gogo/shared/screens/buy_call_credits_screen.dart';
 
 class ProfileCard extends StatelessWidget {
   final String distance;
@@ -18,6 +23,9 @@ class ProfileCard extends StatelessWidget {
   final bool isVerified;
   final bool isOnline;
   final bool hideFarDistance;
+  final String? photoUrl;
+  final String? tagline;
+  final bool isCreator;
 
   const ProfileCard({
     super.key,
@@ -35,47 +43,40 @@ class ProfileCard extends StatelessWidget {
     this.isVerified = false,
     this.isOnline = false,
     this.hideFarDistance = false,
+    this.photoUrl,
+    this.tagline,
+    this.isCreator = false,
   });
+
+  Future<void> _handleCallTap(BuildContext context) async {
+    // Creator profiles have no real device on the other end — route through
+    // the call-credits system and a simulated call instead of real WebRTC signaling.
+    if (isCreator) {
+      final allowed = await CallCreditsRepository().checkAndConsumeCredit(phone);
+      if (!context.mounted) return;
+      if (!allowed) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const BuyCallCreditsScreen()));
+        return;
+      }
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => FakeCallScreen(name: name, photoUrl: photoUrl)),
+      );
+      return;
+    }
+
+    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call', isStrict: true)) {
+      return;
+    }
+
+    final hasPermission = await PermissionManager().checkAndRequestCallPermissions(context, isVideo: true);
+    if (hasPermission) {
+      CallService().startCall(phone, name, isVideo: true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Determine the best location name to show before distance
-    String locName = "";
-    final String safeArea = area.toString();
-    final String safeCity = city.toString();
-
-    if (safeArea.isNotEmpty && safeArea.toLowerCase() != "unknown" && safeArea.toLowerCase() != "null") {
-      locName = safeArea;
-    } else if (safeCity.isNotEmpty && safeCity.toLowerCase() != "unknown" && safeCity.toLowerCase() != "null") {
-      locName = safeCity;
-    }
-
-    String cleanDistance = distance
-        .replaceAll(' away', '')
-        .replaceAll('Within ', '')
-        .replaceAll('Under ', '');
-
-    // 30km Privacy Rule for Home Page
-    if (hideFarDistance && cleanDistance.isNotEmpty) {
-      final match = RegExp(r"(\d+(\.\d+)?)").firstMatch(cleanDistance);
-      if (match != null) {
-        double? dVal = double.tryParse(match.group(1)!);
-        if (dVal != null && dVal > 30) {
-          cleanDistance = ""; 
-        }
-      }
-    }
-
-    String locationDisplay = cleanDistance;
-    
-    if (locName.isNotEmpty) {
-      if (cleanDistance.isNotEmpty && cleanDistance.toLowerCase() != "unknown") {
-        locationDisplay = "$cleanDistance, $locName";
-      } else {
-        locationDisplay = locName;
-      }
-    }
-
     return GestureDetector(
       onTap: () {
         // Show  ad before navigating to profile details
@@ -95,110 +96,201 @@ class ProfileCard extends StatelessWidget {
           );
         });
       },
-      child: Container(
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            if (isOnline) ...[
-              const Row(
-                children: [
-                  BlinkingDot(),
-                  SizedBox(width: 6),
-                  Text(
-                    'Online Now',
-                    style: TextStyle(
-                      color: Color(0xFF00C853),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (locationDisplay.isNotEmpty) ...[
-              Row(children: [
-                const Icon(Icons.near_me_rounded, size: 14, color: Colors.orangeAccent),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    locationDisplay,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 11, fontWeight: FontWeight.w500),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                )
-              ]),
-              const SizedBox(height: 12),
-            ],
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    name,
-                    style: TextStyle(color: nameColor, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 0.1, height: 1.1),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isVerified) ...[
-                  const SizedBox(width: 4),
-                  const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
-                ],
-              ],
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow('Age', age.toString()),
-            _buildInfoRow('Position', position),
-            _buildInfoRow('Have Place', havePlace),
-            const Spacer(),
-            if (likedBy != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            // Background photo
+            if (photoUrl != null && photoUrl!.isNotEmpty)
+              Image.network(
+                photoUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => _placeholder(),
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return _placeholder();
+                },
+              )
+            else
+              _placeholder(),
+
+            // Bottom dark gradient overlay
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                height: 110,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [Colors.amber.shade400, Colors.orange.shade400]),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.local_fire_department_rounded, color: Colors.white, size: 14),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        'Liked by $likedBy',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    )
-                  ],
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.85),
+                    ],
+                  ),
                 ),
               ),
+            ),
+
+            // Top-left: Online status pill
+            if (isOnline)
+              Positioned(
+                top: 10,
+                left: 10,
+                child: _onlineBadge(),
+              ),
+
+            // Top-right: Verified badge
+            if (isVerified)
+              Positioned(
+                top: 10,
+                right: 10,
+                child: _verifiedBadge(),
+              ),
+
+            // Text content
+            Positioned(
+              left: 12,
+              right: 60,
+              bottom: 14,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  _ageTag(),
+                  if (tagline != null && tagline!.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      tagline!,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // Bottom-right corner: Call button
+            Positioned(
+              right: 10,
+              bottom: 12,
+              child: GestureDetector(
+                onTap: () => _handleCallTap(context),
+                child: _callButton(),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
-      child: Row(children: [
-        Text('$label ', style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500)),
-        Expanded(
-          child: Text(
-            value, 
-            style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w700),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+  Widget _onlineBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1FB855),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 6)],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, color: Colors.white, size: 7),
+          SizedBox(width: 4),
+          Text(
+            'Online',
+            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _verifiedBadge() {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 6)],
+      ),
+      child: const Icon(Icons.verified, color: Colors.blueAccent, size: 20),
+    );
+  }
+
+  Widget _ageTag() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🇮🇳', style: TextStyle(fontSize: 11)),
+          const SizedBox(width: 4),
+          Text(
+            '$age',
+            style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _callButton() {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFF5C93), Color(0xFFEC297B)],
         ),
-      ]),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF4A2E83), Color(0xFF2D1B4E)],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.person_rounded, color: Colors.white38, size: 56),
+      ),
     );
   }
 }

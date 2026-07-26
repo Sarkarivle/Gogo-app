@@ -598,6 +598,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                     }
 
                     final p = _profiles[profileIndex];
+                    final String? photoUrl = ((p['profileImages'] as List?)?.isNotEmpty ?? false)
+                        ? p['profileImages'][0].toString()
+                        : null;
                     return ValueListenableBuilder<bool>(
                       valueListenable: PresenceManager().getStatusNotifier(p['phone'], p['isOnline'] ?? false),
                       builder: (context, isOnline, _) {
@@ -616,6 +619,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                           isOnline: isOnline,
                           likedBy: (i + 1) * 12,
                           hideFarDistance: true,
+                          photoUrl: photoUrl,
+                          tagline: (p['bio'] ?? '').toString(),
+                          isCreator: p['isCreator'] == true,
                         );
                       },
                     );

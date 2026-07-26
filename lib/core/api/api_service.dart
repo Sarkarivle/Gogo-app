@@ -16,7 +16,7 @@ class ApiResponse<T> {
 }
 
 class ApiService {
-  static const String baseUrl = 'https://api.gogodatings.com';
+  static const String baseUrl = 'https://lulu.sarkarivle.org';
   static const String mediaToken = 'GOGO_SECURE_ACCESS_2024_PROD';
 
   static String getSecureUrl(String? url) {

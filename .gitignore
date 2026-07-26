@@ -49,3 +49,9 @@ node_modules/
 .env
 vps_code/node_modules/
 vps_code/.env
+
+# macOS AppleDouble junk (this project lives on an exFAT drive)
+._*
+
+# vps_code has its own separate git repo now
+vps_code/
