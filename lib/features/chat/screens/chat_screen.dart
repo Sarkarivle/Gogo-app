@@ -404,21 +404,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
 
     _checkAndShowReviewPopup();
-    _checkAndShowAiUpsell(data);
-  }
-
-  // When the AI creator naturally teases the premium tier (see
-  // aiReplyWorker.js's metadata.aiUpsell), follow the bubble with the
-  // existing paywall shortly after — the "push for something deep, get
-  // routed toward a purchase" pattern.
-  void _checkAndShowAiUpsell(dynamic data) {
-    if (data is! Map) return;
-    final metadata = data['metadata'];
-    if (metadata is! Map || metadata['aiUpsell'] == null) return;
-
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) OfferTrialScreen.show(context);
-    });
   }
 
   void _checkAndShowReviewPopup() {
@@ -615,11 +600,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void _sendMessage({String type = 'text', String? text, String? imageUrl, String? audioUrl, bool isViewOnce = false, String? customLocalId}) {
     if (_myPhone == null || _myName == null || _normalizedReceiverPhone == null) return;
 
-    // Check message limit access - Centralized Decision
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'chat')) {
-      return;
-    }
-    
+    // Text messages always send now — premium upsell happens naturally inline in
+    // the AI's reply (see _checkAndShowAiUpsell) instead of hard-blocking send.
     final String msgText = text ?? _messageController.text.trim();
     if (msgText.isEmpty && type == 'text') return;
 
@@ -965,8 +947,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       appBar: _buildAppBar(),
       body: Column(
         children: [
+          if (_receiverIsCreator == true && !PremiumService().hasFullAccess) _buildGoPrivateBanner(),
           Expanded(
-            child: _isLoading 
+            child: _isLoading
               ? const Center(child: CircularProgressIndicator(color: Colors.orangeAccent))
               : _buildMessageList(),
           ),
@@ -1083,6 +1066,35 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (hasPermission) {
       CallService().startCall(widget.receiverPhone, displayName, isVideo: isVideo);
     }
+  }
+
+  Widget _buildGoPrivateBanner() {
+    final displayName = _receiverName ?? widget.name;
+    return GestureDetector(
+      onTap: () => OfferTrialScreen.show(context),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(colors: [Color(0xFF6A3EA1), Color(0xFFEC297B)]),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Go private with $displayName', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+                  const Text('Romantic chats & exclusive photos', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildMessageList() {
@@ -2336,6 +2348,7 @@ class ChatMessageTile extends StatelessWidget {
 
   Widget _buildTextMessage(BuildContext context, ChatMessage m) {
     final double screenWidth = MediaQuery.sizeOf(context).width;
+    final bool hasUpsell = !m.isMe && m.metadata?['aiUpsell'] != null;
     return Container(
       constraints: BoxConstraints(maxWidth: screenWidth * 0.75),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2348,17 +2361,44 @@ class ChatMessageTile extends StatelessWidget {
           bottomRight: Radius.circular(m.isMe ? 4 : 20),
         ),
       ),
-      child: ValueListenableBuilder<String?>(
-        valueListenable: m.textNotifier,
-        builder: (context, text, _) {
-          return Text(
-            text ?? '',
-            style: TextStyle(
-              color: m.isMe ? Colors.black : Colors.black87,
-              fontSize: 15,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ValueListenableBuilder<String?>(
+            valueListenable: m.textNotifier,
+            builder: (context, text, _) {
+              return Text(
+                text ?? '',
+                style: TextStyle(
+                  color: m.isMe ? Colors.black : Colors.black87,
+                  fontSize: 15,
+                ),
+              );
+            },
+          ),
+          if (hasUpsell) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => OfferTrialScreen.show(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFFEC297B), Color(0xFFFF5C93)]),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_open_rounded, color: Colors.white, size: 16),
+                    SizedBox(width: 6),
+                    Text('Start Private Chat', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                  ],
+                ),
+              ),
             ),
-          );
-        },
+          ],
+        ],
       ),
     );
   }
