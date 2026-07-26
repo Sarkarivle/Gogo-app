@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class CancelMembershipPage extends StatefulWidget {
   const CancelMembershipPage({super.key});
@@ -36,12 +37,12 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
         backgroundColor: Colors.transparent,
         child: Container(
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2A0D17), Color(0xFF1A1A1A)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-            ),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(30),
             border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 16),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -49,14 +50,14 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
               const SizedBox(height: 30),
               const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 60),
               const SizedBox(height: 20),
-              const Text("ARE YOU SURE?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1)),
+              const Text("ARE YOU SURE?", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1)),
               const SizedBox(height: 15),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
                   "You will lose access to unlimited matches and premium features once your current period ends.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                  style: TextStyle(color: Colors.black54, fontSize: 14, height: 1.5),
                 ),
               ),
               const SizedBox(height: 30),
@@ -131,15 +132,18 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2A0D17),
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: kAppHeaderGradient),
+        ),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.orangeAccent),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Cancel Membership', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text('Cancel Membership', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -151,7 +155,7 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
             const Text(
               "We are sorry to see you go. What's the main reason for cancelling?",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 40),
             ...List.generate(_reasons.length, (index) {
@@ -162,16 +166,16 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
+                    color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white10),
+                    border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.grey.shade300),
                   ),
                   child: Row(
                     children: [
                       Expanded(
                         child: Text(
                           _reasons[index],
-                          style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 16),
+                          style: TextStyle(color: isSelected ? Colors.black87 : Colors.black54, fontSize: 16),
                         ),
                       ),
                       Container(
@@ -194,17 +198,17 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: Colors.white10),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
                 child: TextField(
                   controller: _otherReasonController,
                   maxLines: 4,
-                  style: const TextStyle(color: Colors.white),
+                  style: const TextStyle(color: Colors.black87),
                   decoration: const InputDecoration(
                     hintText: 'Please specify your reason in brief...',
-                    hintStyle: TextStyle(color: Colors.white38),
+                    hintStyle: TextStyle(color: Colors.grey),
                     border: InputBorder.none,
                   ),
                 ),
@@ -217,7 +221,7 @@ class _CancelMembershipPageState extends State<CancelMembershipPage> {
                   child: Container(
                     height: 55,
                     decoration: BoxDecoration(
-                      color: Colors.white12,
+                      color: Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(30),
                     ),
                     child: Material(

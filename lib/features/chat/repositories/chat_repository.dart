@@ -10,6 +10,7 @@ import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/core/services/media_service.dart';
 
 /// Helper for background parsing to keep UI thread 100% smooth
 List<ChatMessage> parseMessages(Map<String, dynamic> data) {
@@ -147,6 +148,11 @@ class ChatRepository {
       if (!file.existsSync()) {
         debugPrint("🚨 [CHAT_UPLOAD] File does not exist at: ${file.path}");
         return null;
+      }
+
+      // Compress images before upload for faster sends and less server load.
+      if (type == 'image') {
+        file = await MediaService().compressImage(file);
       }
 
       final encodedPhone = Uri.encodeComponent(nPhone);

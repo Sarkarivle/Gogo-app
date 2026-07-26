@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class BlockedUsersScreen extends StatefulWidget {
   const BlockedUsersScreen({super.key});
@@ -49,12 +50,12 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Unblock User?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Kya aap is user ko unblock karna chahte hain?', style: TextStyle(color: Colors.white70)),
+        title: const Text('Unblock User?', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+        content: Text('Kya aap is user ko unblock karna chahte hain?', style: TextStyle(color: Colors.grey.shade700)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('CANCEL', style: TextStyle(color: Colors.grey.shade600))),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('UNBLOCK', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold))),
         ],
       ),
@@ -83,15 +84,16 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2A0D17),
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.orangeAccent, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Blocked Users', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1)),
+        title: const Text('Blocked Users', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, letterSpacing: 1)),
         centerTitle: true,
       ),
       body: _isLoading
@@ -118,20 +120,20 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           Container(
             padding: const EdgeInsets.all(30),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
+              color: Colors.grey.shade100,
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.block_flipped, size: 64, color: Colors.white.withValues(alpha: 0.1)),
+            child: Icon(Icons.block_flipped, size: 64, color: Colors.grey.shade400),
           ),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'No Blocked Users',
-            style: TextStyle(color: Colors.white54, fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Aapne kisi ko block nahi kiya hai',
-            style: TextStyle(color: Colors.white24, fontSize: 14),
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
           ),
         ],
       ),
@@ -142,21 +144,22 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 28,
-            backgroundColor: Colors.white10,
+            backgroundColor: Colors.grey.shade100,
             child: user['profileImage'] != null && user['profileImage'].isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(28),
-                    child: Image.network(ApiService.getSecureUrl(user['profileImage']), fit: BoxFit.cover, width: 56, height: 56, errorBuilder: (c, e, s) => const Icon(Icons.person, color: Colors.white24)),
+                    child: Image.network(ApiService.getSecureUrl(user['profileImage']), fit: BoxFit.cover, width: 56, height: 56, errorBuilder: (c, e, s) => Icon(Icons.person, color: Colors.grey.shade400)),
                   )
-                : const Icon(Icons.person, color: Colors.white24, size: 30),
+                : Icon(Icons.person, color: Colors.grey.shade400, size: 30),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -165,12 +168,12 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               children: [
                 Text(
                   user['name'] ?? 'GoGo User',
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   user['phone'] ?? '',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 12),
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
                 ),
               ],
             ),

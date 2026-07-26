@@ -13,6 +13,7 @@ import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/premium/providers/payment_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/premium/repositories/payment_repository.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class PaymentScreen extends StatefulWidget {
   final bool autoStart;
@@ -352,17 +353,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
         .format(DateTime.now().add(Duration(days: widget.duration ?? 30)));
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F0F0F),
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: kAppHeaderGradient),
+        ),
         elevation: 0,
         leading: IconButton(
             icon:
-                const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+                const Icon(Icons.arrow_back_ios, color: Colors.black87, size: 20),
             onPressed: () => Navigator.pop(context)),
         title: const Text("Payment methods",
             style: TextStyle(
-                color: Colors.white,
+                color: Colors.black87,
                 fontWeight: FontWeight.bold,
                 fontSize: 20)),
         centerTitle: true,
@@ -441,11 +445,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 14),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [Color(0xFF252525), Color(0xFF1A1A1A)]),
+                      color: Colors.grey.shade50,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                          color: Colors.amber.shade400.withValues(alpha: 0.4),
+                          color: Colors.amber.shade400.withValues(alpha: 0.6),
                           width: 1.5),
                     ),
                     child: Row(
@@ -460,7 +463,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                         ? "Monthly Plan"
                                         : "Premium Gold"),
                                 style: const TextStyle(
-                                    color: Colors.white,
+                                    color: Colors.black87,
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold)),
                             Text("Valid till $validityDate",
@@ -497,7 +500,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               const SizedBox(width: 4),
                               Text("आपके शहर $_userCity में धूम मची है!",
                                   style: const TextStyle(
-                                      color: Colors.white,
+                                      color: Colors.black87,
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold)),
                             ]),
@@ -537,17 +540,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 16),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.08)),
+                        border: Border.all(color: Colors.grey.shade200),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
+                              color: Colors.black.withValues(alpha: 0.05),
                               blurRadius: 10,
                               offset: const Offset(0, 4))
                         ],
@@ -560,7 +558,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             children: [
                               const Text("UPI Apps",
                                   style: TextStyle(
-                                      color: Colors.white,
+                                      color: Colors.black87,
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold)),
                               Container(
@@ -611,19 +609,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   const SizedBox(width: 12),
                                   const Text("GPay",
                                       style: TextStyle(
-                                          color: Colors.white,
+                                          color: Colors.black87,
                                           fontSize: 15,
                                           fontWeight: FontWeight.w600)),
                                   const Spacer(),
                                   const Icon(Icons.arrow_forward_ios,
-                                      color: Colors.white38, size: 14),
+                                      color: Colors.grey, size: 14),
                                 ],
                               ),
                             ),
                           ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Divider(color: Colors.white10, height: 1),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Divider(color: Colors.grey.shade300, height: 1),
                           ),
                           InkWell(
                             onTap: () {}, // Future logic
@@ -633,13 +631,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 children: [
                                   Text("Scan QR and Pay",
                                       style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.5),
+                                          color: Colors.grey.shade600,
                                           fontSize: 13,
                                           fontWeight: FontWeight.w500)),
                                   const Spacer(),
-                                  const Icon(Icons.arrow_forward_ios,
-                                      color: Colors.white24, size: 12),
+                                  Icon(Icons.arrow_forward_ios,
+                                      color: Colors.grey.shade400, size: 12),
                                 ],
                               ),
                             ),
@@ -657,17 +654,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 16),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1E1E1E), Color(0xFF151515)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.08)),
+                        border: Border.all(color: Colors.grey.shade200),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
+                              color: Colors.black.withValues(alpha: 0.05),
                               blurRadius: 10,
                               offset: const Offset(0, 4))
                         ],
@@ -680,7 +672,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             children: [
                               const Text("Google Play",
                                   style: TextStyle(
-                                      color: Colors.white,
+                                      color: Colors.black87,
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold)),
                               Container(
@@ -732,7 +724,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   const SizedBox(width: 12),
                                   const Text("Google Play",
                                       style: TextStyle(
-                                          color: Colors.white,
+                                          color: Colors.black87,
                                           fontSize: 15,
                                           fontWeight: FontWeight.w600)),
                                   const Spacer(),
@@ -748,8 +740,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                             fontWeight: FontWeight.bold),
                                       ),
                                     ),
-                                  const Icon(Icons.arrow_forward_ios,
-                                      color: Colors.white38, size: 14),
+                                  Icon(Icons.arrow_forward_ios,
+                                      color: Colors.grey.shade400, size: 14),
                                 ],
                               ),
                             ),
@@ -764,10 +756,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
           Column(
             children: [
-              const Text(
+              Text(
                 "Cancel anytime. Subscription auto-renews. Read more about",
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white38, fontSize: 10),
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 10),
               ),
               const SizedBox(height: 2),
               InkWell(
@@ -775,15 +767,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 child: Container(
                   padding: const EdgeInsets.only(
                       bottom: 1), // Gap between text and underline
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     border: Border(
-                        bottom: BorderSide(color: Colors.white54, width: 0.8)),
+                        bottom: BorderSide(color: Colors.grey.shade600, width: 0.8)),
                   ),
-                  child: const Text(
+                  child: Text(
                     "Refund & cancellation Policy",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white54,
+                      color: Colors.grey.shade600,
                       fontSize: 10,
                       fontWeight: FontWeight.w500,
                     ),
@@ -798,13 +790,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: const BoxDecoration(
-                color: Color(0xFF151515),
+                color: Colors.white,
                 borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(32),
                     topRight: Radius.circular(32)),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black54,
+                      color: Colors.black12,
                       blurRadius: 10,
                       offset: Offset(0, -2))
                 ],
@@ -820,12 +812,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text("Secured by ",
+                        Text("Secured by ",
                             style:
-                                TextStyle(color: Colors.white38, fontSize: 11)),
+                                TextStyle(color: Colors.grey.shade400, fontSize: 11)),
                         const Text("India's Trusted Banks",
                             style: TextStyle(
-                                color: Colors.white70,
+                                color: Colors.black54,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold)),
                         const SizedBox(width: 6),

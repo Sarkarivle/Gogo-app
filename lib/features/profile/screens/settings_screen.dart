@@ -20,6 +20,7 @@ import 'package:gogo/core/network/socket_service.dart';
 import 'package:gogo/features/chat/repositories/chat_realtime_repository.dart';
 import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'package:gogo/core/services/app_config_service.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -91,15 +92,16 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1C1421), // Baingani Black
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Settings', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
       ),
       body: ValueListenableBuilder<Map<String, dynamic>?>(
@@ -111,7 +113,6 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Container(
                   width: double.infinity,
-                  color: const Color(0xFF1C1421), // Baingani Black
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   child: SettingsHeaderCard(userData: userData),
                 ),
@@ -268,12 +269,12 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         Text(
           'V 2.6.6',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1),
+          style: TextStyle(color: Colors.grey.shade400, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1),
         ),
         const SizedBox(height: 8),
         Text(
           'Crafted with ❤️ for our community',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.1), fontSize: 10, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.grey.shade300, fontSize: 10, fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -286,7 +287,7 @@ class _SettingsPageState extends State<SettingsPage> {
       isScrollControlled: true,
       builder: (context) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -299,7 +300,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: Colors.grey.shade300,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -315,13 +316,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 24),
                 const Text(
                   'Delete Account?',
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: Colors.black87, fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Isse aapka account permanently delete ho jayega',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                 ),
                 const SizedBox(height: 32),
                 _buildWarningItem('Aapka Gogo account & data delete kar diya jayega'),
@@ -335,9 +336,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         onPressed: () => Navigator.pop(context),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.grey.shade300)),
                         ),
-                        child: const Text('Cancel', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                        child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -371,7 +372,7 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           Icon(Icons.check_circle_outline_rounded, color: Colors.orangeAccent.withValues(alpha: 0.5), size: 16),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13, fontWeight: FontWeight.w500))),
+          Expanded(child: Text(text, style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500))),
         ],
       ),
     );
@@ -423,11 +424,11 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
           'Your Gogo acccont has been deleted',
-          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
         content: Column(
@@ -463,7 +464,7 @@ class _SettingsPageState extends State<SettingsPage> {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
           ),
         ),
       ],
@@ -484,11 +485,11 @@ class SettingsHeaderCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 10)),
         ],
       ),
       child: Row(
@@ -515,7 +516,7 @@ class SettingsHeaderCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+                    Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold))),
                     if (isPremium) ...[
                       const SizedBox(width: 8),
                       Container(
@@ -530,7 +531,7 @@ class SettingsHeaderCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text("Account information & Security", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12, fontWeight: FontWeight.w500)),
+                Text("Account information & Security", style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500)),
               ],
             ),
           ),
@@ -577,18 +578,18 @@ class PremiumMembershipCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: showAsPremium ? Colors.orangeAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05), 
+              color: showAsPremium ? Colors.orangeAccent.withValues(alpha: 0.25) : Colors.grey.shade200,
               width: 1
             ),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: showAsPremium 
-                ? [const Color(0xFF2A1A0A), const Color(0xFF1A1A1A)]
-                : [const Color(0xFF1A1A1A), const Color(0xFF0F0F0F)],
+              colors: showAsPremium
+                ? [const Color(0xFFFFF3E0), Colors.white]
+                : [Colors.white, Colors.grey.shade50],
             ),
           ),
           child: Column(
@@ -599,7 +600,7 @@ class PremiumMembershipCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.stars_rounded, color: showAsPremium ? Colors.orangeAccent : Colors.white24, size: 20),
+                      Icon(Icons.stars_rounded, color: showAsPremium ? Colors.orangeAccent : Colors.grey.shade400, size: 20),
                       const SizedBox(width: 8),
                       ValueListenableBuilder<String>(
                         valueListenable: PremiumService().statusNotifier,
@@ -607,7 +608,7 @@ class PremiumMembershipCard extends StatelessWidget {
                           return Text(
                             statusLabel,
                             style: TextStyle(
-                              color: showAsPremium ? Colors.orangeAccent : Colors.white54,
+                              color: showAsPremium ? Colors.orangeAccent : Colors.grey.shade600,
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
@@ -637,12 +638,12 @@ class PremiumMembershipCard extends StatelessWidget {
                 showAsPremium 
                   ? (isPaidPremium ? (userData?['premiumPlanName'] ?? "आपका प्रीमियम सक्रिय है") : "Free Community Access")
                   : "प्रीमियम में अपग्रेड करें",
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 4),
               Text(
                 showAsPremium ? "वैधता: $expiryDate" : "अनलिमिटेड फीचर्स का आनंद लें",
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12, fontWeight: FontWeight.w500),
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 24),
               _buildBenefitItem('Unlimited Interaction & Chat', showAsPremium),
@@ -674,22 +675,22 @@ class PremiumMembershipCard extends StatelessWidget {
                   height: 52,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: showAsPremium 
+                      colors: showAsPremium
                         ? [Colors.orangeAccent, const Color(0xFFFF9000)]
-                        : [Colors.white10, Colors.white.withValues(alpha: 0.05)],
+                        : [Colors.grey.shade200, Colors.grey.shade100],
                     ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.workspace_premium_rounded, color: showAsPremium ? Colors.black : Colors.white54, size: 20),
+                      Icon(Icons.workspace_premium_rounded, color: showAsPremium ? Colors.black : Colors.grey.shade600, size: 20),
                       const SizedBox(width: 10),
                       Text(
                         buttonText,
                         style: TextStyle(
-                          color: showAsPremium ? Colors.black : Colors.white, 
-                          fontSize: 15, 
+                          color: showAsPremium ? Colors.black : Colors.black87,
+                          fontSize: 15,
                           fontWeight: FontWeight.bold
                         ),
                       ),
@@ -709,11 +710,11 @@ class PremiumMembershipCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          Icon(Icons.check_circle_rounded, color: isActive ? Colors.orangeAccent : Colors.white10, size: 14),
+          Icon(Icons.check_circle_rounded, color: isActive ? Colors.orangeAccent : Colors.grey.shade300, size: 14),
           const SizedBox(width: 8),
           Text(
             text,
-            style: TextStyle(color: isActive ? Colors.white70 : Colors.white24, fontSize: 11, fontWeight: FontWeight.w600),
+            style: TextStyle(color: isActive ? Colors.grey.shade700 : Colors.grey.shade400, fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -737,7 +738,7 @@ class SettingsSectionCard extends StatelessWidget {
           child: Text(
             title,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.35),
+              color: Colors.grey.shade500,
               fontSize: 11,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.2,
@@ -746,9 +747,10 @@ class SettingsSectionCard extends StatelessWidget {
         ),
         Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
           ),
           child: Column(children: children),
         ),
@@ -784,7 +786,7 @@ class SettingsRowItem extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.03))),
+          border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.shade100)),
         ),
         child: Row(
           children: [
@@ -803,17 +805,17 @@ class SettingsRowItem extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                    style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11, fontWeight: FontWeight.w400),
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 11, fontWeight: FontWeight.w400),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white.withValues(alpha: 0.15), size: 12),
+            Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey.shade400, size: 12),
           ],
         ),
       ),
@@ -847,7 +849,7 @@ class SettingsDangerRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          border: isLast ? null : Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.03))),
+          border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.shade100)),
         ),
         child: Row(
           children: [

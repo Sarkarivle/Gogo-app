@@ -106,12 +106,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gogo',
+      title: 'Lulu',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF121212),
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: Colors.white,
         useMaterial3: true,
         fontFamily: 'Inter',
       ),

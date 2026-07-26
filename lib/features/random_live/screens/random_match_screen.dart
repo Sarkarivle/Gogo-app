@@ -41,7 +41,7 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       body: SizedBox(
         width: double.infinity,
         child: Column(
@@ -93,17 +93,17 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
             const Text(
               "Great Match! 🧡",
               style: TextStyle(
-                color: Colors.white,
+                color: Colors.black87,
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.5,
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               "मैच मिल गया, कॉल शुरू हो रही है...",
               style: TextStyle(
-                color: Colors.white38,
+                color: Colors.grey.shade500,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.2,
@@ -120,14 +120,14 @@ class _RandomMatchScreenState extends State<RandomMatchScreen> with SingleTicker
       width: 100,
       height: 100,
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white,
         shape: BoxShape.circle,
         border: Border.all(color: color, width: 3),
         boxShadow: [
           BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 20)
         ],
       ),
-      child: Icon(icon, color: Colors.white70, size: 50),
+      child: Icon(icon, color: color, size: 50),
     );
   }
 }

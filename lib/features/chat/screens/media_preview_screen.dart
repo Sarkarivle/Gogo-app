@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class MediaPreviewScreen extends StatefulWidget {
   final File file;
@@ -37,12 +38,13 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: const IconThemeData(color: Colors.black87),
         title: Text(
           widget.type == 'image' ? 'Preview Image' : 'Preview Video',
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          style: const TextStyle(color: Colors.black87, fontSize: 16),
         ),
       ),
       body: Column(

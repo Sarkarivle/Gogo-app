@@ -12,7 +12,7 @@ class CommunityGuidelinesModal extends StatelessWidget {
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A),
+        color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
       ),
       child: Column(
@@ -23,7 +23,7 @@ class CommunityGuidelinesModal extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: Colors.grey.shade300,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -44,13 +44,13 @@ class CommunityGuidelinesModal extends StatelessWidget {
                   const Text(
                     "Community Guidelines",
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: Colors.black87, fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     "Safe environment banaye rakhne ke liye kripya in niyam ka palan karein:",
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
                   const SizedBox(height: 32),
                   _buildGuideline(Icons.no_adult_content_rounded, "No Nudity or Sexual Content", "Kissi bhi tarah ki ashlilata sakht mana hai. Pakde jane par turant ban."),
@@ -87,9 +87,9 @@ class CommunityGuidelinesModal extends StatelessWidget {
                     onPressed: () => Navigator.pop(context),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.grey.shade300)),
                     ),
-                    child: const Text("Cancel", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                    child: Text("Cancel", style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -127,8 +127,8 @@ class CommunityGuidelinesModal extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-              Text(desc, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              Text(title, style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.bold)),
+              Text(desc, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
             ],
           ),
         ),

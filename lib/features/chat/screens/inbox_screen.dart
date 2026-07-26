@@ -14,6 +14,7 @@ import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/features/chat/screens/chat_screen.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -362,27 +363,28 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
     final filteredChats = _filteredChatsCache;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212), // Deep Charcoal Background (Not exact black)
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1C1421), // Baingani Black
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
         elevation: 0,
         centerTitle: false,
-        title: _isSearching 
+        title: _isSearching
           ? TextField(
               controller: _searchController,
               autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 18),
-              decoration: const InputDecoration(hintText: "Search messages...", hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none),
+              style: const TextStyle(color: Colors.black87, fontSize: 18),
+              decoration: InputDecoration(hintText: "Search messages...", hintStyle: TextStyle(color: Colors.grey.shade400), border: InputBorder.none),
               onChanged: (v) => setState(() { _searchQuery = v; _updateFilterCache(); }),
             )
-          : const Text("Messages", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 24, color: Colors.white, letterSpacing: -0.5)),
+          : const Text("Messages", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 24, color: Colors.black87, letterSpacing: -0.5)),
         actions: [
           IconButton(
-            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded, color: Colors.white54, size: 24),
-            onPressed: () => setState(() { 
-              _isSearching = !_isSearching; 
+            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded, color: Colors.grey.shade600, size: 24),
+            onPressed: () => setState(() {
+              _isSearching = !_isSearching;
               if (!_isSearching) { _searchQuery = ''; _searchController.clear(); _updateFilterCache(); }
-            }), 
+            }),
           ),
           const SizedBox(width: 8),
         ],
@@ -394,19 +396,19 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
       body: RefreshIndicator(
         onRefresh: () async => _fetchInbox(),
         color: Colors.orangeAccent.withValues(alpha: 0.7),
-        backgroundColor: const Color(0xFF222222),
+        backgroundColor: Colors.white,
         child: CustomScrollView(
           controller: _scrollController,
           physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
           slivers: [
             SliverToBoxAdapter(child: _buildFavouritesSection()),
             if (filteredChats.isNotEmpty)
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(20, 32, 20, 12),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 32, 20, 12),
                 sliver: SliverToBoxAdapter(
                   child: Text(
                     "RECENT CONVERSATIONS",
-                    style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
                   ),
                 ),
               ),
@@ -430,7 +432,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                           if (index < filteredChats.length - 1)
                             Padding(
                               padding: const EdgeInsets.only(left: 84, right: 16),
-                              child: Divider(color: Colors.white.withValues(alpha: 0.03), height: 1),
+                              child: Divider(color: Colors.grey.shade200, height: 1),
                             ),
                         ],
                       );
@@ -459,8 +461,8 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
 
   Widget _buildSkeletonItem() {
     return Shimmer.fromColors(
-      baseColor: Colors.white.withValues(alpha: 0.04),
-      highlightColor: Colors.white.withValues(alpha: 0.08),
+      baseColor: Colors.grey.shade200,
+      highlightColor: Colors.grey.shade100,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -486,7 +488,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
   Widget _buildFilterSection() {
     return Container(
       width: double.infinity,
-      color: const Color(0xFF1C1421), // Match AppBar
+      color: Colors.transparent,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -528,9 +530,9 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? Colors.orangeAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+          color: isActive ? Colors.orangeAccent.withValues(alpha: 0.15) : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isActive ? Colors.orangeAccent.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.03)),
+          border: Border.all(color: isActive ? Colors.orangeAccent.withValues(alpha: 0.3) : Colors.grey.shade300),
         ),
         child: Row(
           children: [
@@ -541,13 +543,13 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
             Text(
               label,
               style: TextStyle(
-                color: isActive ? Colors.orangeAccent : Colors.white54,
+                color: isActive ? Colors.orangeAccent : Colors.grey.shade700,
                 fontSize: 12,
                 fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: isActive ? Colors.orangeAccent.withValues(alpha: 0.5) : Colors.white24),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: isActive ? Colors.orangeAccent.withValues(alpha: 0.5) : Colors.grey.shade400),
           ],
         ),
       ),
@@ -561,11 +563,11 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
           child: Text(
             "FAVOURITES",
-            style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2),
           ),
         ),
         SizedBox(
@@ -596,14 +598,14 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: isOnline ? Colors.greenAccent.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.05),
+                                color: isOnline ? Colors.greenAccent.withValues(alpha: 0.3) : Colors.grey.shade200,
                                 width: 1.5,
                               ),
                             ),
-                            child: const CircleAvatar(
+                            child: CircleAvatar(
                               radius: 26,
-                              backgroundColor: Color(0xFF222222),
-                              child: Icon(Icons.person_rounded, color: Colors.white10, size: 30),
+                              backgroundColor: Colors.grey.shade100,
+                              child: Icon(Icons.person_rounded, color: Colors.grey.shade300, size: 30),
                             ),
                           ),
                           if (isOnline)
@@ -616,7 +618,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                 decoration: BoxDecoration(
                                   color: Colors.greenAccent,
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: const Color(0xFF0F0F0F), width: 2),
+                                  border: Border.all(color: Colors.white, width: 2),
                                 ),
                               ),
                             ),
@@ -630,7 +632,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w500),
+                          style: TextStyle(color: Colors.grey.shade700, fontSize: 11, fontWeight: FontWeight.w500),
                         ),
                       ),
                     ],
@@ -687,7 +689,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF222222), // Elevated black for modals
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -696,7 +698,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
                 const SizedBox(height: 16),
                 _buildActionTile(
                   icon: chat['isMuted'] == true ? Icons.notifications_active_rounded : Icons.notifications_off_rounded,
@@ -714,9 +716,9 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                     _updateMeta(chat['phone'], isFavourite: !(chat['isFavourite'] == true));
                   },
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20),
-                  child: Divider(color: Colors.white10),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Divider(color: Colors.grey.shade200),
                 ),
                 _buildActionTile(
                   icon: Icons.delete_outline_rounded,
@@ -746,7 +748,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
         ),
         child: Icon(icon, color: color ?? Colors.orangeAccent, size: 20),
       ),
-      title: Text(title, style: TextStyle(color: color ?? Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
+      title: Text(title, style: TextStyle(color: color ?? Colors.black87, fontSize: 15, fontWeight: FontWeight.w500)),
       onTap: onTap,
     );
   }
@@ -783,11 +785,11 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF222222),
-        title: const Text("Delete Chat?", style: TextStyle(color: Colors.white)),
-        content: Text("This will remove the conversation with ${chat['name']} from your list.", style: const TextStyle(color: Colors.white70)),
+        backgroundColor: Colors.white,
+        title: const Text("Delete Chat?", style: TextStyle(color: Colors.black87)),
+        content: Text("This will remove the conversation with ${chat['name']} from your list.", style: TextStyle(color: Colors.grey.shade700)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text("CANCEL", style: TextStyle(color: Colors.grey.shade600))),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
@@ -825,7 +827,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                     margin: const EdgeInsets.symmetric(vertical: 2),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                     decoration: BoxDecoration(
-                      color: unreadCount > 0 ? Colors.white.withValues(alpha: 0.02) : Colors.transparent,
+                      color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.05) : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -837,14 +839,14 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.03),
+                                  color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.4) : Colors.grey.shade200,
                                   width: 1,
                                 ),
                               ),
                               child: CircleAvatar(
                                 radius: 28,
-                                backgroundColor: Colors.white.withValues(alpha: 0.03),
-                                child: chat['profileImage'] != null 
+                                backgroundColor: Colors.grey.shade100,
+                                child: chat['profileImage'] != null
                                   ? ClipRRect(
                                       borderRadius: BorderRadius.circular(28),
                                       child: CachedNetworkImage(
@@ -852,10 +854,10 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                         fit: BoxFit.cover,
                                         memCacheWidth: 160,
                                         memCacheHeight: 160,
-                                        placeholder: (c, u) => Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
+                                        placeholder: (c, u) => Icon(Icons.person_rounded, color: Colors.grey.shade300, size: 32),
                                       ),
                                     )
-                                  : Icon(Icons.person_rounded, color: Colors.white.withValues(alpha: 0.08), size: 32),
+                                  : Icon(Icons.person_rounded, color: Colors.grey.shade300, size: 32),
                               ),
                             ),
                             if (isOnline)
@@ -868,7 +870,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                   decoration: BoxDecoration(
                                     color: Colors.greenAccent,
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: const Color(0xFF0F0F0F), width: 2),
+                                    border: Border.all(color: Colors.white, width: 2),
                                   ),
                                 ),
                               ),
@@ -886,7 +888,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                     child: Text(
                                       chat['name'],
                                       style: TextStyle(
-                                        color: unreadCount > 0 ? Colors.white : Colors.white70,
+                                        color: unreadCount > 0 ? Colors.black87 : Colors.grey.shade700,
                                         fontWeight: unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
                                         fontSize: 15,
                                       ),
@@ -897,7 +899,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                   Text(
                                     _formatTime(chat['timestamp']),
                                     style: TextStyle(
-                                      color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.8) : Colors.white24,
+                                      color: unreadCount > 0 ? Colors.orangeAccent.withValues(alpha: 0.8) : Colors.grey.shade400,
                                       fontSize: 10,
                                       fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
                                     ),
@@ -916,7 +918,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
                                     child: Text(
                                       isDeactivated ? "Account Deactivated" : ((isTyping && !ModerationRepository().isBlocked(nPhone)) ? "typing..." : (chat['msg'] ?? '')),
                                       style: TextStyle(
-                                        color: (isTyping && !ModerationRepository().isBlocked(nPhone)) ? Colors.greenAccent.withValues(alpha: 0.8) : (unreadCount > 0 ? Colors.white54 : Colors.white38),
+                                        color: (isTyping && !ModerationRepository().isBlocked(nPhone)) ? Colors.green.shade700 : (unreadCount > 0 ? Colors.grey.shade700 : Colors.grey.shade500),
                                         fontSize: 13,
                                         fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
                                         fontStyle: (isTyping && !ModerationRepository().isBlocked(nPhone)) ? FontStyle.italic : FontStyle.normal,
@@ -963,22 +965,22 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            hasActiveFilters ? Icons.filter_list_off_rounded : Icons.chat_bubble_outline, 
-            size: 60, 
-            color: Colors.white.withValues(alpha: 0.05)
+            hasActiveFilters ? Icons.filter_list_off_rounded : Icons.chat_bubble_outline,
+            size: 60,
+            color: Colors.grey.shade300
           ),
           const SizedBox(height: 24),
           Text(
             hasActiveFilters ? "No matches found" : "No messages yet",
-            style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
-            hasActiveFilters 
+            hasActiveFilters
               ? "Try adjusting your filters or search query to find conversations."
               : "When you start chatting with people, they will appear here.",
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white38, fontSize: 13),
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
           ),
           if (hasActiveFilters) ...[
             const SizedBox(height: 24),
@@ -1000,11 +1002,11 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
               const SizedBox(height: 8),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                  side: BorderSide(color: Colors.grey.shade300),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () => _fetchInbox(loadMore: true),
-                child: const Text("Search in older messages", style: TextStyle(color: Colors.white60, fontSize: 12)),
+                child: Text("Search in older messages", style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
               ),
             ],
           ],
@@ -1036,7 +1038,7 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
       backgroundColor: Colors.transparent,
       builder: (c) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF222222),
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -1045,13 +1047,13 @@ class InboxScreenState extends State<InboxScreen> with AutomaticKeepAliveClientM
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
                 const SizedBox(height: 20),
-                Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                Text(title, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18)),
                 const SizedBox(height: 12),
-                const Divider(color: Colors.white10),
+                Divider(color: Colors.grey.shade200),
                 ...options.map((opt) => ListTile(
-                  title: Text(opt, style: TextStyle(color: opt == current ? Colors.orangeAccent : Colors.white, fontWeight: opt == current ? FontWeight.bold : FontWeight.normal)),
+                  title: Text(opt, style: TextStyle(color: opt == current ? Colors.orangeAccent : Colors.black87, fontWeight: opt == current ? FontWeight.bold : FontWeight.normal)),
                   trailing: opt == current ? const Icon(Icons.check_circle_rounded, color: Colors.orangeAccent, size: 20) : null,
                   onTap: () { onSelect(opt); Navigator.pop(context); },
                 )),

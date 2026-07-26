@@ -37,7 +37,7 @@ class RandomLiveIntroScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           // Background Aesthetic
@@ -78,7 +78,7 @@ class RandomLiveIntroScreen extends StatelessWidget {
                   const Text(
                     "Live Video Chat",
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Colors.black87,
                       fontSize: 32,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.2,
@@ -87,11 +87,11 @@ class RandomLiveIntroScreen extends StatelessWidget {
                   
                   const SizedBox(height: 12),
                   
-                  const Text(
+                  Text(
                     "Connect with real people instantly across the globe. 100% private & secure.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white54,
+                      color: Colors.grey.shade600,
                       fontSize: 16,
                       height: 1.5,
                     ),
@@ -148,7 +148,7 @@ class RandomLiveIntroScreen extends StatelessWidget {
                       Text(
                         "Safe & Encrypted Connection",
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
+                          color: Colors.grey.shade500,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -166,9 +166,9 @@ class RandomLiveIntroScreen extends StatelessWidget {
             top: 50,
             left: 20,
             child: Container(
-              decoration: const BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.05), shape: BoxShape.circle),
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 20),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
                 onPressed: () => Navigator.pop(context),
               ),
             ),

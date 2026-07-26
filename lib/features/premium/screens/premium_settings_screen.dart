@@ -5,6 +5,7 @@ import 'package:gogo/features/premium/providers/premium_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'package:gogo/shared/screens/offer_trial_screen.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 import 'cancel_membership_screen.dart';
 
 class PremiumSettingsPage extends StatefulWidget {
@@ -77,7 +78,7 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
       case 'payment_failed': return Colors.redAccent;
       case 'cancelled': return Colors.grey;
       case 'expired': return Colors.red;
-      default: return Colors.white38;
+      default: return Colors.grey.shade400;
     }
   }
 
@@ -88,7 +89,7 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
       builder: (context, userData, _) {
         if (userData == null) {
           return const Scaffold(
-            backgroundColor: Color(0xFF0F0F0F),
+            backgroundColor: Colors.white,
             body: Center(child: CircularProgressIndicator(color: Colors.orangeAccent)),
           );
         }
@@ -99,15 +100,18 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
         final status = hasTempAccess ? 'trial_active' : (sub['status'] ?? (isPremium ? 'active' : 'none'));
 
         return Scaffold(
-          backgroundColor: const Color(0xFF0F0F0F),
+          backgroundColor: Colors.white,
           appBar: AppBar(
-            backgroundColor: const Color(0xFF2A0D17),
+            backgroundColor: Colors.transparent,
+            flexibleSpace: Container(
+              decoration: const BoxDecoration(gradient: kAppHeaderGradient),
+            ),
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.orangeAccent),
               onPressed: () => Navigator.pop(context),
             ),
-            title: const Text('Subscription Details', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            title: const Text('Subscription Details', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
           ),
           body: SingleChildScrollView(
             child: Column(
@@ -133,7 +137,7 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text("Temporary Access Active", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                              const Text("Temporary Access Active", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14)),
                               Text("Expires in: ${MonetizationOrchestrator().remainingTime}", style: const TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.w900)),
                             ],
                           ),
@@ -147,13 +151,16 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [const Color(0xFF1E1E1E), const Color(0xFF2A0D17).withValues(alpha: 0.5)],
+                    gradient: const LinearGradient(
+                      colors: [Colors.white, Color(0xFFFBEFF3)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: _getStatusColor(status).withValues(alpha: 0.2)),
+                    border: Border.all(color: _getStatusColor(status).withValues(alpha: 0.3)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, 4)),
+                    ],
                   ),
                   child: Column(
                     children: [
@@ -176,15 +183,15 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                             children: [
                               Text(hasTempAccess ? "Gold (Trial)" : _getStatusText(status), 
                                 style: TextStyle(color: _getStatusColor(status), fontSize: 20, fontWeight: FontWeight.bold)),
-                              Text('Plan: ${hasTempAccess ? "1 Hour Reward" : (userData['premiumPlan'] ?? 'N/A')}', 
-                                style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                              Text('Plan: ${hasTempAccess ? "1 Hour Reward" : (userData['premiumPlan'] ?? 'N/A')}',
+                                style: const TextStyle(color: Colors.black54, fontSize: 12)),
                             ],
                           ),
                         ],
                       ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Divider(color: Colors.white10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Divider(color: Colors.grey.shade300),
                       ),
                       
                       if (hasTempAccess) ...[
@@ -226,10 +233,10 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                               Navigator.push(context, MaterialPageRoute(builder: (context) => const CancelMembershipPage()));
                             },
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Colors.white24),
+                              side: BorderSide(color: Colors.grey.shade400),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: const Text('MANAGE AUTO-PAY', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                            child: const Text('MANAGE AUTO-PAY', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       
@@ -241,7 +248,7 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
                 
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: Text('Frequently Asked Questions', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text('Frequently Asked Questions', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 15),
                 _buildFAQTile('How does the ₹1 trial work?', 'You are charged ₹1 immediately to verify your payment method. The full subscription starts automatically after 24 hours.'),
@@ -262,8 +269,8 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-          Text(value, style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
+          Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13)),
+          Text(value, style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
         ],
       ),
     );
@@ -273,16 +280,17 @@ class _PremiumSettingsPageState extends State<PremiumSettingsPage> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: ExpansionTile(
-        title: Text(question, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+        title: Text(question, style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w500)),
         iconColor: Colors.orangeAccent,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Text(answer, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5)),
+            child: Text(answer, style: const TextStyle(color: Colors.black54, fontSize: 13, height: 1.5)),
           ),
         ],
       ),

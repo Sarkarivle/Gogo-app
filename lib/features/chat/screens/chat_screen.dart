@@ -40,6 +40,7 @@ import 'package:gogo/core/utils/phone_utils.dart';
 import 'package:gogo/core/services/ad_service.dart';
 import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'package:gogo/core/guards/access_guard.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 import 'dart:math';
 import 'package:video_player/video_player.dart';
 
@@ -731,11 +732,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+            border: Border.all(color: Colors.grey.shade200, width: 1),
             boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 30, spreadRadius: 10)
+              BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 30, spreadRadius: 10)
             ],
           ),
           child: Stack(
@@ -749,11 +750,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2A2A2A),
+                      color: Colors.grey.shade100,
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                      border: Border.all(color: Colors.grey.shade200),
                     ),
-                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18),
+                    child: Icon(Icons.close_rounded, color: Colors.grey.shade700, size: 18),
                   ),
                 ),
               ),
@@ -773,13 +774,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   const Text(
                     "Special Reward!",
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22),
+                    style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 22),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     "Watch a short video to get ${AppConfigService().rewardDurationMinutes} minutes of Premium access for FREE and keep chatting!",
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 14, height: 1.5),
                   ),
                   const SizedBox(height: 35),
                   SizedBox(
@@ -860,11 +861,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(32),
             border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.2), width: 1),
             boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 30, spreadRadius: 10)
+              BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 30, spreadRadius: 10)
             ],
           ),
           child: Column(
@@ -881,13 +882,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               const SizedBox(height: 24),
               const Text(
                 "Reward Granted!",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22),
+                style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w900, fontSize: 22),
               ),
               const SizedBox(height: 12),
               Text(
                 "Congratulations! You have unlocked Premium features for the next ${AppConfigService().rewardDurationMinutes} minutes. Enjoy your conversation!",
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 14, height: 1.5),
               ),
               const SizedBox(height: 32),
               SizedBox(
@@ -960,7 +961,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: true, // Keep this true for chat, but optimized elsewhere
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.white,
       appBar: _buildAppBar(),
       body: Column(
         children: [
@@ -982,7 +983,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final displayPosition = _receiverPosition ?? widget.position;
 
     return AppBar(
-      backgroundColor: const Color(0xFF1C1421), // Baingani Black
+      backgroundColor: Colors.transparent,
+      flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
       elevation: 0,
       leadingWidth: 40,
       title: InkWell(
@@ -1003,7 +1005,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           children: [
             Hero(
               tag: 'avatar_${widget.receiverPhone}',
-              child: const CircleAvatar(radius: 18, backgroundColor: Colors.orangeAccent, child: Icon(Icons.person, color: Colors.black, size: 20)),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.orangeAccent,
+                child: (_receiverPhotoUrl != null && _receiverPhotoUrl!.isNotEmpty)
+                    ? ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: ApiService.getSecureUrl(_receiverPhotoUrl!),
+                          fit: BoxFit.cover,
+                          width: 36,
+                          height: 36,
+                          memCacheWidth: 160,
+                          memCacheHeight: 160,
+                          placeholder: (c, u) => const Icon(Icons.person, color: Colors.black, size: 20),
+                          errorWidget: (c, u, e) => const Icon(Icons.person, color: Colors.black, size: 20),
+                        ),
+                      )
+                    : const Icon(Icons.person, color: Colors.black, size: 20),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1024,15 +1043,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.videocam_rounded, color: Colors.orangeAccent),
-          onPressed: () => _handleCall(true),
-        ),
-        IconButton(
           icon: const Icon(Icons.call_rounded, color: Colors.orangeAccent),
           onPressed: () => _handleCall(false),
         ),
         IconButton(
-          icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
+          icon: Icon(Icons.more_vert_rounded, color: Colors.grey.shade700),
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatSettingsPage(name: displayName, phone: widget.receiverPhone))),
         ),
       ],
@@ -1147,14 +1162,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           margin: const EdgeInsets.only(top: 10, bottom: 20),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: Colors.grey.shade200,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
             dateStr,
-            style: const TextStyle(
-              color: Colors.white54, 
-              fontSize: 11, 
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.2
             ),
@@ -1214,9 +1229,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildInputArea() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200, width: 0.5)),
       ),
       child: SafeArea(
         child: _isRecording 
@@ -1243,7 +1258,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: Colors.grey.shade100,
               borderRadius: BorderRadius.circular(25),
             ),
             child: Column(
@@ -1254,12 +1269,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   controller: _messageController,
                   maxLines: 4,
                   minLines: 1,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                  decoration: const InputDecoration(
+                  style: const TextStyle(color: Colors.black87, fontSize: 15),
+                  decoration: InputDecoration(
                     hintText: 'Type a message...',
-                    hintStyle: TextStyle(color: Colors.white24),
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ],
@@ -1284,12 +1299,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Replying to", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-                Text(_replyingTo!.text ?? 'Media', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text(_replyingTo!.text ?? 'Media', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
               ],
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white24),
+            icon: Icon(Icons.close_rounded, size: 18, color: Colors.grey.shade400),
             onPressed: () => setState(() => _replyingTo = null),
           )
         ],
@@ -1604,7 +1619,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -1613,12 +1628,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
                 const SizedBox(height: 16),
                 if (m.type != 'call_log')
                   ListTile(
                     leading: const Icon(Icons.reply_rounded, color: Colors.orangeAccent),
-                    title: const Text('Reply', style: TextStyle(color: Colors.white)),
+                    title: const Text('Reply', style: TextStyle(color: Colors.black87)),
                     onTap: () {
                       Navigator.pop(context);
                       setState(() => _replyingTo = m);
@@ -1627,7 +1642,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 if (m.type == 'text' && m.text != null)
                   ListTile(
                     leading: const Icon(Icons.copy_rounded, color: Colors.orangeAccent),
-                    title: const Text('Copy Text', style: TextStyle(color: Colors.white)),
+                    title: const Text('Copy Text', style: TextStyle(color: Colors.black87)),
                     onTap: () {
                       Navigator.pop(context);
                       Clipboard.setData(ClipboardData(text: m.text!));
@@ -1644,8 +1659,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     },
                   ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline_rounded, color: Colors.white38),
-                  title: const Text('Delete for Me', style: TextStyle(color: Colors.white38)),
+                  leading: Icon(Icons.delete_outline_rounded, color: Colors.grey.shade500),
+                  title: Text('Delete for Me', style: TextStyle(color: Colors.grey.shade500)),
                   onTap: () {
                     Navigator.pop(context);
                     _handleDeleteForMe(m);
@@ -1664,11 +1679,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      color: Colors.white.withValues(alpha: 0.05),
-      child: const Text(
+      color: Colors.grey.shade100,
+      child: Text(
         'This account is no longer active',
         textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.white38),
+        style: TextStyle(color: Colors.grey.shade500),
       ),
     );
   }
@@ -1692,7 +1707,7 @@ class _ChatAppBarTitle extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        Text(name, style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 2),
         ValueListenableBuilder<bool>(
           valueListenable: PresenceManager().getStatusNotifier(phone, false),
@@ -1712,12 +1727,12 @@ class _ChatAppBarTitle extends StatelessWidget {
                 style: const TextStyle(fontSize: 11),
                 children: [
                   if (dStr.isNotEmpty) ...[
-                    TextSpan(text: dStr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-                    const TextSpan(text: ' • ', style: TextStyle(color: Colors.white54)),
+                    TextSpan(text: dStr, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w500)),
+                    TextSpan(text: ' • ', style: TextStyle(color: Colors.grey.shade600)),
                   ],
                   TextSpan(
                     text: status,
-                    style: TextStyle(color: isOnline ? Colors.greenAccent : Colors.white54),
+                    style: TextStyle(color: isOnline ? Colors.green.shade700 : Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -1786,7 +1801,7 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A), 
+        color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32))
       ),
       child: SafeArea(
@@ -1796,9 +1811,9 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40, 
-                height: 4, 
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))
               ),
               const SizedBox(height: 32),
               Row(
@@ -1814,9 +1829,9 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Row(
                   children: [
-                    const Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 12),
+                    Icon(Icons.lock_outline_rounded, color: Colors.grey.shade400, size: 12),
                     const SizedBox(width: 6),
-                    const Text('RECENT PHOTOS', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    Text('RECENT PHOTOS', style: TextStyle(color: Colors.grey.shade400, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
                     const Spacer(),
                     GestureDetector(
                       onTap: () => setState(() => _isEditing = !_isEditing),
@@ -1825,11 +1840,11 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
                         decoration: BoxDecoration(
                           color: _isEditing ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.transparent,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _isEditing ? Colors.orangeAccent : Colors.white10)
+                          border: Border.all(color: _isEditing ? Colors.orangeAccent : Colors.grey.shade300)
                         ),
                         child: Text(
-                          _isEditing ? 'DONE' : 'EDIT', 
-                          style: TextStyle(color: _isEditing ? Colors.orangeAccent : Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)
+                          _isEditing ? 'DONE' : 'EDIT',
+                          style: TextStyle(color: _isEditing ? Colors.orangeAccent : Colors.grey.shade400, fontSize: 10, fontWeight: FontWeight.bold)
                         ),
                       ),
                     ),
@@ -1839,10 +1854,10 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
               const SizedBox(height: 16),
               SizedBox(
                 height: 110,
-                child: _isLoadingPhotos 
+                child: _isLoadingPhotos
                   ? const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent))
-                  : (_recentPhotos.isEmpty 
-                      ? const Center(child: Text('No recent photos', style: TextStyle(color: Colors.white10, fontSize: 12)))
+                  : (_recentPhotos.isEmpty
+                      ? Center(child: Text('No recent photos', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)))
                       : ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1875,15 +1890,15 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
             child: Container(
               width: 90,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16), 
-                border: Border.all(color: Colors.white.withValues(alpha: 0.05))
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200)
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: CachedNetworkImage(
-                  imageUrl: ApiService.getSecureUrl(photoUrl), 
+                  imageUrl: ApiService.getSecureUrl(photoUrl),
                   fit: BoxFit.cover,
-                  placeholder: (c, u) => Container(color: Colors.white.withValues(alpha: 0.05)),
+                  placeholder: (c, u) => Container(color: Colors.grey.shade100),
                 ),
               ),
             ),
@@ -1950,7 +1965,7 @@ class _MediaSelectionModalState extends State<MediaSelectionModal> {
               child: Icon(icon, color: Colors.orangeAccent, size: 24),
             ),
             const SizedBox(height: 8),
-            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500)),
+            Text(label, style: TextStyle(color: Colors.grey.shade700, fontSize: 11, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -2119,8 +2134,8 @@ class ChatMessageTile extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 12),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(20)),
-          child: Text(m.text ?? '', style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w500)),
+          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(20)),
+          child: Text(m.text ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 11, fontWeight: FontWeight.w500)),
         ),
       );
     }
@@ -2145,7 +2160,7 @@ class ChatMessageTile extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(DateFormat('hh:mm a').format(m.timestamp), style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                  Text(DateFormat('hh:mm a').format(m.timestamp), style: TextStyle(color: Colors.grey.shade400, fontSize: 10)),
                   if (m.isMe) ...[
                     const SizedBox(width: 4),
                     ValueListenableBuilder<MessageStatus>(
@@ -2166,18 +2181,18 @@ class ChatMessageTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.block_rounded, size: 14, color: Colors.white24),
+          Icon(Icons.block_rounded, size: 14, color: Colors.grey.shade400),
           const SizedBox(width: 8),
           Text(
             m.isMe ? "You deleted this message" : "This message was deleted",
-            style: const TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic),
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontStyle: FontStyle.italic),
           ),
         ],
       ),
@@ -2198,15 +2213,15 @@ class ChatMessageTile extends StatelessWidget {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(25),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.done_all_rounded, size: 18, color: Colors.white24),
-                    SizedBox(width: 10),
-                    Text("Opened", style: TextStyle(color: Colors.white24, fontSize: 14, fontWeight: FontWeight.bold)),
+                    Icon(Icons.done_all_rounded, size: 18, color: Colors.grey.shade400),
+                    const SizedBox(width: 10),
+                    Text("Opened", style: TextStyle(color: Colors.grey.shade500, fontSize: 14, fontWeight: FontWeight.bold)),
                   ],
                 ),
               );
@@ -2225,7 +2240,7 @@ class ChatMessageTile extends StatelessWidget {
                   children: [
                     Icon(Icons.looks_one_rounded, size: 18, color: Colors.orangeAccent),
                     SizedBox(width: 10),
-                    Text("1 Image", style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold)),
+                    Text("1 Image", style: TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.bold)),
                   ],
                 ),
               );
@@ -2237,9 +2252,9 @@ class ChatMessageTile extends StatelessWidget {
                     width: 200,
                     height: 120,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF262626),
+                      color: Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white10),
+                      border: Border.all(color: Colors.grey.shade300),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
@@ -2255,9 +2270,9 @@ class ChatMessageTile extends StatelessWidget {
                   width: 200,
                   height: 120,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF262626),
+                    color: Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white10),
+                    border: Border.all(color: Colors.grey.shade300),
                   ),
                   child: Stack(
                     fit: StackFit.expand,
@@ -2305,7 +2320,7 @@ class ChatMessageTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 2),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(10),
         border: Border(left: BorderSide(color: Colors.orangeAccent, width: 3)),
       ),
@@ -2313,7 +2328,7 @@ class ChatMessageTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text("Replying to", style: TextStyle(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-          Text(m.replyText ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text(m.replyText ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
         ],
       ),
     );
@@ -2325,7 +2340,7 @@ class ChatMessageTile extends StatelessWidget {
       constraints: BoxConstraints(maxWidth: screenWidth * 0.75),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: m.isMe ? Colors.orangeAccent : const Color(0xFF262626),
+        color: m.isMe ? Colors.orangeAccent : Colors.grey.shade200,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(20),
           topRight: const Radius.circular(20),
@@ -2339,7 +2354,7 @@ class ChatMessageTile extends StatelessWidget {
           return Text(
             text ?? '',
             style: TextStyle(
-              color: m.isMe ? Colors.black : Colors.white,
+              color: m.isMe ? Colors.black : Colors.black87,
               fontSize: 15,
             ),
           );
@@ -2375,9 +2390,9 @@ class ChatMessageTile extends StatelessWidget {
             width: 220,
             height: 280,
             decoration: BoxDecoration(
-              color: const Color(0xFF262626),
+              color: Colors.grey.shade200,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+              border: Border.all(color: Colors.grey.shade300),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
@@ -2417,7 +2432,7 @@ class ChatMessageTile extends StatelessWidget {
                               fit: BoxFit.cover,
                               memCacheWidth: 440,
                               placeholder: (context, url) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                              errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.white24),
+                              errorWidget: (context, url, error) => Icon(Icons.broken_image, color: Colors.grey.shade400),
                             ),
                         ],
                       )),
@@ -2494,7 +2509,7 @@ class ChatMessageTile extends StatelessWidget {
       width: 200,
       margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
-        color: m.isMe ? Colors.orangeAccent : const Color(0xFF1E1E1E),
+        color: m.isMe ? Colors.orangeAccent : Colors.grey.shade200,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(20),
           topRight: const Radius.circular(20),
@@ -2504,9 +2519,9 @@ class ChatMessageTile extends StatelessWidget {
       ),
       child: m.audioUrl != null || m.localFilePath != null
           ? AudioPlayerWidget(url: m.audioUrl ?? m.localFilePath!, isMe: m.isMe)
-          : const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text("Audio not available", style: TextStyle(color: Colors.white24, fontSize: 12)),
+          : Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text("Audio not available", style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
             ),
     );
   }
@@ -2520,7 +2535,7 @@ class ChatMessageTile extends StatelessWidget {
 
     IconData icon;
     String label;
-    Color contentColor = m.isMe ? Colors.black : Colors.white;
+    Color contentColor = m.isMe ? Colors.black : Colors.black87;
 
     if (status == 'missed' || status == 'no_answer') {
       icon = isVideo ? Icons.missed_video_call_rounded : Icons.call_missed_rounded;
@@ -2540,7 +2555,7 @@ class ChatMessageTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: m.isMe ? Colors.orangeAccent : const Color(0xFF262626),
+        color: m.isMe ? Colors.orangeAccent : Colors.grey.shade200,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(20),
           topRight: const Radius.circular(20),
@@ -2577,11 +2592,11 @@ class ChatMessageTile extends StatelessWidget {
   Widget _buildStatusIcon(MessageStatus status) {
     switch (status) {
       case MessageStatus.sending:
-        return const Icon(Icons.access_time_rounded, size: 12, color: Colors.white24);
+        return Icon(Icons.access_time_rounded, size: 12, color: Colors.grey.shade400);
       case MessageStatus.sent:
-        return const Icon(Icons.check_rounded, size: 12, color: Colors.white24);
+        return Icon(Icons.check_rounded, size: 12, color: Colors.grey.shade400);
       case MessageStatus.delivered:
-        return const Icon(Icons.done_all_rounded, size: 12, color: Colors.white24);
+        return Icon(Icons.done_all_rounded, size: 12, color: Colors.grey.shade400);
       case MessageStatus.seen:
         return const Icon(Icons.done_all_rounded, size: 12, color: Colors.greenAccent);
       case MessageStatus.error:
@@ -2627,7 +2642,7 @@ class RecordingView extends StatelessWidget {
             builder: (context, seconds, _) {
               return Text(
                 _formatDuration(seconds),
-                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                style: const TextStyle(color: Colors.black87, fontSize: 15, fontWeight: FontWeight.w600),
               );
             },
           ),
@@ -2642,13 +2657,13 @@ class RecordingView extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.chevron_left_rounded, size: 18, color: isSliding ? Colors.redAccent : Colors.white),
+                        Icon(Icons.chevron_left_rounded, size: 18, color: isSliding ? Colors.redAccent : Colors.grey.shade700),
                         const SizedBox(width: 4),
                         Text(
                           isSliding ? "RELEASE TO CANCEL" : "Slide to cancel",
                           style: TextStyle(
-                            color: isSliding ? Colors.redAccent : Colors.white, 
-                            fontSize: 12, 
+                            color: isSliding ? Colors.redAccent : Colors.grey.shade700,
+                            fontSize: 12,
                             fontWeight: isSliding ? FontWeight.bold : FontWeight.normal
                           ),
                         ),

@@ -24,7 +24,7 @@ class _FloatingUserBubbleState extends State<FloatingUserBubble> with SingleTick
     _left = _random.nextDouble() * 350;
     _size = 6.0 + _random.nextDouble() * 4.0;
     
-    final colors = [Colors.orangeAccent, Colors.amberAccent, Colors.white70, Colors.deepOrangeAccent];
+    final colors = [Colors.orangeAccent, Colors.amberAccent, Colors.grey.shade600, Colors.deepOrangeAccent];
     _color = colors[_random.nextInt(colors.length)];
     
     _controller = AnimationController(
@@ -68,9 +68,9 @@ class _FloatingUserBubbleState extends State<FloatingUserBubble> with SingleTick
                 // User Name
                 Text(
                   widget.name,
-                  style: const TextStyle(
-                    color: Colors.white70, 
-                    fontSize: 10, 
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 10,
                     fontWeight: FontWeight.w500
                   ),
                 ),

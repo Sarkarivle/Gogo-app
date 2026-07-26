@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/services/presence_manager.dart';
 import 'package:gogo/core/services/ad_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
@@ -6,6 +8,7 @@ import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/features/chat/screens/chat_screen.dart';
 import 'package:gogo/features/reviews/models/user_review.dart';
 import 'package:gogo/features/reviews/repositories/review_repository.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   final String name;
@@ -19,6 +22,7 @@ class ProfileDetailPage extends StatefulWidget {
   final bool showMessageButton;
   final bool isVerified;
   final bool isOnline;
+  final String? photoUrl;
 
   const ProfileDetailPage({
     super.key,
@@ -33,6 +37,7 @@ class ProfileDetailPage extends StatefulWidget {
     this.showMessageButton = true,
     this.isVerified = false,
     this.isOnline = false,
+    this.photoUrl,
   });
 
   static void navigate(BuildContext context, {
@@ -47,6 +52,7 @@ class ProfileDetailPage extends StatefulWidget {
     bool showMessageButton = true,
     bool isVerified = false,
     bool isOnline = false,
+    String? photoUrl,
   }) {
     Navigator.push(
       context,
@@ -63,6 +69,7 @@ class ProfileDetailPage extends StatefulWidget {
           showMessageButton: showMessageButton,
           isVerified: isVerified,
           isOnline: isOnline,
+          photoUrl: photoUrl,
         ),
       ),
     );
@@ -82,6 +89,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   late String _position;
   late String _havePlace;
   late bool _isVerified;
+  String? _photoUrl;
   List<UserReview> _reviews = [];
 
   @override
@@ -95,6 +103,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     _position = widget.position;
     _havePlace = widget.havePlace;
     _isVerified = widget.isVerified;
+    _photoUrl = widget.photoUrl;
 
     _fetchReviews();
 
@@ -138,7 +147,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
           _position = userData['position'] ?? _position;
           _havePlace = userData['havePlace'] ?? _havePlace;
           _isVerified = userData['isVerified'] ?? _isVerified;
-          
+
+          if ((_photoUrl == null || _photoUrl!.isEmpty) && (userData['profileImages'] as List?)?.isNotEmpty == true) {
+            _photoUrl = userData['profileImages'][0].toString();
+          }
+
           // Update distance if provided by the profile API
           final remoteDistance = userData['distance'] ?? userData['distanceStr'];
           if (remoteDistance != null && remoteDistance.toString().isNotEmpty) {
@@ -159,7 +172,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -167,11 +180,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 10),
               ListTile(
-                leading: const Icon(Icons.report_gmailerrorred_rounded, color: Colors.white70),
-                title: const Text('Report Profile', style: TextStyle(color: Colors.white)),
+                leading: const Icon(Icons.report_gmailerrorred_rounded, color: Colors.black54),
+                title: const Text('Report Profile', style: TextStyle(color: Colors.black87)),
                 onTap: () {
                   Navigator.pop(context);
                   _showReportDialog();
@@ -197,11 +210,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Block User?', style: TextStyle(color: Colors.white)),
-        content: const Text('Is user ko block karne ke baad aap ek dusre ko message nahi kar payenge.', style: TextStyle(color: Colors.white70)),
+        backgroundColor: Colors.white,
+        title: const Text('Block User?', style: TextStyle(color: Colors.black87)),
+        content: const Text('Is user ko block karne ke baad aap ek dusre ko message nahi kar payenge.', style: TextStyle(color: Colors.black54)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: Colors.white38))),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: Colors.grey))),
           TextButton(
             onPressed: () {
               final user = UserRepository().currentUser;
@@ -231,7 +244,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       builder: (context) => Container(
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -244,7 +257,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 12),
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
                 Flexible(
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
@@ -262,12 +275,12 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                                 child: const Icon(Icons.report_gmailerrorred_rounded, color: Colors.red, size: 20),
                               ),
                               const SizedBox(width: 12),
-                              const Text('Report Profile', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                              const Text('Report Profile', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
                             ],
                           ),
                           const SizedBox(height: 16),
-                          const Text('Kyun report kar rahe hain?', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                          Text('Aapki report private rakhi jayegi.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                          const Text('Kyun report kar rahe hain?', style: TextStyle(color: Colors.black87, fontSize: 15, fontWeight: FontWeight.bold)),
+                          Text('Aapki report private rakhi jayegi.', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                           const SizedBox(height: 20),
                           
                           _buildReportOption('Misbehavior / Bad Language', selectedCategory, (val) {
@@ -289,12 +302,12 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                               controller: otherReasonController,
                               maxLines: 2,
                               autofocus: true,
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              style: const TextStyle(color: Colors.black87, fontSize: 14),
                               decoration: InputDecoration(
                                 hintText: 'Detail mein batayein...',
-                                hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                                 filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.05),
+                                fillColor: Colors.grey.shade100,
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                                 contentPadding: const EdgeInsets.all(16),
                               ),
@@ -341,9 +354,9 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
         ),
         child: Row(
           children: [
-            Icon(isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: isSelected ? Colors.orangeAccent : Colors.white24),
+            Icon(isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: isSelected ? Colors.orangeAccent : Colors.grey.shade400),
             const SizedBox(width: 12),
-            Text(title, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+            Text(title, style: TextStyle(color: isSelected ? Colors.black87 : Colors.black54, fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
           ],
         ),
       ),
@@ -396,7 +409,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           CustomScrollView(
@@ -406,7 +419,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 expandedHeight: AdService().shouldShowAds ? 120 : 280,
                 pinned: true,
                 stretch: true,
-                backgroundColor: const Color(0xFF1C1421), // Baingani Black
+                backgroundColor: const Color(0xFF2A0D17), // Baingani Black (trial gradient top)
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -423,17 +436,23 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0xFF1C1421), Color(0xFF121212)],
+                      if (_photoUrl != null && _photoUrl!.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: ApiService.getSecureUrl(_photoUrl),
+                          fit: BoxFit.cover,
+                          memCacheWidth: 720,
+                          fadeInDuration: const Duration(milliseconds: 150),
+                          placeholder: (context, url) => const DecoratedBox(decoration: BoxDecoration(gradient: kAppHeaderGradient)),
+                          errorWidget: (context, url, error) => const DecoratedBox(decoration: BoxDecoration(gradient: kAppHeaderGradient)),
+                        )
+                      else
+                        Container(
+                          decoration: const BoxDecoration(
+                            gradient: kAppHeaderGradient,
                           ),
                         ),
-                      ),
-                      // Background pattern/icon area (Only show if NO ads are being displayed)
-                      if (!AdService().shouldShowAds)
+                      // Background pattern/icon area (Only show if NO photo and NO ads are being displayed)
+                      if (!AdService().shouldShowAds && (_photoUrl == null || _photoUrl!.isEmpty))
                         Center(
                           child: Icon(Icons.person_rounded, size: 120, color: Colors.white.withValues(alpha: 0.03)),
                         ),
@@ -453,15 +472,14 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                 ),
               ),
               SliverToBoxAdapter(
-                child: Transform.translate(
-                  offset: const Offset(0, -30),
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF121212),
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
-                    child: Column(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 16),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
+                  child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (AdService().shouldShowAds) ...[
@@ -477,7 +495,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(children: [
-                                    Flexible(child: Text(_name, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5))),
+                                    Flexible(child: Text(_name, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5))),
                                     if (_isVerified) ...[
                                       const SizedBox(width: 8),
                                       const Icon(Icons.verified_rounded, color: Colors.blueAccent, size: 22),
@@ -487,7 +505,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                                   Row(children: [
                                     const Icon(Icons.location_on_rounded, color: Colors.orangeAccent, size: 14),
                                     const SizedBox(width: 4),
-                                    Text(locationDisplay, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13, fontWeight: FontWeight.w500)),
+                                    Text(locationDisplay, style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.w500)),
                                   ]),
                                 ],
                               ),
@@ -498,14 +516,14 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                                 return Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                   decoration: BoxDecoration(
-                                    color: isOnline ? Colors.green.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05), 
-                                    borderRadius: BorderRadius.circular(20), 
-                                    border: Border.all(color: isOnline ? Colors.green.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.1))
+                                    color: isOnline ? Colors.green.withValues(alpha: 0.1) : Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: isOnline ? Colors.green.withValues(alpha: 0.2) : Colors.grey.shade300)
                                   ),
                                   child: Row(children: [
-                                    CircleAvatar(backgroundColor: isOnline ? Colors.greenAccent : Colors.white24, radius: 3), 
-                                    const SizedBox(width: 6), 
-                                    Text(isOnline ? 'Online' : 'Offline', style: TextStyle(color: isOnline ? Colors.greenAccent : Colors.white38, fontSize: 10, fontWeight: FontWeight.bold))
+                                    CircleAvatar(backgroundColor: isOnline ? Colors.greenAccent : Colors.grey.shade400, radius: 3),
+                                    const SizedBox(width: 6),
+                                    Text(isOnline ? 'Online' : 'Offline', style: TextStyle(color: isOnline ? Colors.green.shade700 : Colors.grey.shade600, fontSize: 10, fontWeight: FontWeight.bold))
                                   ]),
                                 );
                               }
@@ -525,8 +543,9 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF222222),
+                              color: Colors.grey.shade50,
                               borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.grey.shade200),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -543,11 +562,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                         const SizedBox(height: 32),
                         
                         // About Me - Location based
-                        const Text('ABOUT ME', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white24, letterSpacing: 1.2)),
+                        Text('ABOUT ME', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey.shade400, letterSpacing: 1.2)),
                         const SizedBox(height: 12),
                         Text(
                           'Hi मैं $_name हूँ। मैं ${_city != "Unknown" ? _city : 'यहीं'} से हूँ और किसी ऐसे इंसान की तलाश में हूँ जिससे मैं mil saku.',
-                          style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.6), height: 1.5)
+                          style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.5)
                         ),
 
                         const SizedBox(height: 40),
@@ -569,22 +588,22 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.03),
+                            color: Colors.grey.shade50,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                            border: Border.all(color: Colors.grey.shade200),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Reviews by other users (${_reviews.length})', 
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11, fontWeight: FontWeight.bold)
+                                'Reviews by other users (${_reviews.length})',
+                                style: TextStyle(color: Colors.grey.shade500, fontSize: 11, fontWeight: FontWeight.bold)
                               ),
                               const SizedBox(height: 16),
                               if (_reviews.isEmpty)
                                 Text(
                                   'Abhi tak koi review nahi hai',
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.1), fontSize: 12),
+                                  style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
                                 )
                               else
                                 ..._reviews.map((r) => _buildReviewRow(r.reviewerName.toUpperCase(), r.comment, r.type)),
@@ -595,10 +614,9 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          
+              ],
+            ),
+
           // Action Button
           if (widget.showMessageButton)
             Positioned(
@@ -669,9 +687,9 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   Widget _buildTextDetail(String label, String value) {
     return Column(
       children: [
-        Text(label.toUpperCase(), style: TextStyle(fontSize: 9, color: Colors.white.withValues(alpha: 0.3), fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+        Text(label.toUpperCase(), style: TextStyle(fontSize: 9, color: Colors.grey.shade500, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white70)),
+        Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87)),
       ],
     );
   }
@@ -693,8 +711,8 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
               text: TextSpan(
                 style: const TextStyle(fontSize: 12, height: 1.3),
                 children: [
-                  TextSpan(text: '$name: ', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.bold)),
-                  TextSpan(text: comment, style: TextStyle(color: Colors.white.withValues(alpha: 0.3))),
+                  TextSpan(text: '$name: ', style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
+                  TextSpan(text: comment, style: TextStyle(color: Colors.grey.shade500)),
                 ],
               ),
             ),
@@ -708,7 +726,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     return Container(
       height: 30,
       width: 1,
-      color: Colors.white.withValues(alpha: 0.05),
+      color: Colors.grey.shade300,
     );
   }
 }

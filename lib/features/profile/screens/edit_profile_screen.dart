@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -105,14 +106,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1C1421), // Baingani Black
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
         centerTitle: true,
-        title: const Text('Edit Profile', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Edit Profile', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -189,44 +191,44 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Widget _buildLabel(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
-    child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+    child: Text(text, style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600)),
   );
 
   Widget _buildTextField(TextEditingController ctrl, String hint, {int maxLines = 1, IconData? icon, TextInputType? kType}) => Container(
     decoration: BoxDecoration(
-      color: const Color(0xFF1A1A1A),
+      color: Colors.grey.shade100,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      border: Border.all(color: Colors.grey.shade300),
     ),
     child: TextField(
       controller: ctrl,
       maxLines: maxLines,
       keyboardType: kType,
-      style: const TextStyle(color: Colors.white),
+      style: const TextStyle(color: Colors.black87),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white24, fontSize: 14),
+        hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
         border: InputBorder.none,
         contentPadding: const EdgeInsets.all(16),
-        prefixIcon: icon != null ? Icon(icon, color: Colors.white24, size: 20) : null,
+        prefixIcon: icon != null ? Icon(icon, color: Colors.grey.shade500, size: 20) : null,
       ),
     ),
   );
 
   Widget _buildDOBField(TextEditingController ctrl, String hint) => Container(
     decoration: BoxDecoration(
-      color: const Color(0xFF1A1A1A),
+      color: Colors.grey.shade100,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      border: Border.all(color: Colors.grey.shade300),
     ),
     child: TextField(
       controller: ctrl,
       textAlign: TextAlign.center,
       keyboardType: TextInputType.number,
-      style: const TextStyle(color: Colors.white),
+      style: const TextStyle(color: Colors.black87),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
+        hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 12),
         border: InputBorder.none,
         contentPadding: const EdgeInsets.symmetric(vertical: 16),
       ),
@@ -236,17 +238,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget _buildDropdown(List<String> items, String cur, Function(String?) onChange, {String? suffix}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 16),
     decoration: BoxDecoration(
-      color: const Color(0xFF1A1A1A),
+      color: Colors.grey.shade100,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      border: Border.all(color: Colors.grey.shade300),
     ),
     child: DropdownButtonHideUnderline(
       child: DropdownButton<String>(
         value: cur,
-        dropdownColor: const Color(0xFF1A1A1A),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white24),
+        dropdownColor: Colors.white,
+        icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade500),
         isExpanded: true,
-        style: const TextStyle(color: Colors.white, fontSize: 15),
+        style: const TextStyle(color: Colors.black87, fontSize: 15),
         items: items.map((e) => DropdownMenuItem(value: e, child: Text(suffix != null ? '$e $suffix' : e))).toList(),
         onChanged: onChange,
       ),
@@ -258,12 +260,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
     child: Container(
       height: 52,
       decoration: BoxDecoration(
-        color: sel ? Colors.orangeAccent : const Color(0xFF1A1A1A),
+        color: sel ? Colors.orangeAccent : Colors.grey.shade100,
         borderRadius: BorderRadius.circular(16),
-        border: sel ? null : Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        border: sel ? null : Border.all(color: Colors.grey.shade300),
       ),
       child: Center(
-        child: Text(label, style: TextStyle(color: sel ? Colors.black : Colors.white70, fontWeight: FontWeight.bold)),
+        child: Text(label, style: TextStyle(color: sel ? Colors.black : Colors.grey.shade700, fontWeight: FontWeight.bold)),
       ),
     ),
   );

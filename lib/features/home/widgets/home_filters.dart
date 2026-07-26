@@ -24,8 +24,8 @@ class HomeFilterChip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          color: Colors.grey.shade100,
+          border: Border.all(color: Colors.grey.shade300),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -38,13 +38,13 @@ class HomeFilterChip extends StatelessWidget {
               label,
               style: const TextStyle(
                 fontSize: 13,
-                color: Colors.white,
+                color: Colors.black87,
                 fontWeight: FontWeight.w500,
               ),
             ),
             if (hasDropdown) ...[
               const SizedBox(width: 4),
-              const Icon(Icons.expand_more_rounded, size: 18, color: Colors.white70),
+              Icon(Icons.expand_more_rounded, size: 18, color: Colors.grey.shade700),
             ],
           ],
         ),
@@ -98,10 +98,10 @@ class FilterDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1E1E1E).withValues(alpha: 0.9),
+      backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
-        side: const BorderSide(color: Colors.white10),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
       title: Column(
         children: [
@@ -109,7 +109,7 @@ class FilterDialog extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.white24,
+              color: Colors.grey.shade300,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -145,7 +145,7 @@ class FilterDialog extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                     decoration: BoxDecoration(
-                      color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
+                      color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.1) : Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(15),
                       border: Border.all(color: isSelected ? Colors.orangeAccent.withValues(alpha: 0.3) : Colors.transparent),
                     ),
@@ -154,7 +154,7 @@ class FilterDialog extends StatelessWidget {
                         Text(
                           option,
                           style: TextStyle(
-                            color: isSelected ? Colors.orangeAccent : Colors.white,
+                            color: isSelected ? Colors.orangeAccent : Colors.black87,
                             fontSize: 16,
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                           ),

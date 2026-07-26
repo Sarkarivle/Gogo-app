@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/verification/repositories/verification_repository.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class VerificationPage extends StatefulWidget {
   const VerificationPage({super.key});
@@ -58,15 +59,18 @@ class _VerificationPageState extends State<VerificationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2A0D17),
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: kAppHeaderGradient),
+        ),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Get Verified', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Get Verified', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -83,12 +87,12 @@ class _VerificationPageState extends State<VerificationPage> {
                 child: const Icon(Icons.verified_user_rounded, size: 60, color: Colors.blueAccent),
               ),
               const SizedBox(height: 24),
-              const Text('Face KYC Verification', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+              const Text('Face KYC Verification', style: TextStyle(color: Colors.black87, fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               Text(
                 'Take a live selfie to get a Blue Tick on your profile.\nThis helps users know you are real.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14, height: 1.5),
+                style: TextStyle(color: Colors.black54, fontSize: 14, height: 1.5),
               ),
               const Spacer(),
               if (_image != null)
@@ -119,20 +123,20 @@ class _VerificationPageState extends State<VerificationPage> {
                     height: 320,
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.03), 
-                      borderRadius: BorderRadius.circular(24), 
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08), style: BorderStyle.solid)
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid)
                     ),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center, 
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Container(
                           padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), shape: BoxShape.circle),
-                          child: const Icon(Icons.camera_alt_rounded, color: Colors.white54, size: 40),
+                          decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
+                          child: Icon(Icons.camera_alt_rounded, color: Colors.grey.shade600, size: 40),
                         ),
-                        const SizedBox(height: 16), 
-                        const Text('Tap to take Selfie', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.w600))
+                        const SizedBox(height: 16),
+                        Text('Tap to take Selfie', style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600))
                       ]
                     ),
                   ),
@@ -151,7 +155,7 @@ class _VerificationPageState extends State<VerificationPage> {
                         minimumSize: const Size(double.infinity, 56),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         elevation: 0,
-                        disabledBackgroundColor: Colors.white10
+                        disabledBackgroundColor: Colors.grey.shade200
                       ),
                       child: const Text('Submit for Review', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ),

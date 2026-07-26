@@ -12,7 +12,6 @@ import 'package:gogo/features/profile/repositories/profile_repository.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/profile/widgets/profile_card.dart';
-import 'package:gogo/shared/widgets/blinking_dot.dart';
 import 'package:gogo/features/home/widgets/home_filters.dart';
 import 'package:gogo/features/chat/screens/inbox_screen.dart';
 import 'package:gogo/features/profile/screens/my_profile_screen.dart';
@@ -458,93 +457,139 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     );
   }
 
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+              const SizedBox(height: 14),
+              Wrap(spacing: 10, runSpacing: 10, children: [
+                HomeFilterChip(
+                  label: _isDistanceManuallySelected ? 'Range: $_selectedDistance' : 'Distance',
+                  onTap: () => FilterDialog.show(context, 'Distance Range', ['1km', '5km', '10km', '20km', '50km', '100km', '200km', '300km', '500km'], _selectedDistance, (val) { setState(() { _selectedDistance = val; _isDistanceManuallySelected = true; }); _resetAndFetch(); }),
+                ),
+                HomeFilterChip(
+                  label: 'Age: $_selectedAge',
+                  onTap: () => FilterDialog.show(context, 'Age Selection', ['Any', '18-25', '26-35', '36-45', '46+'], _selectedAge, (val) { setState(() => _selectedAge = val); _resetAndFetch(); }),
+                ),
+                HomeFilterChip(
+                  label: _isOnlineOnly ? 'Online Now' : 'Online',
+                  isLive: _isOnlineOnly,
+                  onTap: () { setState(() => _isOnlineOnly = !_isOnlineOnly); _resetAndFetch(); },
+                ),
+                HomeFilterChip(
+                  label: 'Place: $_havePlaceStatus',
+                  onTap: () => FilterDialog.show(context, 'Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (val) { setState(() => _havePlaceStatus = val); _resetAndFetch(); }),
+                ),
+                HomeFilterChip(
+                  label: 'Pos: $_selectedPosition',
+                  hasDropdown: false,
+                  onTap: () => FilterDialog.show(context, 'Position', ['Any', 'Top', 'Bottom', 'Versatile', 'Top, Ver'], _selectedPosition, (val) { setState(() => _selectedPosition = val); _resetAndFetch(); }),
+                ),
+              ]),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildHomeContent() {
     final double topPadding = MediaQuery.paddingOf(context).top;
-    return Column(
-      children: [
-        // Custom App Bar Area
-        Container(
-          padding: EdgeInsets.only(top: topPadding + 10, bottom: 10),
-          decoration: const BoxDecoration(
-            color: Color(0xFF1C1421), // Dark Purple-ish Black (Baingani Black)
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(0, 2),
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          // Custom App Bar Area
+          Container(
+            padding: EdgeInsets.only(top: topPadding + 10, bottom: 12, left: 16, right: 16),
+            decoration: const BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment.center,
+                radius: 1.1,
+                colors: [Color(0xFFF3C7DB), Color(0xFFFFFFFF)],
+                stops: [0.0, 1.0],
               ),
-            ],
+              boxShadow: [
+                BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    indicatorColor: Colors.black87,
+                    indicatorWeight: 3,
+                    labelColor: Colors.black87,
+                    unselectedLabelColor: Colors.grey.shade500,
+                    labelPadding: const EdgeInsets.only(right: 24),
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+                    dividerColor: Colors.transparent,
+                    padding: EdgeInsets.zero,
+                    tabs: const [
+                      Tab(text: 'Hot'),
+                      Tab(text: 'Nearby'),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: _showFilterSheet,
+                  icon: const Icon(Icons.search_rounded, color: Colors.black87, size: 26),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.pink,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.public_rounded, color: Colors.white, size: 16),
+                      SizedBox(width: 2),
+                      Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: Column(
-            children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal, 
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(children: [
-                  HomeFilterChip(
-                    label: _isDistanceManuallySelected ? 'Range: $_selectedDistance' : 'Distance',
-                    onTap: () => FilterDialog.show(context, 'Distance Range', ['1km', '5km', '10km', '20km', '50km', '100km', '200km', '300km', '500km'], _selectedDistance, (val) { setState(() { _selectedDistance = val; _isDistanceManuallySelected = true; }); _resetAndFetch(); }),
-                  ),
-                  HomeFilterChip(
-                    label: 'Age: $_selectedAge', 
-                    onTap: () => FilterDialog.show(context, 'Age Selection', ['Any', '18-25', '26-35', '36-45', '46+'], _selectedAge, (val) { setState(() => _selectedAge = val); _resetAndFetch(); }),
-                  ),
-                  HomeFilterChip(
-                    label: _isOnlineOnly ? 'Online Now' : 'Online', 
-                    isLive: _isOnlineOnly, 
-                    onTap: () { setState(() => _isOnlineOnly = !_isOnlineOnly); _resetAndFetch(); },
-                  ),
-                  HomeFilterChip(
-                    label: 'Place: $_havePlaceStatus', 
-                    onTap: () => FilterDialog.show(context, 'Have Place?', ['Any', 'YES', 'NO'], _havePlaceStatus, (val) { setState(() => _havePlaceStatus = val); _resetAndFetch(); }),
-                  ),
-                  HomeFilterChip(
-                    label: 'Pos: $_selectedPosition', 
-                    hasDropdown: false, 
-                    onTap: () => FilterDialog.show(context, 'Position', ['Any', 'Top', 'Bottom', 'Versatile', 'Top, Ver'], _selectedPosition, (val) { setState(() => _selectedPosition = val); _resetAndFetch(); }),
-                  ),
-                ]),
-              ),
-              const SizedBox(height: 10),
-              TabBar(
-                controller: _tabController,
-                isScrollable: false,
-                tabAlignment: TabAlignment.fill,
-                indicatorColor: Colors.orangeAccent,
-                indicatorWeight: 3,
-                labelColor: Colors.orangeAccent,
-                unselectedLabelColor: Colors.white54,
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                dividerColor: Colors.transparent,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                tabs: [
-                  const Tab(text: 'Nearby'),
-                  Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [const Text('Online'), const SizedBox(width: 8), const BlinkingDot()])),
-                ],
-              ),
-            ],
+
+          // Profiles Body
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [_buildProfileGrid(), _buildProfileGrid()]
+            ),
           ),
-        ),
-        
-        // Profiles Body
-        Expanded(
-          child: TabBarView(
-            controller: _tabController, 
-            physics: const NeverScrollableScrollPhysics(),
-            children: [_buildProfileGrid(), _buildProfileGrid()]
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildProfileGrid() {
     return RefreshIndicator(
       onRefresh: () async => _resetAndFetch(),
-      color: Colors.orangeAccent,
-      backgroundColor: const Color(0xFF222222),
-      child: Stack(
-        children: [
+      color: Colors.pink,
+      backgroundColor: Colors.white,
+      child: Container(
+        color: Colors.white,
+        child: Stack(
+          children: [
           _profiles.isEmpty && !_isLoadingProfiles
               ? ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -553,10 +598,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                     Center(
                       child: Column(
                         children: [
-                          const Icon(Icons.person_search_rounded, size: 64, color: Colors.white10),
+                          Icon(Icons.person_search_rounded, size: 64, color: Colors.grey.shade300),
                           const SizedBox(height: 16),
-                          const Text('No profiles found nearby', style: TextStyle(color: Colors.white54)),
-                          TextButton(onPressed: _resetAndFetch, child: const Text('Try Again', style: TextStyle(color: Colors.orangeAccent)))
+                          Text('No profiles found nearby', style: TextStyle(color: Colors.grey.shade500)),
+                          TextButton(onPressed: _resetAndFetch, child: const Text('Try Again', style: TextStyle(color: Colors.pink)))
                         ],
                       ),
                     )
@@ -565,7 +610,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
               : GridView.builder(
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120), // More bottom padding for banner
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120), // More bottom padding for banner
                   cacheExtent: 1500,
                   addRepaintBoundaries: true,
                   addAutomaticKeepAlives: true,
@@ -579,7 +624,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                   itemBuilder: (context, i) {
                     // Logic: Every 6th item is an ad (after 5 profiles)
                     bool isAd = AdService().shouldShowAds && (i + 1) % 6 == 0;
-                    
+
                     if (isAd) {
                       return AdService().getNativeAdWidget();
                     }
@@ -589,8 +634,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
                     if (profileIndex >= _profiles.length) {
                       return Shimmer.fromColors(
-                        baseColor: Colors.white.withValues(alpha: 0.05),
-                        highlightColor: Colors.white.withValues(alpha: 0.1),
+                        baseColor: Colors.grey.shade200,
+                        highlightColor: Colors.grey.shade100,
                         child: Container(
                           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
                         ),
@@ -629,15 +674,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
                 ),
           if (_isLoadingProfiles)
             _buildSkeletonGrid(),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSkeletonGrid() {
-    return Shimmer.fromColors(
-      baseColor: Colors.white.withValues(alpha: 0.05),
-      highlightColor: Colors.white.withValues(alpha: 0.1),
+    return Container(
+      color: Colors.white,
+      child: Shimmer.fromColors(
+      baseColor: Colors.grey.shade200,
+      highlightColor: Colors.grey.shade100,
       child: GridView.builder(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
         physics: const NeverScrollableScrollPhysics(),
@@ -650,21 +698,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         itemCount: 6,
         itemBuilder: (context, index) => Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Colors.grey.shade300,
             borderRadius: BorderRadius.circular(20),
           ),
         ),
+      ),
       ),
     );
   }
 
   Widget _buildBottomNav() {
     return Container(
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 0.5))),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.black.withValues(alpha: 0.08), width: 0.5)),
+      ),
       child: BottomNavigationBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        selectedItemColor: Colors.orangeAccent,
-        unselectedItemColor: Colors.white54,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        selectedItemColor: Colors.pink,
+        unselectedItemColor: Colors.grey.shade500,
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
         onTap: (i) { 

@@ -83,7 +83,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   @override
   Widget build(BuildContext context) {
     final Color mainColor = widget.isMe ? Colors.black87 : Colors.orangeAccent.withValues(alpha: 0.8);
-    final Color textColor = widget.isMe ? Colors.black54 : Colors.white38;
+    final Color textColor = widget.isMe ? Colors.black54 : Colors.grey.shade600;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -177,7 +177,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     width: 120, 
                     height: 4, 
                     decoration: BoxDecoration(
-                      color: widget.isMe ? Colors.black.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
+                      color: widget.isMe ? Colors.black.withValues(alpha: 0.1) : Colors.grey.shade300,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -349,9 +349,9 @@ class TypingIndicator extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: const BoxDecoration(
-            color: Color(0xFF2A2A2A),
-            borderRadius: BorderRadius.only(
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(18),
               topRight: Radius.circular(18),
               bottomRight: Radius.circular(18),
@@ -395,6 +395,6 @@ class _BlinkingCircleState extends State<_BlinkingCircle> with SingleTickerProvi
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(opacity: _controller, child: const CircleAvatar(radius: 3, backgroundColor: Colors.white38));
+    return FadeTransition(opacity: _controller, child: CircleAvatar(radius: 3, backgroundColor: Colors.grey.shade600));
   }
 }

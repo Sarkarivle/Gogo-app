@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gogo/features/news/models/news_article.dart';
 import 'package:gogo/features/news/repositories/news_repository.dart';
 import 'package:gogo/core/services/app_visibility_coordinator.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class NewsHomeScreen extends StatefulWidget {
   const NewsHomeScreen({super.key});
@@ -61,17 +62,20 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A0A0A),
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: kAppHeaderGradient),
+        ),
         elevation: 0,
         title: const Text(
           'समाचार अपडेट',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 24),
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, fontSize: 24),
         ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
+            icon: const Icon(Icons.more_vert, color: Colors.black87),
             onSelected: (value) {
               if (value == 'unhide') {
                 AppVisibilityCoordinator().toggleHideMode(context);
@@ -108,8 +112,8 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
                       itemBuilder: (context, index) {
                         if (index == _news.length) {
                           return Shimmer.fromColors(
-                            baseColor: Colors.white.withValues(alpha: 0.05),
-                            highlightColor: Colors.white.withValues(alpha: 0.1),
+                            baseColor: Colors.grey.shade300,
+                            highlightColor: Colors.grey.shade100,
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 20),
                               height: 200,
@@ -128,7 +132,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
               ),
       ),
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: const Color(0xFF121212),
+        backgroundColor: Colors.white,
         selectedItemColor: Colors.orange,
         unselectedItemColor: Colors.grey,
         currentIndex: 0,
@@ -149,9 +153,12 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 20),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: ClipRRect(
@@ -165,8 +172,8 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
                   height: 200,
                   width: double.infinity,
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(color: Colors.white10),
-                  errorWidget: (context, url, error) => Container(color: Colors.white10, child: const Icon(Icons.newspaper)),
+                  placeholder: (context, url) => Container(color: Colors.grey.shade200),
+                  errorWidget: (context, url, error) => Container(color: Colors.grey.shade200, child: const Icon(Icons.newspaper)),
                 ),
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -196,7 +203,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
                     const SizedBox(height: 12),
                     Text(
                       article.title,
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, height: 1.3),
+                      style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold, height: 1.3),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -225,13 +232,13 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: index == 0 ? Colors.orange : Colors.white.withValues(alpha: 0.05),
+              color: index == 0 ? Colors.orange : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               categories[index],
               style: TextStyle(
-                color: index == 0 ? Colors.black : Colors.white,
+                color: index == 0 ? Colors.black : Colors.black87,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -244,8 +251,8 @@ class _NewsHomeScreenState extends State<NewsHomeScreen> {
 
   Widget _buildShimmerEffect() {
     return Shimmer.fromColors(
-      baseColor: Colors.white.withValues(alpha: 0.05),
-      highlightColor: Colors.white.withValues(alpha: 0.1),
+      baseColor: Colors.grey.shade300,
+      highlightColor: Colors.grey.shade100,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: 5,

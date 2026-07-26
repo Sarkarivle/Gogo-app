@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:gogo/core/api/api_service.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class ContactUsScreen extends StatefulWidget {
   const ContactUsScreen({super.key});
@@ -55,11 +56,12 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2A0D17),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Contact Us', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
+        title: const Text('Contact Us', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.orangeAccent),
           onPressed: () => Navigator.pop(context),
@@ -74,12 +76,12 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
             children: [
               const Text(
                 'How can we help you?',
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Colors.black87, fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Fill out the form below and our team will get back to you shortly.',
-                style: TextStyle(color: Colors.white54, fontSize: 14),
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
               ),
               const SizedBox(height: 32),
               _buildTextField('Full Name', _nameController, Icons.person_outline),
@@ -118,14 +120,14 @@ class _ContactUsScreenState extends State<ContactUsScreen> {
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
-      style: const TextStyle(color: Colors.white),
+      style: const TextStyle(color: Colors.black87),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Colors.white54),
+        labelStyle: TextStyle(color: Colors.grey.shade500),
         prefixIcon: Icon(icon, color: Colors.orangeAccent, size: 20),
         filled: true,
-        fillColor: const Color(0xFF1E1E1E),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        fillColor: Colors.grey.shade100,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.orangeAccent, width: 1)),
       ),
       validator: (value) => value == null || value.isEmpty ? 'This field is required' : null,

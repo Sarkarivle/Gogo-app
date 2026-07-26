@@ -6,6 +6,7 @@ import 'package:gogo/features/chat/repositories/chat_repository.dart';
 import 'package:gogo/features/profile/repositories/user_repository.dart';
 import 'package:gogo/features/profile/repositories/moderation_repository.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
+import 'package:gogo/shared/widgets/gradient_app_bar.dart';
 
 class ChatSettingsPage extends StatefulWidget {
   final String name;
@@ -137,7 +138,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
       builder: (context) => Container(
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
+          color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
         child: SafeArea(
@@ -150,7 +151,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 12),
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
                 Flexible(
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
@@ -167,10 +168,10 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                               child: Icon(withReport ? Icons.report_gmailerrorred_rounded : Icons.block_flipped, color: Colors.red, size: 22),
                             ),
                             const SizedBox(width: 15),
-                            Text(withReport ? 'Report & Block User' : 'User ko block kare', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+                            Text(withReport ? 'Report & Block User' : 'User ko block kare', style: const TextStyle(color: Colors.black87, fontSize: 20, fontWeight: FontWeight.w800)),
                           ]),
                           const SizedBox(height: 12),
-                          Text('Aap is profile ko kyun ${withReport ? 'report aur ' : ''}block kar rahe hain?', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                          Text('Aap is profile ko kyun ${withReport ? 'report aur ' : ''}block kar rahe hain?', style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
                           const SizedBox(height: 24),
                           
                           _buildModernOption('User galat behavior kar raha hai', selectedCategory, (val) {
@@ -192,12 +193,12 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                               controller: otherReasonController,
                               maxLines: 2,
                               autofocus: true,
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              style: const TextStyle(color: Colors.black87, fontSize: 14),
                               decoration: InputDecoration(
                                 hintText: 'Detail mein batalen',
-                                hintStyle: const TextStyle(color: Colors.white10),
+                                hintStyle: TextStyle(color: Colors.grey.shade400),
                                 filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.03),
+                                fillColor: Colors.grey.shade100,
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                                 contentPadding: const EdgeInsets.all(16),
                               ),
@@ -240,14 +241,14 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
             Container(
               width: 22, height: 22,
               decoration: BoxDecoration(
-                border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white12, width: 2),
+                border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.grey.shade300, width: 2),
                 borderRadius: BorderRadius.circular(6),
                 color: isSelected ? Colors.orangeAccent : Colors.transparent,
               ),
               child: isSelected ? const Icon(Icons.check, size: 16, color: Colors.black) : null,
             ),
             const SizedBox(width: 15),
-            Text(title, style: TextStyle(color: isSelected ? Colors.white : Colors.white60, fontSize: 14)),
+            Text(title, style: TextStyle(color: isSelected ? Colors.black87 : Colors.grey.shade600, fontSize: 14)),
           ],
         ),
       ),
@@ -345,11 +346,12 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1C1421), // Baingani Black
+        backgroundColor: Colors.transparent,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kAppHeaderGradient)),
         elevation: 0,
-        title: const Text('Chat Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text('Chat Settings', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.orangeAccent), onPressed: () => Navigator.pop(context)),
       ),
       body: Stack(
@@ -360,9 +362,9 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
               Center(
                 child: Column(
                   children: [
-                    const CircleAvatar(radius: 45, backgroundColor: Colors.white10, child: Icon(Icons.person, size: 50, color: Colors.white54)),
+                    CircleAvatar(radius: 45, backgroundColor: Colors.grey.shade200, child: Icon(Icons.person, size: 50, color: Colors.grey.shade500)),
                     const SizedBox(height: 16),
-                    Text(widget.name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                    Text(widget.name, style: const TextStyle(color: Colors.black87, fontSize: 22, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 4),
                   ],
                 ),
@@ -413,12 +415,12 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
 
   Widget _buildSettingTile(IconData icon, String title, {Color? color, Widget? trailing, bool isLast = false, VoidCallback? onTap}) {
     return Container(
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : Colors.white.withValues(alpha: 0.05)))),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : Colors.grey.shade200))),
       child: ListTile(
         onTap: onTap,
         leading: Icon(icon, color: color ?? Colors.orangeAccent, size: 24),
-        title: Text(title, style: TextStyle(color: color ?? Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
-        trailing: trailing ?? const Icon(Icons.chevron_right, color: Colors.white12, size: 20),
+        title: Text(title, style: TextStyle(color: color ?? Colors.black87, fontSize: 15, fontWeight: FontWeight.w600)),
+        trailing: trailing ?? Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 20),
       ),
     );
   }

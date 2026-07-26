@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
+import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/services/ad_service.dart';
 import 'package:gogo/core/services/permission_manager.dart';
 import 'package:gogo/features/call/providers/call_service.dart';
@@ -93,6 +95,7 @@ class ProfileCard extends StatelessWidget {
             havePlace: havePlace,
             isVerified: isVerified,
             isOnline: isOnline,
+            photoUrl: photoUrl,
           );
         });
       },
@@ -101,16 +104,15 @@ class ProfileCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Background photo
+            // Background photo (cached — avoids re-downloading the same photo repeatedly)
             if (photoUrl != null && photoUrl!.isNotEmpty)
-              Image.network(
-                photoUrl!,
+              CachedNetworkImage(
+                imageUrl: ApiService.getSecureUrl(photoUrl),
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stack) => _placeholder(),
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return _placeholder();
-                },
+                memCacheWidth: 480,
+                fadeInDuration: const Duration(milliseconds: 150),
+                placeholder: (context, url) => _placeholder(),
+                errorWidget: (context, url, error) => _placeholder(),
               )
             else
               _placeholder(),

@@ -11,7 +11,7 @@ class RandomSearchingScreen extends StatelessWidget {
     final List<String> randomNames = ["RAHUL", "AMIT", "SANDEEP", "VIKRAM", "ANKIT", "SUMIT", "ROHIT", "DEEPAK"];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       body: SizedBox(
         width: double.infinity,
         height: double.infinity,
@@ -33,17 +33,17 @@ class RandomSearchingScreen extends StatelessWidget {
                 const Text(
                   "Finding Your Match",
                   style: TextStyle(
-                    color: Colors.white,
+                    color: Colors.black87,
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.2,
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   "आपके लिए लाइव पार्टनर खोजा जा रहा है...",
                   style: TextStyle(
-                    color: Colors.white54,
+                    color: Colors.grey.shade600,
                     fontSize: 15,
                     fontWeight: FontWeight.w400,
                   ),
@@ -56,9 +56,15 @@ class RandomSearchingScreen extends StatelessWidget {
                   margin: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.03),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                    border: Border.all(color: Colors.grey.shade200),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 8,
+                      ),
+                    ],
                   ),
                   child: Row(
                     children: [
@@ -71,11 +77,11 @@ class RandomSearchingScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           "Best live match dhunda ja raha hai...",
                           style: TextStyle(
-                            color: Colors.white38, 
+                            color: Colors.grey.shade500,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             fontStyle: FontStyle.italic
