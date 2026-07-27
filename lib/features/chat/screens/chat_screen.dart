@@ -29,11 +29,12 @@ import 'package:gogo/features/chat/screens/chat_settings_screen.dart';
 import 'package:gogo/features/chat/screens/media_preview_screen.dart';
 import 'package:gogo/features/profile/screens/profile_detail_screen.dart';
 import 'package:gogo/features/chat/widgets/chat_widgets.dart';
+import 'package:gogo/features/chat/widgets/private_mode_banner.dart';
 import 'package:gogo/features/premium/repositories/premium_repository.dart';
 import 'package:gogo/features/premium/repositories/call_credits_repository.dart';
 import 'package:gogo/features/premium/screens/trial_onboarding_screen.dart';
 import 'package:gogo/features/call/screens/fake_call_screen.dart';
-import 'package:gogo/shared/screens/buy_call_credits_screen.dart';
+import 'package:gogo/features/call/services/call_greeting_service.dart';
 import 'package:gogo/shared/screens/offer_trial_screen.dart';
 import 'package:gogo/features/reviews/widgets/review_modal.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
@@ -1044,21 +1045,52 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // the call-credits system and a simulated call instead of real WebRTC
     // signaling (which would just ring and time out today).
     if (_receiverIsCreator) {
-      final allowed = await CallCreditsRepository().checkAndConsumeCredit(widget.receiverPhone);
+      // Consume a credit if the user has one — but either way, show the same
+      // ring/connect/cut tease before nudging toward the credits store. No
+      // credits shouldn't mean a worse experience than having them.
+      await CallCreditsRepository().checkAndConsumeCredit(widget.receiverPhone);
       if (!mounted) return;
-      if (!allowed) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const BuyCallCreditsScreen()));
-        return;
-      }
+      final clips = await CallGreetingService().getGreetingClips();
+      if (!mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => FakeCallScreen(name: displayName, photoUrl: _receiverPhotoUrl)),
+        MaterialPageRoute(
+          builder: (_) => FakeCallScreen(
+            name: displayName,
+            photoUrl: _receiverPhotoUrl,
+            greetingClips: clips,
+            onEnded: (ctx) => MonetizationOrchestrator().showChoicePopup(
+              ctx,
+              creatorName: displayName,
+              creatorPhotoUrl: _receiverPhotoUrl,
+            ),
+          ),
+        ),
       );
       return;
     }
 
-    // Centralized Access Check - Strict for Calls
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call', isStrict: true)) {
+    // Free-mode users don't have full access yet — instead of dropping them
+    // straight on the paywall, give them the same "ring, connect, hear a
+    // voice, cut" taste real callers get, THEN show the paywall.
+    if (!PremiumService().hasFullAccess) {
+      final clips = await CallGreetingService().getGreetingClips();
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FakeCallScreen(
+            name: displayName,
+            photoUrl: _receiverPhotoUrl,
+            greetingClips: clips,
+            onEnded: (ctx) => MonetizationOrchestrator().showChoicePopup(
+              ctx,
+              creatorName: displayName,
+              creatorPhotoUrl: _receiverPhotoUrl,
+            ),
+          ),
+        ),
+      );
       return;
     }
 
@@ -1071,7 +1103,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Widget _buildGoPrivateBanner() {
     final displayName = _receiverName ?? widget.name;
     return GestureDetector(
-      onTap: () => OfferTrialScreen.show(context),
+      onTap: () => OfferTrialScreen.show(
+        context,
+        creatorName: displayName,
+        creatorPhotoUrl: _receiverPhotoUrl,
+        isPrivateChat: true,
+      ),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1399,7 +1436,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   // --- RECORDING LOGIC ---
   void _startRecording() async {
     // Centralized Access Check - Strict for Audio Messages
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'audio_msg', isStrict: true)) {
+    if (!PremiumRepository().checkAccessAndShowOffer(
+      context,
+      feature: 'audio_msg',
+      isStrict: true,
+      creatorName: _receiverName ?? widget.name,
+      creatorPhotoUrl: _receiverPhotoUrl,
+      isPrivateChat: true,
+    )) {
       return;
     }
     final hasPermission = await _audioRecorder.hasPermission();
@@ -1474,7 +1518,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   // --- MEDIA HANDLING ---
   void _showMediaOptions() {
     // Centralized Access Check - Strict for Media
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'media_send', isStrict: true)) {
+    if (!PremiumRepository().checkAccessAndShowOffer(
+      context,
+      feature: 'media_send',
+      isStrict: true,
+      creatorName: _receiverName ?? widget.name,
+      creatorPhotoUrl: _receiverPhotoUrl,
+      isPrivateChat: true,
+    )) {
       return;
     }
 
@@ -2380,7 +2431,7 @@ class ChatMessageTile extends StatelessWidget {
           if (hasUpsell) ...[
             const SizedBox(height: 8),
             GestureDetector(
-              onTap: () => OfferTrialScreen.show(context),
+              onTap: () => OfferTrialScreen.show(context, isPrivateChat: true),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(

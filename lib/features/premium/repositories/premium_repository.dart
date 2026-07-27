@@ -10,21 +10,46 @@ class PremiumRepository {
   /// Sabse important function: Kya user ye action kar sakta hai?
   /// Agar nahi, to ye function khud Choice Popup ya Offer Page khol dega.
   /// [isStrict] means free message trial is NOT allowed for this feature.
-  bool checkAccessAndShowOffer(BuildContext context, {required String feature, bool isStrict = false}) {
+  /// [creatorName]/[creatorPhotoUrl] personalize the resulting paywall with
+  /// whichever profile the user was interacting with — pass null when there
+  /// isn't a specific one in context.
+  bool checkAccessAndShowOffer(
+    BuildContext context, {
+    required String feature,
+    bool isStrict = false,
+    String? creatorName,
+    String? creatorPhotoUrl,
+    bool isPrivateChat = false,
+  }) {
     final service = PremiumService();
-    
+
     // 1. Check access based on strictness
     bool allowed = isStrict ? service.hasFullAccess : service.hasAccess;
 
     if (allowed) return true;
 
     // 2. If no access, trigger the intelligent decision popup
-    _handleAccessDenied(context);
+    _handleAccessDenied(
+      context,
+      creatorName: creatorName,
+      creatorPhotoUrl: creatorPhotoUrl,
+      isPrivateChat: isPrivateChat,
+    );
     return false;
   }
 
-  void _handleAccessDenied(BuildContext context) {
+  void _handleAccessDenied(
+    BuildContext context, {
+    String? creatorName,
+    String? creatorPhotoUrl,
+    bool isPrivateChat = false,
+  }) {
     // Centralized redirection: Ad-Mode users get Reward Popup, Payer-Mode get Offer Page
-    MonetizationOrchestrator().showChoicePopup(context);
+    MonetizationOrchestrator().showChoicePopup(
+      context,
+      creatorName: creatorName,
+      creatorPhotoUrl: creatorPhotoUrl,
+      isPrivateChat: isPrivateChat,
+    );
   }
 }

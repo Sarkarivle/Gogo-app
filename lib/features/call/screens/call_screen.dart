@@ -524,7 +524,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              OfferTrialScreen.show(context);
+              OfferTrialScreen.show(context, creatorName: widget.remoteName, creatorPhotoUrl: widget.remotePhoto);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orangeAccent,
@@ -727,7 +727,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin, 
       children: [
         _buildActionBtn(Icons.call_end, Colors.redAccent, "Decline", () => CallService().rejectCall()),
         _buildActionBtn(Icons.call, Colors.greenAccent, "Accept", () {
-           if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call')) {
+           if (!PremiumRepository().checkAccessAndShowOffer(
+             context,
+             feature: 'call',
+             creatorName: widget.remoteName,
+             creatorPhotoUrl: widget.remotePhoto,
+           )) {
              CallService().rejectCall();
              return;
            }

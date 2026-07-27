@@ -54,5 +54,7 @@ router.get('/recent-photos/:phone', ChatController.getRecentPhotos);
 router.post('/delete-recent-photo', ChatController.deleteRecentPhotoByUrl);
 router.delete('/photo/:messageId', ChatController.deletePhoto);
 router.post('/call/check-credit', ChatController.checkCallCredit);
+router.get('/call/greeting-audio', ChatController.getCallGreetingAudio);
+router.get('/random-live/videos', ChatController.getRandomLiveVideos);
 
 module.exports = router;

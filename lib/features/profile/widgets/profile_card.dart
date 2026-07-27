@@ -6,9 +6,10 @@ import 'package:gogo/core/services/ad_service.dart';
 import 'package:gogo/core/services/permission_manager.dart';
 import 'package:gogo/features/call/providers/call_service.dart';
 import 'package:gogo/features/call/screens/fake_call_screen.dart';
-import 'package:gogo/features/premium/repositories/premium_repository.dart';
+import 'package:gogo/features/call/services/call_greeting_service.dart';
 import 'package:gogo/features/premium/repositories/call_credits_repository.dart';
-import 'package:gogo/shared/screens/buy_call_credits_screen.dart';
+import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
 
 class ProfileCard extends StatelessWidget {
   final String distance;
@@ -54,20 +55,52 @@ class ProfileCard extends StatelessWidget {
     // Creator profiles have no real device on the other end — route through
     // the call-credits system and a simulated call instead of real WebRTC signaling.
     if (isCreator) {
-      final allowed = await CallCreditsRepository().checkAndConsumeCredit(phone);
+      // Consume a credit if the user has one — but either way, show the same
+      // ring/connect/cut tease before nudging toward the credits store. No
+      // credits shouldn't mean a worse experience than having them.
+      await CallCreditsRepository().checkAndConsumeCredit(phone);
       if (!context.mounted) return;
-      if (!allowed) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const BuyCallCreditsScreen()));
-        return;
-      }
+      final clips = await CallGreetingService().getGreetingClips();
+      if (!context.mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => FakeCallScreen(name: name, photoUrl: photoUrl)),
+        MaterialPageRoute(
+          builder: (_) => FakeCallScreen(
+            name: name,
+            photoUrl: photoUrl,
+            greetingClips: clips,
+            onEnded: (ctx) => MonetizationOrchestrator().showChoicePopup(
+              ctx,
+              creatorName: name,
+              creatorPhotoUrl: photoUrl,
+            ),
+          ),
+        ),
       );
       return;
     }
 
-    if (!PremiumRepository().checkAccessAndShowOffer(context, feature: 'call', isStrict: true)) {
+    // Free-mode users get the same "ring, connect, hear a voice, cut" taste
+    // real callers get before landing on the paywall, instead of an instant
+    // paywall pop-up.
+    if (!PremiumService().hasFullAccess) {
+      final clips = await CallGreetingService().getGreetingClips();
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FakeCallScreen(
+            name: name,
+            photoUrl: photoUrl,
+            greetingClips: clips,
+            onEnded: (ctx) => MonetizationOrchestrator().showChoicePopup(
+              ctx,
+              creatorName: name,
+              creatorPhotoUrl: photoUrl,
+            ),
+          ),
+        ),
+      );
       return;
     }
 

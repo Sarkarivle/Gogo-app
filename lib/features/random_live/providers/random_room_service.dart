@@ -9,7 +9,11 @@ import '../screens/random_searching_screen.dart';
 import '../screens/random_match_screen.dart';
 import '../screens/random_video_call_screen.dart';
 import '../screens/random_live_intro_screen.dart';
+import '../screens/fake_random_call_screen.dart';
+import '../services/random_live_video_service.dart';
 import 'package:gogo/features/chat/repositories/chat_repository.dart';
+import 'package:gogo/features/premium/providers/premium_service.dart';
+import 'package:gogo/core/services/monetization_orchestrator.dart';
 import 'package:gogo/main.dart';
 import 'package:gogo/core/utils/phone_utils.dart';
 
@@ -30,6 +34,14 @@ class RandomRoomService with WidgetsBindingObserver {
   StreamSubscription? _socketSub;
   Timer? _searchTimer;
   bool _isExiting = false;
+
+  // Fake-partner injection for free-mode users: every 1, 2, or 4 real
+  // connections, the next match is a pre-recorded video instead of a real
+  // stranger — see _maybeStartFakeMatch. Threshold re-randomizes each time.
+  int _realConnectCount = 0;
+  int _nextFakeAt = _pickFakeThreshold();
+
+  static int _pickFakeThreshold() => [1, 2, 4][Random().nextInt(3)];
 
   // Signaling Queue for race condition prevention
   final List<Map<String, dynamic>> _signalingQueue = [];
@@ -64,16 +76,82 @@ class RandomRoomService with WidgetsBindingObserver {
     if (state.value == RandomRoomState.searching) return;
 
     state.value = RandomRoomState.searching;
-    
+
     final randomDelay = 1500 + Random().nextInt(2500);
     debugPrint("[RandomRoom] UI Animation start. API delay: ${randomDelay}ms");
 
     _searchTimer?.cancel();
-    _searchTimer = Timer(Duration(milliseconds: randomDelay), () {
-      if (state.value == RandomRoomState.searching) {
-        RandomSocketService().findPartner(userId);
+    _searchTimer = Timer(Duration(milliseconds: randomDelay), () async {
+      if (state.value != RandomRoomState.searching) return;
+
+      // Fake-partner injection: free-mode users get an occasional simulated
+      // match instead of a real stranger (see class doc). Premium users
+      // always get real matching.
+      if (!PremiumService().hasFullAccess && _realConnectCount >= _nextFakeAt) {
+        final startedFake = await _tryStartFakeMatch(context);
+        if (startedFake) return;
       }
+
+      RandomSocketService().findPartner(userId);
     });
+  }
+
+  /// Returns true if a fake match was started (caller should not also start
+  /// a real search this round). Returns false if no fake clips are
+  /// configured on the server or the user backed out of searching in the
+  /// meantime — in either case the caller falls back to a real match.
+  Future<bool> _tryStartFakeMatch(BuildContext context) async {
+    final videos = await RandomLiveVideoService().getFakePartnerVideos();
+    if (videos.isEmpty) return false;
+    if (state.value != RandomRoomState.searching) return false;
+
+    _realConnectCount = 0;
+    _nextFakeAt = _pickFakeThreshold();
+
+    final videoUrl = videos[Random().nextInt(videos.length)];
+    state.value = RandomRoomState.matched;
+
+    final matchContext = MyApp.navigatorKey.currentContext ?? context;
+    if (!matchContext.mounted) return true;
+
+    Navigator.pushReplacement(
+      matchContext,
+      MaterialPageRoute(builder: (_) => const RandomMatchScreen()),
+    );
+
+    // Same "Great Match!" beat real matches get, so the transition feels
+    // identical either way.
+    await Future.delayed(const Duration(milliseconds: 2500));
+    if (state.value != RandomRoomState.matched) return true; // user backed out
+
+    final callContext = MyApp.navigatorKey.currentContext;
+    if (callContext == null || !callContext.mounted) return true;
+
+    state.value = RandomRoomState.inCall;
+    Navigator.pushReplacement(
+      callContext,
+      MaterialPageRoute(
+        builder: (_) => FakeRandomCallScreen(
+          videoUrl: videoUrl,
+          onEnded: (endCtx) {
+            if (_isExiting) return;
+            _isExiting = true;
+            _cleanupFull();
+            Navigator.of(endCtx).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const RandomLiveIntroScreen()),
+              (route) => route.isFirst,
+            ).then((_) {
+              _isExiting = false;
+              final paywallContext = MyApp.navigatorKey.currentContext;
+              if (paywallContext != null && paywallContext.mounted) {
+                MonetizationOrchestrator().showChoicePopup(paywallContext);
+              }
+            });
+          },
+        ),
+      ),
+    );
+    return true;
   }
 
   void _handleSocketEvent(Map<String, dynamic> event) {
@@ -155,6 +233,7 @@ class RandomRoomService with WidgetsBindingObserver {
   }
 
   void _onMatchFound(Map<String, dynamic> data) async {
+    _realConnectCount++; // counts toward the next fake-partner injection
     currentRoomId = data['roomId'];
     partnerId = PhoneUtils.normalize(data['partnerId']);
     role = data['role'];

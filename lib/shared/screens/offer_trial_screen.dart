@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:confetti/confetti.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:gogo/core/api/api_service.dart';
 import 'package:gogo/core/services/analytics_service.dart';
@@ -25,6 +27,19 @@ class OfferTrialScreen extends StatefulWidget {
   final String? googlePlaySubId;
   final String? rzpPlanId;
 
+  /// Whichever chat/profile the user was on when they hit the paywall (e.g.
+  /// mid-call tease, blocked message, locked photo) — used to personalize
+  /// the headline ("Call {creatorName} anytime") instead of a generic pitch.
+  /// Both null falls back to generic copy.
+  final String? creatorName;
+  final String? creatorPhotoUrl;
+
+  /// True when the paywall was triggered by a private-chat feature (Go
+  /// Private banner, locked photo/audio message) rather than the call
+  /// tease — shows the creator photo blurred with a lock overlay instead of
+  /// a clear photo, since the content itself is what's being sold.
+  final bool isPrivateChat;
+
   const OfferTrialScreen({
     super.key,
     required this.offerId,
@@ -34,9 +49,17 @@ class OfferTrialScreen extends StatefulWidget {
     this.googlePlayId,
     this.googlePlaySubId,
     this.rzpPlanId,
+    this.creatorName,
+    this.creatorPhotoUrl,
+    this.isPrivateChat = false,
   });
 
-  static void show(BuildContext context) async {
+  static void show(
+    BuildContext context, {
+    String? creatorName,
+    String? creatorPhotoUrl,
+    bool isPrivateChat = false,
+  }) async {
     final configService = AppConfigService();
 
     // If config is missing, fetch it first before showing screen
@@ -64,6 +87,9 @@ class OfferTrialScreen extends StatefulWidget {
             googlePlayId: offer['googlePlayId'],
             googlePlaySubId: offer['googlePlaySubId'],
             rzpPlanId: offer['rzpPlanId'],
+            creatorName: creatorName,
+            creatorPhotoUrl: creatorPhotoUrl,
+            isPrivateChat: isPrivateChat,
           ),
         ),
       );
@@ -72,11 +98,14 @@ class OfferTrialScreen extends StatefulWidget {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const OfferTrialScreen(
+          builder: (_) => OfferTrialScreen(
             offerId: 'monthly',
             name: '1 Month Premium',
             price: 199,
             duration: 30,
+            creatorName: creatorName,
+            creatorPhotoUrl: creatorPhotoUrl,
+            isPrivateChat: isPrivateChat,
           ),
         ),
       );
@@ -99,14 +128,69 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
   List<Map<String, dynamic>> _plans = [];
   int _selectedPlanIndex = 1; // Default to Monthly (199)
 
+  final PageController _testimonialController = PageController(viewportFraction: 1);
+  int _testimonialPage = 0;
+
+  static const List<Map<String, String>> _testimonials = [
+    {
+      'name': 'Santosh Yadav',
+      'place': 'Patna · Last week',
+      'quote': 'मुझे लगा था बस chat app है लेकिन प्राइवेट मोड और फोटोज 📸 ने सोच बदल दी.. सच में worth it है 💯',
+      'likes': '245',
+    },
+    {
+      'name': 'Rahul Verma',
+      'place': 'Delhi · 3 days ago',
+      'quote': 'Voice call feature best hai, bilkul real jaisa lagta hai. Paisa vasool!',
+      'likes': '189',
+    },
+    {
+      'name': 'Ankit Sharma',
+      'place': 'Lucknow · 2 weeks ago',
+      'quote': 'Privacy ka dhyan rakha gaya hai, screenshots block hone se bharosa badh gaya.',
+      'likes': '312',
+    },
+    {
+      'name': 'Vikas Singh',
+      'place': 'Kanpur · 5 days ago',
+      'quote': 'Pehle free mein try kiya, phir premium le liya — koi regret nahi hai.',
+      'likes': '156',
+    },
+    {
+      'name': 'Deepak Kumar',
+      'place': 'Jaipur · 1 week ago',
+      'quote': 'Exclusive photos aur unlimited messages ka combo sabse best deal laga mujhe.',
+      'likes': '278',
+    },
+    {
+      'name': 'Amit Yadav',
+      'place': 'Varanasi · 4 days ago',
+      'quote': 'App smooth chalta hai aur support bhi turant reply karta hai. Recommended!',
+      'likes': '203',
+    },
+  ];
+
   late ConfettiController _confettiController;
   YoutubePlayerController? _youtubeController;
+
+  // Urgency countdown shown near the bottom bar ("offer ends in").
+  Timer? _countdownTimer;
+  Duration _offerCountdown = const Duration(minutes: 23);
 
   @override
   void initState() {
     super.initState();
     // 1. Load initial plans from existing config
     _initPlans();
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _offerCountdown = _offerCountdown.inSeconds > 0
+            ? _offerCountdown - const Duration(seconds: 1)
+            : const Duration(minutes: 23);
+      });
+    });
 
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 3));
@@ -195,9 +279,17 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _confettiController.dispose();
     _youtubeController?.dispose();
+    _testimonialController.dispose();
     super.dispose();
+  }
+
+  String get _formattedCountdown {
+    final m = _offerCountdown.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = _offerCountdown.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   void _initYoutubeVideo() {
@@ -661,7 +753,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
             side: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
-        title: const Text("Exit GoGo?",
+        title: const Text("Exit Lulu?",
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: const Text("Are you sure you want to close the app?",
             style: TextStyle(color: Colors.white70, fontSize: 14)),
@@ -793,33 +885,35 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                                     icon: const Icon(Icons.arrow_back,
                                         color: Colors.white),
                                     onPressed: _handleBackPress),
-                                TextButton(
-                                    onPressed: () => _launchUrl('faq'),
-                                    child: const Text('FAQs',
-                                        style: TextStyle(
-                                            color: Colors.white70,
-                                            fontWeight: FontWeight.bold))),
+                                GestureDetector(
+                                  onTap: () => _launchUrl('faq'),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: const BoxDecoration(
+                                        color: Colors.black26,
+                                        shape: BoxShape.circle),
+                                    child: const Icon(Icons.volume_up_rounded,
+                                        color: Colors.white70, size: 18),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.orangeAccent,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              "LIMITED TIME PRICE DROP",
-                              style: TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(height: 15),
+                          const SizedBox(height: 20),
+                          _buildCreatorHero(),
+                          const SizedBox(height: 24),
+                          _buildFeatureList(),
+                          const SizedBox(height: 24),
+                          _buildSafetyCard(),
+                          const SizedBox(height: 20),
+                          _buildTestimonialCard(),
+                          const SizedBox(height: 14),
+                          _buildDots(),
+                          const SizedBox(height: 24),
+                          _buildJoinPill(),
+                          const SizedBox(height: 30),
                           const Text("CHOOSE YOUR PREMIUM PLAN",
+                              textAlign: TextAlign.center,
                               style: TextStyle(
                                   color: Colors.white70,
                                   fontSize: 13,
@@ -838,62 +932,27 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             _selectedPlanIndex == 1
                                 ? "Recommended for you"
                                 : "Unlock all premium features",
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                                 color: Colors.pinkAccent.withValues(alpha: 0.8),
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 15),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Column(
-                              children: [
-                                RichText(
-                                  textAlign: TextAlign.center,
-                                  text: TextSpan(
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                        height: 1.3),
-                                    children: [
-                                      TextSpan(
-                                          text: "$currentArea ",
-                                          style: const TextStyle(
-                                              color: Colors.pinkAccent)),
-                                      TextSpan(
-                                          text:
-                                              "mein ${_getBoysCount(currentArea)} active profiles aapka intezaar kar rahi h!"),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 25),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 25, vertical: 15),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.03),
-                                    borderRadius: BorderRadius.circular(25),
-                                    border: Border.all(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.05)),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      _buildSmallBenefit(
-                                          Icons.photo_library_outlined,
-                                          "Photo Unlock kare"),
-                                      _buildSmallBenefit(
-                                          Icons.chat_bubble_outline,
-                                          "Unlimited Message bheje"),
-                                      _buildSmallBenefit(
-                                          Icons.videocam_outlined,
-                                          "Unlimited Video Call"),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildBottomLink("Terms & Conditions",
+                                  () => _launchUrl('terms_conditions')),
+                              const Text("  •  ",
+                                  style: TextStyle(color: Colors.white38)),
+                              _buildBottomLink("Privacy Policy",
+                                  () => _launchUrl('privacy_policy')),
+                              const Text("  •  ",
+                                  style: TextStyle(color: Colors.white38)),
+                              _buildBottomLink(
+                                  "Refund Policy", () => _launchUrl('refund_policy')),
+                            ],
                           ),
                         ],
                       ),
@@ -903,41 +962,31 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                 ),
               ),
 
-              // Bottom Links
+              // Sticky urgency timer, stays pinned above the bottom pay bar.
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Column(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.shield_outlined,
-                            color: Colors.green.withValues(alpha: 0.5),
-                            size: 12),
-                        const SizedBox(width: 4),
-                        const Text("100% Safe & Secure Payment",
-                            style: TextStyle(
-                                color: Colors.white24,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildBottomLink("Terms & Conditions",
-                            () => _launchUrl('terms_conditions')),
-                        const Text("  •  ",
-                            style: TextStyle(color: Colors.white38)),
-                        _buildBottomLink("Privacy Policy",
-                            () => _launchUrl('privacy_policy')),
-                        const Text("  •  ",
-                            style: TextStyle(color: Colors.white38)),
-                        _buildBottomLink(
-                            "Refund Policy", () => _launchUrl('refund_policy')),
-                      ],
-                    ),
+                    const Icon(Icons.timer_outlined,
+                        color: Colors.pinkAccent, size: 12),
+                    const SizedBox(width: 4),
+                    Text("$_formattedCountdown offer ends",
+                        style: const TextStyle(
+                            color: Colors.pinkAccent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold)),
+                    const Text("  ·  ",
+                        style: TextStyle(color: Colors.white24, fontSize: 10)),
+                    Icon(Icons.shield_outlined,
+                        color: Colors.green.withValues(alpha: 0.5),
+                        size: 12),
+                    const SizedBox(width: 4),
+                    const Text("Secure UPI",
+                        style: TextStyle(
+                            color: Colors.white24,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -1035,19 +1084,414 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
     );
   }
 
-  Widget _buildSmallBenefit(IconData icon, String text) {
+  String get _durationLabel {
+    final duration = _plans.isNotEmpty
+        ? (_plans[_selectedPlanIndex]['duration'] as num?)?.toInt() ?? widget.duration
+        : widget.duration;
+    if (duration == 30) return "Poore mahine ke liye";
+    if (duration == 7) return "1 hafte ke liye";
+    if (duration == 90) return "3 mahine ke liye";
+    return "$duration din ke liye";
+  }
+
+  int get _discountPercent {
+    if (_plans.isEmpty) return 50;
+    final plan = _plans[_selectedPlanIndex];
+    final price = (plan['price'] as num?)?.toDouble() ?? 0;
+    final original = (plan['originalPrice'] as num?)?.toDouble() ?? 0;
+    if (original <= 0 || price >= original) return 0;
+    return (((original - price) / original) * 100).round();
+  }
+
+  Widget _buildCreatorHero() {
+    final name = widget.creatorName;
+    final isPrivate = widget.isPrivateChat;
+    return Column(
+      children: [
+        Container(
+          width: 130,
+          height: 130,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: const LinearGradient(
+                colors: [Color(0xFF6A3EA1), Color(0xFFEC297B)]),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.pinkAccent.withValues(alpha: 0.25),
+                  blurRadius: 24,
+                  spreadRadius: 2),
+            ],
+          ),
+          padding: const EdgeInsets.all(3),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(21),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                widget.creatorPhotoUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: ApiService.getSecureUrl(widget.creatorPhotoUrl!),
+                        fit: BoxFit.cover,
+                        errorWidget: (context, error, stackTrace) =>
+                            _heroPhotoPlaceholder(),
+                      )
+                    : _heroPhotoPlaceholder(),
+                if (isPrivate) ...[
+                  // Private-chat content is being sold, so tease it blurred
+                  // instead of showing the photo clearly.
+                  BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                    child: Container(color: Colors.black.withValues(alpha: 0.25)),
+                  ),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: Colors.black45, shape: BoxShape.circle),
+                      child: const Icon(Icons.lock_rounded,
+                          color: Colors.white, size: 28),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          isPrivate
+              ? (name != null ? "Unlock Private Chat with $name" : "Unlock Private Chat")
+              : (name != null ? "Call $name anytime" : "Unlock Full Access Now"),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              color: Colors.amber,
+              fontSize: 27,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.2),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          isPrivate
+              ? (name != null
+                  ? "$name ke saath romantic chats & exclusive photos"
+                  : "Romantic chats & exclusive photos unlock karein")
+              : (name != null
+                  ? "$name se baat karo, jab mann kare"
+                  : "Jo mann mein hai, wahi karo — bina kisi rukawat ke"),
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        const SizedBox(height: 18),
+        if (_discountPercent > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.greenAccent, width: 1.2),
+            ),
+            child: Text(
+              "$_discountPercent% DISCOUNT",
+              style: const TextStyle(
+                  color: Colors.greenAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5),
+            ),
+          ),
+        const SizedBox(height: 14),
+        if (_plans.isNotEmpty)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (_plans[_selectedPlanIndex]['originalPrice'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8, bottom: 6),
+                  child: Text(
+                    "₹${_plans[_selectedPlanIndex]['originalPrice']}",
+                    style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 18,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: Colors.white38),
+                  ),
+                ),
+              Text(
+                "₹${_plans[_selectedPlanIndex]['price']}",
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 44,
+                    fontWeight: FontWeight.w700,
+                    height: 1.0),
+              ),
+            ],
+          ),
+        const SizedBox(height: 4),
+        Text(_durationLabel,
+            style: TextStyle(
+                color: Colors.pinkAccent.withValues(alpha: 0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _heroPhotoPlaceholder() {
+    return Container(
+      color: Colors.black26,
+      child: const Icon(Icons.favorite_rounded, color: Colors.white54, size: 44),
+    );
+  }
+
+  Widget _buildFeatureList() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          _buildFeatureRow(Icons.call_rounded, const Color(0xFF6A3EA1),
+              "Voice Calls", "Jab bhi mann ho, seedhe baat karo"),
+          const SizedBox(height: 16),
+          _buildFeatureRow(Icons.favorite_rounded, Colors.pinkAccent,
+              "Private Chats", "Jo maan mai hai, woh saare baat karo"),
+          const SizedBox(height: 16),
+          _buildFeatureRow(Icons.camera_alt_rounded, Colors.orangeAccent,
+              "Exclusive Photos",
+              "Sirf premium members ke liye special photos"),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureRow(
+      IconData icon, Color color, String title, String subtitle) {
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 2),
+              Text(subtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSafetyCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                SizedBox(width: 24),
+                Expanded(
+                  child: Text("100% Safe",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900)),
+                ),
+                Icon(Icons.volume_up_rounded, color: Colors.white24, size: 18),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text("Tumhari privacy humesha safe hai",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 20),
+            _buildSafetyRow(Icons.block_rounded, Colors.redAccent,
+                "Screenshots blocked", "Poori app mein koi screenshot nahi le sakta"),
+            const SizedBox(height: 16),
+            _buildSafetyRow(Icons.delete_outline_rounded, Colors.orangeAccent,
+                "Auto-delete chats",
+                "Private mode se niklo toh sab messages apne aap delete"),
+            const SizedBox(height: 16),
+            _buildSafetyRow(Icons.lock_outline_rounded, Colors.tealAccent,
+                "No data stored",
+                "Na phone mein na server pe, kuch bhi save nahi hota"),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSafetyRow(
+      IconData icon, Color color, String title, String subtitle) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
+          child: Icon(icon, color: color, size: 18),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 2),
+              Text(subtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTestimonialCard() {
+    return SizedBox(
+      height: 190,
+      child: PageView.builder(
+        controller: _testimonialController,
+        itemCount: _testimonials.length,
+        onPageChanged: (i) => setState(() => _testimonialPage = i),
+        itemBuilder: (context, i) {
+          final t = _testimonials[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Colors.white10,
+                        child: Icon(Icons.person, color: Colors.white38, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t['name']!,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold)),
+                            Text(t['place']!,
+                                style: const TextStyle(
+                                    color: Colors.white38, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                      Row(
+                        children: List.generate(
+                            5,
+                            (i) => const Icon(Icons.star_rounded,
+                                color: Colors.amber, size: 14)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: Text(
+                      t['quote']!,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13, height: 1.5),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.favorite, color: Colors.pinkAccent, size: 14),
+                      const SizedBox(width: 6),
+                      Text("${t['likes']} found this helpful",
+                          style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(_testimonials.length, (i) {
+        final isActive = i == _testimonialPage;
+        return GestureDetector(
+          onTap: () => _testimonialController.animateToPage(i,
+              duration: const Duration(milliseconds: 300), curve: Curves.easeOut),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: isActive ? 16 : 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? Colors.pinkAccent
+                  : Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildJoinPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.4)),
+        color: Colors.pinkAccent.withValues(alpha: 0.08),
+      ),
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.pinkAccent, size: 18),
-          const SizedBox(width: 12),
-          Text(text,
-              style: const TextStyle(
+          Icon(Icons.groups_rounded, color: Colors.pinkAccent, size: 18),
+          SizedBox(width: 8),
+          Text("Join 50,000+ premium members",
+              style: TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500)),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -1174,7 +1618,7 @@ class _OfferTrialScreenState extends State<OfferTrialScreen> {
                             Flexible(
                                 child: Text(
                                     _isUpiEnabled
-                                        ? "Activate Now"
+                                        ? "Pay ₹${_plans.isNotEmpty ? _plans[_selectedPlanIndex]['price'] : widget.price}"
                                         : "Pay via Play Store",
                                     style: const TextStyle(
                                         fontSize: 15,

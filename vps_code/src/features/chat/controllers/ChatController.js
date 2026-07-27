@@ -411,6 +411,49 @@ exports.checkCallCredit = async (req, res) => {
     }
 };
 
+// Serves the list of pre-recorded "hello" greeting clips played during the
+// simulated call preview (free-mode paywall tease and creator fake calls).
+// Clips live as static files in public/audio/greetings/ so they can be
+// swapped/added by dropping a new file on the server — no app release needed.
+exports.getCallGreetingAudio = (req, res) => {
+    try {
+        const dir = path.join(process.cwd(), 'public', 'audio', 'greetings');
+        if (!fs.existsSync(dir)) return res.json({ success: true, clips: [] });
+
+        const audioExt = /\.(mp3|m4a|wav|aac|ogg)$/i;
+        const clips = fs.readdirSync(dir)
+            .filter((f) => audioExt.test(f))
+            .map((f) => `/audio/greetings/${f}`);
+
+        res.json({ success: true, clips });
+    } catch (e) {
+        console.error("getCallGreetingAudio Error:", e);
+        res.json({ success: true, clips: [] });
+    }
+};
+
+// Serves the list of fake-partner video clips played during Random Live
+// matching (see FakeRandomCallScreen). Clips live as static files in
+// public/video/randomlive/ so they can be swapped/added without an app
+// release — see AdminController.getRandomLiveVideos for the admin-side
+// upload/list/delete endpoints.
+exports.getRandomLiveVideos = (req, res) => {
+    try {
+        const dir = path.join(process.cwd(), 'public', 'video', 'randomlive');
+        if (!fs.existsSync(dir)) return res.json({ success: true, clips: [] });
+
+        const videoExt = /\.(mp4|mov|webm|m4v)$/i;
+        const clips = fs.readdirSync(dir)
+            .filter((f) => videoExt.test(f))
+            .map((f) => `/video/randomlive/${f}`);
+
+        res.json({ success: true, clips });
+    } catch (e) {
+        console.error("getRandomLiveVideos Error:", e);
+        res.json({ success: true, clips: [] });
+    }
+};
+
 exports.deleteRecentPhotoByUrl = async (req, res) => {
     try {
         let phone = normalize(req.body.phone);

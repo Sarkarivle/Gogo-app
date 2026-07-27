@@ -34,6 +34,46 @@ const creatorStorage = multer.diskStorage({
 });
 const uploadCreatorPhoto = multer({ storage: creatorStorage });
 
+const greetingAudioStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = path.join(process.cwd(), 'public', 'audio', 'greetings');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, 'greeting_' + Date.now() + path.extname(file.originalname));
+    }
+});
+const uploadGreetingAudio = multer({
+    storage: greetingAudioStorage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB — these are short voice clips
+    fileFilter: (req, file, cb) => {
+        const allowed = /mp3|m4a|wav|aac|ogg|mpeg/i;
+        if (allowed.test(path.extname(file.originalname)) || allowed.test(file.mimetype)) return cb(null, true);
+        cb(new Error('Only audio files (mp3, m4a, wav, aac, ogg) are allowed'));
+    }
+});
+
+const randomLiveVideoStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = path.join(process.cwd(), 'public', 'video', 'randomlive');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, 'randomlive_' + Date.now() + path.extname(file.originalname));
+    }
+});
+const uploadRandomLiveVideo = multer({
+    storage: randomLiveVideoStorage,
+    limits: { fileSize: 80 * 1024 * 1024 }, // 80MB — short video clips
+    fileFilter: (req, file, cb) => {
+        const allowed = /mp4|mov|webm|quicktime|m4v/i;
+        if (allowed.test(path.extname(file.originalname)) || allowed.test(file.mimetype)) return cb(null, true);
+        cb(new Error('Only video files (mp4, mov, webm) are allowed'));
+    }
+});
+
 // Safety function to prevent "Undefined" crash
 const s = (fn) => fn || ((req, res) => res.status(500).json({ error: "Not Implemented" }));
 
@@ -52,6 +92,12 @@ router.get('/users', s(AdminController.getAllUsers));
 router.get('/creators', s(AdminController.getCreators));
 router.post('/creators', uploadCreatorPhoto.single('photo'), s(AdminController.createCreator));
 router.delete('/creators/:id', s(AdminController.deleteCreator));
+router.get('/creators/greeting-audio', s(AdminController.getGreetingAudioClips));
+router.post('/creators/greeting-audio', uploadGreetingAudio.single('audio'), s(AdminController.uploadGreetingAudioClip));
+router.delete('/creators/greeting-audio/:filename', s(AdminController.deleteGreetingAudioClip));
+router.get('/creators/random-live-videos', s(AdminController.getRandomLiveVideos));
+router.post('/creators/random-live-videos', uploadRandomLiveVideo.single('video'), s(AdminController.uploadRandomLiveVideo));
+router.delete('/creators/random-live-videos/:filename', s(AdminController.deleteRandomLiveVideo));
 router.get('/user/:phone/full', s(AdminController.getUserFullProfile));
 router.get('/user/:phone/timeline', s(AdminController.getUserTimeline));
 router.post('/user/:phone/update', s(AdminController.updateUserStatus));

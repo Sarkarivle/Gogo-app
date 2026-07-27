@@ -1181,3 +1181,103 @@ exports.deleteCreator = async (req, res) => {
         res.status(500).json({ success: false });
     }
 };
+
+// ============ CREATOR CALL GREETING AUDIO ============
+// The simulated-call "hello" clips played in the app's fake-call preview
+// (see FakeCallScreen / GET /api/chat/call/greeting-audio). Stored as plain
+// files in public/audio/greetings/ — no DB record needed, the folder itself
+// is the source of truth.
+const GREETING_AUDIO_DIR = path.join(process.cwd(), 'public', 'audio', 'greetings');
+const GREETING_AUDIO_EXT = /\.(mp3|m4a|wav|aac|ogg)$/i;
+
+exports.getGreetingAudioClips = async (req, res) => {
+    try {
+        if (!fs.existsSync(GREETING_AUDIO_DIR)) return res.json({ success: true, clips: [] });
+        const clips = fs.readdirSync(GREETING_AUDIO_DIR)
+            .filter((f) => GREETING_AUDIO_EXT.test(f))
+            .map((f) => {
+                const stat = fs.statSync(path.join(GREETING_AUDIO_DIR, f));
+                return { filename: f, url: `/audio/greetings/${f}`, sizeKb: Math.round(stat.size / 1024), uploadedAt: stat.mtime };
+            })
+            .sort((a, b) => b.uploadedAt - a.uploadedAt);
+        res.json({ success: true, clips });
+    } catch (e) {
+        console.error("GetGreetingAudioClips Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+exports.uploadGreetingAudioClip = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "Audio file is required" });
+        await logAction(req, 'UPLOAD_GREETING_AUDIO', 'creator_settings', `Uploaded greeting clip: ${req.file.filename}`);
+        res.json({ success: true, clip: { filename: req.file.filename, url: `/audio/greetings/${req.file.filename}` } });
+    } catch (e) {
+        console.error("UploadGreetingAudioClip Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+exports.deleteGreetingAudioClip = async (req, res) => {
+    try {
+        const filename = path.basename(req.params.filename); // strip any path traversal
+        const filePath = path.join(GREETING_AUDIO_DIR, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, message: "Clip not found" });
+        fs.unlinkSync(filePath);
+        await logAction(req, 'DELETE_GREETING_AUDIO', 'creator_settings', `Deleted greeting clip: ${filename}`);
+        res.json({ success: true });
+    } catch (e) {
+        console.error("DeleteGreetingAudioClip Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+// ============ RANDOM LIVE FAKE-PARTNER VIDEOS ============
+// Short pre-recorded video clips played during Random Live matching to
+// simulate an occasional "partner" for free-mode users (see
+// FakeRandomCallScreen / GET /api/chat/random-live/videos). Stored as plain
+// files in public/video/randomlive/, same pattern as the greeting audio.
+const RANDOM_LIVE_VIDEO_DIR = path.join(process.cwd(), 'public', 'video', 'randomlive');
+const RANDOM_LIVE_VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i;
+
+exports.getRandomLiveVideos = async (req, res) => {
+    try {
+        if (!fs.existsSync(RANDOM_LIVE_VIDEO_DIR)) return res.json({ success: true, clips: [] });
+        const clips = fs.readdirSync(RANDOM_LIVE_VIDEO_DIR)
+            .filter((f) => RANDOM_LIVE_VIDEO_EXT.test(f))
+            .map((f) => {
+                const stat = fs.statSync(path.join(RANDOM_LIVE_VIDEO_DIR, f));
+                return { filename: f, url: `/video/randomlive/${f}`, sizeKb: Math.round(stat.size / 1024), uploadedAt: stat.mtime };
+            })
+            .sort((a, b) => b.uploadedAt - a.uploadedAt);
+        res.json({ success: true, clips });
+    } catch (e) {
+        console.error("GetRandomLiveVideos Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+exports.uploadRandomLiveVideo = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: "Video file is required" });
+        await logAction(req, 'UPLOAD_RANDOM_LIVE_VIDEO', 'random_live_settings', `Uploaded random-live video: ${req.file.filename}`);
+        res.json({ success: true, clip: { filename: req.file.filename, url: `/video/randomlive/${req.file.filename}` } });
+    } catch (e) {
+        console.error("UploadRandomLiveVideo Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};
+
+exports.deleteRandomLiveVideo = async (req, res) => {
+    try {
+        const filename = path.basename(req.params.filename); // strip any path traversal
+        const filePath = path.join(RANDOM_LIVE_VIDEO_DIR, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, message: "Video not found" });
+        fs.unlinkSync(filePath);
+        await logAction(req, 'DELETE_RANDOM_LIVE_VIDEO', 'random_live_settings', `Deleted random-live video: ${filename}`);
+        res.json({ success: true });
+    } catch (e) {
+        console.error("DeleteRandomLiveVideo Error:", e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+};

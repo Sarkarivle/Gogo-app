@@ -1,9 +1,54 @@
+let creatorActiveTab = 'list';
+
 async function loadCreators() {
     const modTitle = document.getElementById('modTitle');
     const mainContent = document.getElementById('mainContent');
     modTitle.innerText = "Creator Manager";
 
     mainContent.innerHTML = `
+        <div class="space-y-6">
+            <div class="flex space-x-2 glass p-1.5 rounded-2xl w-fit">
+                <button onclick="switchCreatorTab('list')" id="creatorTab-list" class="creator-tab px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition">
+                    <i class="fas fa-user-astronaut mr-2"></i> Creator List
+                </button>
+                <button onclick="switchCreatorTab('settings')" id="creatorTab-settings" class="creator-tab px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition">
+                    <i class="fas fa-sliders mr-2"></i> Creator Settings
+                </button>
+                <button onclick="switchCreatorTab('randomvideos')" id="creatorTab-randomvideos" class="creator-tab px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition">
+                    <i class="fas fa-clapperboard mr-2"></i> Random Videos
+                </button>
+            </div>
+            <div id="creatorTabContent"></div>
+        </div>
+    `;
+
+    renderCreatorTabStyles();
+    await switchCreatorTab(creatorActiveTab);
+}
+
+function renderCreatorTabStyles() {
+    document.querySelectorAll('.creator-tab').forEach((el) => {
+        const isActive = el.id === `creatorTab-${creatorActiveTab}`;
+        el.className = `creator-tab px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition ${isActive ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-slate-500 hover:text-white'}`;
+    });
+}
+
+async function switchCreatorTab(tab) {
+    creatorActiveTab = tab;
+    renderCreatorTabStyles();
+    if (tab === 'settings') {
+        await renderCreatorSettingsTab();
+    } else if (tab === 'randomvideos') {
+        await renderRandomVideosTab();
+    } else {
+        await renderCreatorListTab();
+    }
+}
+
+// ============ TAB 1: Creator List (existing feed-profile management) ============
+async function renderCreatorListTab() {
+    const content = document.getElementById('creatorTabContent');
+    content.innerHTML = `
         <div class="space-y-6">
             <div class="flex justify-between items-center">
                 <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Profiles shown in the app's Discover feed</p>
@@ -19,7 +64,6 @@ async function loadCreators() {
             </div>
         </div>
     `;
-
     await refreshCreatorGrid();
 }
 
@@ -158,6 +202,236 @@ async function deleteCreator(id) {
         await API.request(`/api/admin/creators/${id}`, { method: 'DELETE' });
         showSystemToast("Creator Removed", "Profile removed from feed", 'bg-orange-500');
         await refreshCreatorGrid();
+    } catch (e) {
+        showSystemToast("Error", e.message, 'bg-red-500');
+    }
+}
+
+// ============ TAB 2: Creator Settings (simulated-call greeting audio) ============
+async function renderCreatorSettingsTab() {
+    const content = document.getElementById('creatorTabContent');
+    content.innerHTML = `
+        <div class="space-y-8 max-w-3xl">
+            <div class="glass rounded-[2rem] p-8">
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Simulated Call — Greeting Voice</p>
+                <h2 class="text-white text-lg font-black mb-2">"Hello" clips played on the fake-call preview</h2>
+                <p class="text-slate-500 text-xs leading-relaxed mb-6">
+                    When a free-mode user (or a user out of call credits) taps Call, the app rings and then plays one of
+                    these clips at random before cutting to the paywall / buy-credits screen. Upload short voice clips
+                    here — they go live in the app immediately, no update needed.
+                </p>
+
+                <label class="block border-2 border-dashed border-white/10 rounded-2xl p-8 text-center cursor-pointer hover:border-orange-500/50 transition" id="greetingDropZone">
+                    <i class="fas fa-cloud-arrow-up text-3xl text-slate-600 mb-3"></i>
+                    <p class="text-slate-400 text-xs font-bold">Click to choose an audio file</p>
+                    <p class="text-slate-600 text-[10px] mt-1">MP3, M4A, WAV, AAC or OGG — max 10MB</p>
+                    <input type="file" id="greetingAudioInput" accept=".mp3,.m4a,.wav,.aac,.ogg,audio/*" class="hidden">
+                </label>
+                <p id="greetingUploadStatus" class="text-xs font-bold text-center mt-4 hidden"></p>
+            </div>
+
+            <div>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-4">Live Clips</p>
+                <div id="greetingClipsList" class="space-y-3">
+                    <div class="glass p-4 rounded-2xl animate-pulse h-16"></div>
+                    <div class="glass p-4 rounded-2xl animate-pulse h-16"></div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('greetingAudioInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) uploadGreetingAudio(file);
+    });
+
+    await refreshGreetingClipsList();
+}
+
+async function refreshGreetingClipsList() {
+    const list = document.getElementById('greetingClipsList');
+    if (!list) return;
+    try {
+        const res = await API.get('/admin/creators/greeting-audio');
+        const clips = res.clips || [];
+        if (clips.length === 0) {
+            list.innerHTML = `
+                <div class="glass rounded-2xl p-8 text-center">
+                    <i class="fas fa-microphone-slash text-slate-700 text-2xl mb-2"></i>
+                    <p class="text-slate-500 text-xs font-bold">No greeting clips uploaded yet — the fake call currently ends silently.</p>
+                </div>`;
+        } else {
+            list.innerHTML = clips.map(greetingClipHtml).join('');
+        }
+    } catch (e) {
+        list.innerHTML = `<div class="text-center py-8 text-red-500 text-xs font-bold">Failed to load clips: ${e.message}</div>`;
+    }
+}
+
+function greetingClipHtml(clip) {
+    const uploadedAt = clip.uploadedAt ? new Date(clip.uploadedAt).toLocaleString() : '';
+    return `
+    <div class="glass rounded-2xl p-4 flex items-center gap-4 animate-fade">
+        <div class="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
+            <i class="fas fa-waveform-lines text-orange-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-white text-xs font-bold truncate">${clip.filename}</p>
+            <p class="text-slate-600 text-[10px]">${clip.sizeKb} KB &middot; ${uploadedAt}</p>
+        </div>
+        <audio controls preload="none" src="${clip.url}" class="h-9" style="max-width: 220px;"></audio>
+        <button onclick="deleteGreetingAudio('${clip.filename}')" class="w-9 h-9 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition border border-red-500/30 shrink-0">
+            <i class="fas fa-trash text-xs"></i>
+        </button>
+    </div>`;
+}
+
+async function uploadGreetingAudio(file) {
+    const statusEl = document.getElementById('greetingUploadStatus');
+    statusEl.className = 'text-xs font-bold text-center mt-4 text-slate-400';
+    statusEl.textContent = `Uploading ${file.name}...`;
+    statusEl.classList.remove('hidden');
+
+    const fd = new FormData();
+    fd.append('audio', file);
+
+    try {
+        const res = await API.uploadFile('/admin/creators/greeting-audio', fd);
+        if (!res.success) throw new Error(res.message || 'Upload failed');
+        statusEl.className = 'text-xs font-bold text-center mt-4 text-emerald-500';
+        statusEl.textContent = 'Uploaded — now live in the app';
+        showSystemToast("Greeting Uploaded", `${file.name} is now live`, 'bg-emerald-500');
+        await refreshGreetingClipsList();
+    } catch (e) {
+        statusEl.className = 'text-xs font-bold text-center mt-4 text-red-500';
+        statusEl.textContent = e.message;
+        showSystemToast("Upload Failed", e.message, 'bg-red-500');
+    } finally {
+        document.getElementById('greetingAudioInput').value = '';
+    }
+}
+
+async function deleteGreetingAudio(filename) {
+    if (!confirm(`Remove "${filename}" from the greeting rotation?`)) return;
+    try {
+        await API.request(`/api/admin/creators/greeting-audio/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        showSystemToast("Clip Removed", filename, 'bg-orange-500');
+        await refreshGreetingClipsList();
+    } catch (e) {
+        showSystemToast("Error", e.message, 'bg-red-500');
+    }
+}
+
+// ============ TAB 3: Random Videos (fake-partner videos for Random Live) ============
+async function renderRandomVideosTab() {
+    const content = document.getElementById('creatorTabContent');
+    content.innerHTML = `
+        <div class="space-y-8 max-w-3xl">
+            <div class="glass rounded-[2rem] p-8">
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Random Live — Fake Partner Videos</p>
+                <h2 class="text-white text-lg font-black mb-2">Videos played as a "partner" during random matching</h2>
+                <p class="text-slate-500 text-xs leading-relaxed mb-6">
+                    For free-mode users, every few real random-match connections the app plays one of these clips
+                    full-screen instead of matching with a real stranger — designed to look like a normal live video
+                    chat. The clip auto-ends after a few seconds and the user is nudged toward premium. Upload short
+                    clips (ideally with someone talking) here — they go live in the app immediately, no update needed.
+                </p>
+
+                <label class="block border-2 border-dashed border-white/10 rounded-2xl p-8 text-center cursor-pointer hover:border-orange-500/50 transition" id="randomVideoDropZone">
+                    <i class="fas fa-film text-3xl text-slate-600 mb-3"></i>
+                    <p class="text-slate-400 text-xs font-bold">Click to choose a video file</p>
+                    <p class="text-slate-600 text-[10px] mt-1">MP4, MOV or WEBM — max 80MB</p>
+                    <input type="file" id="randomVideoInput" accept=".mp4,.mov,.webm,video/*" class="hidden">
+                </label>
+                <p id="randomVideoUploadStatus" class="text-xs font-bold text-center mt-4 hidden"></p>
+            </div>
+
+            <div>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-4">Live Clips</p>
+                <div id="randomVideoClipsList" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="glass p-4 rounded-2xl animate-pulse h-40"></div>
+                    <div class="glass p-4 rounded-2xl animate-pulse h-40"></div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('randomVideoInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) uploadRandomVideo(file);
+    });
+
+    await refreshRandomVideoClipsList();
+}
+
+async function refreshRandomVideoClipsList() {
+    const list = document.getElementById('randomVideoClipsList');
+    if (!list) return;
+    try {
+        const res = await API.get('/admin/creators/random-live-videos');
+        const clips = res.clips || [];
+        if (clips.length === 0) {
+            list.innerHTML = `
+                <div class="col-span-full glass rounded-2xl p-8 text-center">
+                    <i class="fas fa-video-slash text-slate-700 text-2xl mb-2"></i>
+                    <p class="text-slate-500 text-xs font-bold">No videos uploaded yet — Random Live only matches with real users right now.</p>
+                </div>`;
+        } else {
+            list.innerHTML = clips.map(randomVideoClipHtml).join('');
+        }
+    } catch (e) {
+        list.innerHTML = `<div class="col-span-full text-center py-8 text-red-500 text-xs font-bold">Failed to load clips: ${e.message}</div>`;
+    }
+}
+
+function randomVideoClipHtml(clip) {
+    const uploadedAt = clip.uploadedAt ? new Date(clip.uploadedAt).toLocaleString() : '';
+    return `
+    <div class="glass rounded-2xl p-3 animate-fade">
+        <video controls preload="metadata" src="${clip.url}" class="w-full h-40 object-cover rounded-xl bg-black"></video>
+        <div class="flex items-center justify-between mt-3">
+            <div class="min-w-0">
+                <p class="text-white text-xs font-bold truncate">${clip.filename}</p>
+                <p class="text-slate-600 text-[10px]">${clip.sizeKb} KB &middot; ${uploadedAt}</p>
+            </div>
+            <button onclick="deleteRandomVideo('${clip.filename}')" class="w-9 h-9 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition border border-red-500/30 shrink-0">
+                <i class="fas fa-trash text-xs"></i>
+            </button>
+        </div>
+    </div>`;
+}
+
+async function uploadRandomVideo(file) {
+    const statusEl = document.getElementById('randomVideoUploadStatus');
+    statusEl.className = 'text-xs font-bold text-center mt-4 text-slate-400';
+    statusEl.textContent = `Uploading ${file.name}...`;
+    statusEl.classList.remove('hidden');
+
+    const fd = new FormData();
+    fd.append('video', file);
+
+    try {
+        const res = await API.uploadFile('/admin/creators/random-live-videos', fd);
+        if (!res.success) throw new Error(res.message || 'Upload failed');
+        statusEl.className = 'text-xs font-bold text-center mt-4 text-emerald-500';
+        statusEl.textContent = 'Uploaded — now live in the app';
+        showSystemToast("Video Uploaded", `${file.name} is now live`, 'bg-emerald-500');
+        await refreshRandomVideoClipsList();
+    } catch (e) {
+        statusEl.className = 'text-xs font-bold text-center mt-4 text-red-500';
+        statusEl.textContent = e.message;
+        showSystemToast("Upload Failed", e.message, 'bg-red-500');
+    } finally {
+        document.getElementById('randomVideoInput').value = '';
+    }
+}
+
+async function deleteRandomVideo(filename) {
+    if (!confirm(`Remove "${filename}" from the Random Live rotation?`)) return;
+    try {
+        await API.request(`/api/admin/creators/random-live-videos/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        showSystemToast("Video Removed", filename, 'bg-orange-500');
+        await refreshRandomVideoClipsList();
     } catch (e) {
         showSystemToast("Error", e.message, 'bg-red-500');
     }

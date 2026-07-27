@@ -153,10 +153,25 @@ class MonetizationOrchestrator {
   }
 
   /// Master Interceptor for Chat/Feature Limits
-  void showChoicePopup(BuildContext context) {
+  ///
+  /// [creatorName]/[creatorPhotoUrl] personalize the paywall when the user
+  /// hit it from a specific chat/profile (e.g. "Call Noor anytime" instead
+  /// of a generic pitch) — pass null when there's no specific profile in
+  /// context.
+  void showChoicePopup(
+    BuildContext context, {
+    String? creatorName,
+    String? creatorPhotoUrl,
+    bool isPrivateChat = false,
+  }) {
     // 1. Respect the current mode: Payer users get the payment screen, Ad-Driven get rewards.
     if (!isAdModeActive) {
-      OfferTrialScreen.show(context);
+      OfferTrialScreen.show(
+        context,
+        creatorName: creatorName,
+        creatorPhotoUrl: creatorPhotoUrl,
+        isPrivateChat: isPrivateChat,
+      );
       return;
     }
 

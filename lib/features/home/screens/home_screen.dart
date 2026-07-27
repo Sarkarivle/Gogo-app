@@ -19,7 +19,6 @@ import 'package:gogo/features/random_live/screens/random_live_intro_screen.dart'
 import 'package:gogo/core/services/notification_service.dart';
 import 'package:gogo/features/premium/providers/premium_service.dart';
 
-import 'package:gogo/core/guards/access_guard.dart';
 import 'package:gogo/core/services/ad_service.dart';
 import 'package:flutter/rendering.dart';
 
@@ -720,17 +719,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
         unselectedItemColor: Colors.grey.shade500,
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
-        onTap: (i) { 
-          if (i == 2) { // Live Tab (Now at index 2)
-            AccessGuard().runWithAccessCheck(
-              context, 
-              onAllowed: () {
-                setState(() => _selectedIndex = i);
-              }
-            );
-            return;
-          }
-
+        onTap: (i) {
+          // Live Tab (index 2) is free for everyone right now — the
+          // AccessGuard paywall gate on it is intentionally disabled while
+          // the fake-partner-video monetization flow (below) is being
+          // built to replace it.
           if (i == _selectedIndex) {
             // Already on this tab - Refresh it
             if (i == 0) {
@@ -773,7 +766,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
           borderRadius: BorderRadius.circular(24), 
           side: BorderSide(color: Colors.white.withValues(alpha: 0.05))
         ),
-        title: const Text("Exit GoGo?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text("Exit Lulu?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: const Text("Are you sure you want to close the app?", style: TextStyle(color: Colors.white70, fontSize: 14)),
         actions: [
           TextButton(
